@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>IBS — One-Time Admin Setup</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 60px auto; padding: 20px; background: #f8fafc; color: #1e293b; }
+    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; }
+    p.sub { color: #64748b; font-size: 0.875rem; margin-bottom: 24px; }
+    .card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; margin-bottom: 16px; }
+    .step { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; }
+    .num { background: #3b82f6; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+    .step p { margin: 0; font-size: 0.875rem; color: #334155; }
+    button { background: #2563eb; color: white; border: none; padding: 12px 28px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; width: 100%; margin-top: 8px; }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    #log { background: #0f172a; color: #86efac; font-family: monospace; font-size: 0.8rem; border-radius: 8px; padding: 16px; min-height: 120px; white-space: pre-wrap; margin-top: 16px; }
+    .warn { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 12px 16px; font-size: 0.8rem; color: #92400e; margin-bottom: 16px; }
+    .success { color: #86efac; }
+    .error   { color: #f87171; }
+    .info    { color: #67e8f9; }
+  </style>
+</head>
+<body>
+  <h1>🔧 IBS — One-Time Admin Setup</h1>
+  <p class="sub">Run this page once to reconfigure admin access. Delete this file after use.</p>
+
+  <div class="warn">
+    ⚠️ This page will: create <strong>operations@udishtha.com</strong> as the new admin, and
+    change <strong>sandeep.kharbanda@wayzim.com</strong> to role <strong>user</strong>.
+    Run this only once.
+  </div>
+
+  <div class="card">
+    <div class="step"><div class="num">1</div><p>Creates <strong>operations@udishtha.com</strong> in Firebase Auth with password <strong>123456</strong></p></div>
+    <div class="step"><div class="num">2</div><p>Writes Firestore <code>users/{uid}</code> with <code>role: "admin"</code>, <code>companies: ["UIPL", "Wayzim"]</code></p></div>
+    <div class="step"><div class="num">3</div><p>Looks up <strong>sandeep.kharbanda@wayzim.com</strong> in Firestore and sets <code>role: "user"</code></p></div>
+    <button id="runBtn" onclick="run()">▶ Run Setup</button>
+  </div>
+
+  <div id="log">Ready. Click "Run Setup" to begin…</div>
+
+  <!-- Firebase SDKs -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'
+    import {
+      getAuth,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+    } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js'
+    import {
+      getFirestore,
+      collection,
+      getDocs,
+      doc,
+      setDoc,
+      updateDoc,
+      query,
+      where,
+    } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAIuHxHqKVbmBBUlaNk-MBrrv-A9StwsGk",
+      authDomain: "uipl-erp.firebaseapp.com",
+      projectId: "uipl-erp",
+      storageBucket: "uipl-erp.firebasestorage.app",
+      messagingSenderId: "740948541037",
+      appId: "1:740948541037:web:5e6db70b7b825ef918c964",
+    }
+
+    const app  = initializeApp(firebaseConfig, 'setup')
+    const auth = getAuth(app)
+    const db   = getFirestore(app)
+
+    const logEl = document.getElementById('log')
+    function log(msg, cls = '') {
+      logEl.innerHTML += `\n<span class="${cls}">${msg}</span>`
+      logEl.scrollTop = logEl.scrollHeight
+    }
+    function logOK(m)  { log('✅ ' + m, 'success') }
+    function logErr(m) { log('❌ ' + m, 'error') }
+    function logInfo(m){ log('ℹ️  ' + m, 'info') }
+
+    window.run = async function() {
+      const btn = document.getElementById('runBtn')
+      btn.disabled = true
+      btn.textContent = '⏳ Running…'
+      logEl.innerHTML = '<span class="info">Starting setup…</span>'
+
+      // ── STEP 1: Create operations@udishtha.com in Firebase Auth ──────────
+      logInfo('Step 1 — Creating operations@udishtha.com in Firebase Auth…')
+      let opsUid = null
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, 'operations@udishtha.com', '123456')
+        opsUid = cred.user.uid
+        logOK(`Auth user created. UID: ${opsUid}`)
+      } catch (e) {
+        if (e.code === 'auth/email-already-in-use') {
+          logInfo('operations@udishtha.com already exists in Auth — signing in to get UID…')
+          try {
+            const cred = await signInWithEmailAndPassword(auth, 'operations@udishtha.com', '123456')
+            opsUid = cred.user.uid
+            logOK(`Signed in. UID: ${opsUid}`)
+          } catch (e2) {
+            logErr('Could not sign in: ' + e2.message)
+          }
+        } else {
+          logErr('Auth error: ' + e.message)
+        }
+      }
+
+      if (!opsUid) {
+        logErr('Cannot continue without a valid UID for operations@udishtha.com')
+        btn.disabled = false; btn.textContent = '▶ Retry'
+        return
+      }
+
+      // ── STEP 2: Write Firestore users doc for operations@udishtha.com ────
+      logInfo('Step 2 — Writing Firestore users doc for operations@udishtha.com…')
+      try {
+        await setDoc(doc(db, 'users', opsUid), {
+          name: 'Operations Admin',
+          email: 'operations@udishtha.com',
+          role: 'admin',
+          companies: ['UIPL', 'Wayzim'],
+          active: true,
+          createdAt: new Date().toISOString(),
+        }, { merge: true })
+        logOK('Firestore users doc written — role: admin, companies: [UIPL, Wayzim]')
+      } catch (e) {
+        logErr('Firestore write error: ' + e.message)
+      }
+
+      // ── STEP 3: Find sandeep.kharbanda@wayzim.com and downgrade role ─────
+      logInfo('Step 3 — Looking up sandeep.kharbanda@wayzim.com in Firestore…')
+      try {
+        const q = query(collection(db, 'users'), where('email', '==', 'sandeep.kharbanda@wayzim.com'))
+        const snap = await getDocs(q)
+        if (snap.empty) {
+          logInfo('sandeep.kharbanda@wayzim.com not found in Firestore users — skipping downgrade.')
+        } else {
+          for (const d of snap.docs) {
+            await updateDoc(doc(db, 'users', d.id), { role: 'user', updatedAt: new Date().toISOString() })
+            logOK(`Updated ${d.id} → role: "user"`)
+          }
+        }
+      } catch (e) {
+        logErr('Firestore lookup error: ' + e.message)
+      }
+
+      log('\n🎉 Setup complete!', 'success')
+      log('→ Log in at uipl-erp.web.app with operations@udishtha.com / 123456', 'info')
+      log('→ Delete this file (public/setup-admin.html) after use.', 'info')
+      btn.textContent = '✓ Done'
+    }
+  </script>
+</body>
+</html>
