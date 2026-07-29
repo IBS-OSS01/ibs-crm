@@ -1,4 +1,14 @@
-﻿# IBS-002 — Project Constitution
+# ====================================================================
+# IBS Document Generator
+# ====================================================================
+
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$OutputFile
+)
+
+$content = @"
+# IBS-002 � Project Constitution
 
 ---
 
@@ -111,3 +121,12 @@ A feature is complete only when:
 ---
 
 End of Document
+"@
+
+$content | Set-Content $OutputFile -Encoding UTF8
+
+Write-Host ""
+Write-Host "==================================" -ForegroundColor Cyan
+Write-Host " Constitution Generated Successfully" -ForegroundColor Green
+Write-Host "==================================" -ForegroundColor Cyan
+Write-Host $OutputFile
