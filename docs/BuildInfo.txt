@@ -1,0 +1,10 @@
+IBS Build Information
+=====================
+
+Date: 07/29/2026 10:03:04
+Git Commit: 8f0c534
+Branch: release/v1-mvp
+Node Version: v26.3.0
+NPM Version: 11.16.0
+Vite Build: SUCCESS
+
