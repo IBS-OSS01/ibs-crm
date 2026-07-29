@@ -1,53 +1,51 @@
 ﻿function New-IBSDocument {
 
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
+        [ValidateSet(
+            "Core",
+            "Product",
+            "Architecture",
+            "Module",
+            "API",
+            "Database",
+            "AI",
+            "Security",
+            "Standards",
+            "Decision",
+            "Knowledge"
+        )]
         [string]$Type,
 
         [Parameter(Mandatory)]
         [string]$Name
     )
 
-    switch ($Type.ToLower()) {
-
-        "module" {
-            $folder = ".\docs\Modules"
-            $prefix = "MOD"
-        }
-
-        "api" {
-            $folder = ".\docs\API"
-            $prefix = "API"
-        }
-
-        "database" {
-            $folder = ".\docs\Database"
-            $prefix = "DB"
-        }
-
-        "architecture" {
-            $folder = ".\docs\Architecture"
-            $prefix = "ARCH"
-        }
-
-        "ai" {
-            $folder = ".\docs\AI"
-            $prefix = "AI"
-        }
-
-        default {
-            $folder = ".\docs"
-            $prefix = "DOC"
-        }
+    $map = @{
+        Core         = ".\docs\Core"
+        Product      = ".\docs\Product"
+        Architecture = ".\docs\Architecture"
+        Module       = ".\docs\Modules"
+        API          = ".\docs\API"
+        Database     = ".\docs\Database"
+        AI           = ".\docs\AI"
+        Security     = ".\docs\Security"
+        Standards    = ".\docs\Standards"
+        Decision     = ".\docs\Decisions"
+        Knowledge    = ".\docs\Knowledge"
     }
+
+    $folder = $map[$Type]
 
     if (!(Test-Path $folder)) {
         New-Item -ItemType Directory -Force -Path $folder | Out-Null
     }
 
-    $file = Join-Path $folder ($Name.Replace(" ","_") + ".md")
+    $filename = ($Name -replace '[\\/:*?"<>|]', '') -replace '\s+', '_'
+    $file = Join-Path $folder "$filename.md"
 
-@"
+    @"
 # $Name
 
 ---
@@ -80,37 +78,24 @@ _To be defined._
 
 ---
 
-## Notes
+## References
 
 _To be defined._
 
 "@ | Set-Content $file -Encoding UTF8
 
     Write-Host ""
-    Write-Host "==================================" -ForegroundColor Cyan
-    Write-Host " IBS Document Created" -ForegroundColor Green
-    Write-Host "==================================" -ForegroundColor Cyan
-    Write-Host $file
+    Write-Host "=========================================" -ForegroundColor Cyan
+    Write-Host " IBS Document Created Successfully" -ForegroundColor Green
+    Write-Host "=========================================" -ForegroundColor Cyan
+    Write-Host "Document : $file"
 }
 
-Export-ModuleMember -Function New-IBSDocument
-function Initialize-IBSProject {
-
-    Write-Host ""
-    Write-Host "==========================================" -ForegroundColor Cyan
-    Write-Host "     IBS Project Health Check" -ForegroundColor Green
-    Write-Host "==========================================" -ForegroundColor Cyan
-    Write-Host ""
+function Test-IBSRepository {
 
     $checks = @(
         ".git",
         "docs",
-        "docs\Core",
-        "docs\Modules",
-        "docs\Architecture",
-        "docs\AI",
-        "docs\Database",
-        "docs\API",
         "scripts",
         "tools",
         "src",
@@ -118,20 +103,18 @@ function Initialize-IBSProject {
         ".gitignore"
     )
 
-    foreach($item in $checks){
+    Write-Host ""
+    Write-Host "IBS Repository Validation" -ForegroundColor Cyan
+    Write-Host "-------------------------" -ForegroundColor Cyan
 
+    foreach($item in $checks){
         if(Test-Path $item){
             Write-Host "[PASS] $item" -ForegroundColor Green
         }
         else{
             Write-Host "[FAIL] $item" -ForegroundColor Red
         }
-
     }
-
-    Write-Host ""
-    Write-Host "IBS Project Validation Complete."
-    Write-Host ""
 }
 
-Export-ModuleMember -Function Initialize-IBSProject
+Export-ModuleMember -Function New-IBSDocument,Test-IBSRepository

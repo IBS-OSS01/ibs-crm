@@ -30,7 +30,7 @@ _To be defined._
 
 ---
 
-## References
+## Notes
 
 _To be defined._
 
