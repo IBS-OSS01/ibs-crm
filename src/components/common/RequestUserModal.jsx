@@ -21,8 +21,8 @@
 
 import React, { useState } from 'react'
 import { collection, addDoc } from 'firebase/firestore'
-import { db } from '../../../lib/firebase-config'
-import { useAuth } from '../../../context/AuthContext'
+import { db } from '../../lib/firebase-config'
+import { useAuth } from '../../context/AuthContext'
 
 // System-wide roles a requester may suggest. 'admin' is deliberately excluded —
 // admin accounts should only ever be created directly by an existing admin.
