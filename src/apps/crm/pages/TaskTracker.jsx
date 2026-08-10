@@ -20,6 +20,21 @@ const PRIORITY_CFG = {
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
+
+// Task date fields (completedAt, requestedDate, etc.) are supposed to be
+// ISO date strings, but some records were saved as Firestore Timestamp
+// objects or raw JS Date objects instead (no .slice method), which crashed
+// this whole page. This normalizes any of those shapes to a 'YYYY-MM-DD'
+// string, or '' if there's nothing usable.
+const toDateStr = (v) => {
+  if (!v) return ''
+  if (typeof v === 'string') return v.slice(0, 10)
+  if (v instanceof Date) return v.toISOString().slice(0, 10)
+  if (typeof v.toDate === 'function') return v.toDate().toISOString().slice(0, 10) // Firestore Timestamp
+  if (typeof v.seconds === 'number') return new Date(v.seconds * 1000).toISOString().slice(0, 10) // {seconds,nanoseconds}
+  return ''
+}
+
 const isActive = (t) => !['completed', 'cancelled'].includes(t.status)
 const isOverdue = (t) => isActive(t) && (t.resolvedDate || t.requestedDate || '') < today()
 const daysDiff = (date) => {
@@ -29,8 +44,9 @@ const daysDiff = (date) => {
 }
 
 const fmt = (iso) => {
-  if (!iso) return '—'
-  const d = new Date(iso.slice(0, 10))
+  const s = toDateStr(iso)
+  if (!s) return '—'
+  const d = new Date(s)
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })
 }
 
@@ -98,7 +114,7 @@ export default function TaskTracker() {
       if (isOverdue(t))                     m.overdue++
       if (t.status === 'completed') {
         const deadline = t.resolvedDate || t.requestedDate || ''
-        const doneAt   = (t.completedAt || '').slice(0, 10)
+        const doneAt   = toDateStr(t.completedAt)
         if (deadline && doneAt) {
           if (doneAt <= deadline) m.onTimeCount++
           else                    m.lateCount++
@@ -323,8 +339,8 @@ export default function TaskTracker() {
                                     <span className="block text-slate-400 mt-0.5">Proposed: {fmt(t.counterDate)}</span>
                                   )}
                                   {t.status === 'completed' && t.completedAt && (
-                                    <span className={`block mt-0.5 ${(t.completedAt.slice(0,10) <= (t.resolvedDate || t.requestedDate || '')) ? 'text-green-600' : 'text-red-500'}`}>
-                                      Done {fmt(t.completedAt)} {t.completedAt.slice(0,10) <= (t.resolvedDate || t.requestedDate || '') ? '✓ on time' : '✗ late'}
+                                    <span className={`block mt-0.5 ${(toDateStr(t.completedAt) <= (t.resolvedDate || t.requestedDate || '')) ? 'text-green-600' : 'text-red-500'}`}>
+                                      Done {fmt(t.completedAt)} {toDateStr(t.completedAt) <= (t.resolvedDate || t.requestedDate || '') ? '✓ on time' : '✗ late'}
                                     </span>
                                   )}
                                 </td>

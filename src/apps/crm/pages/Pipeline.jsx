@@ -128,6 +128,34 @@ export default function Pipeline() {
   const defaultCompany = canSeeUIPL ? (userCompanies[0] || 'UIPL') : 'Wayzim'
   const { users, refreshUsers } = useUsers()   // session cache — zero Firestore reads (until manually refreshed)
   const [deals, setDeals] = useState([])
+
+  // Deals whose `stage` doesn't match any known Kanban column (e.g. legacy
+  // values like "negotiation"/"proposal" from an old import). These fully
+  // exist in Firestore but never render on the board since no column claims
+  // them — they were never deleted, just structurally invisible.
+  const VALID_STAGE_IDS = STAGES.map(s => s.id)
+  const [fixingStageId, setFixingStageId] = useState(null)
+  const mismatchedStageDeals = useMemo(
+    () => deals.filter(d => d.stage && !VALID_STAGE_IDS.includes(d.stage)),
+    [deals]
+  )
+  const fixDealStage = async (dealId, newStage) => {
+    setFixingStageId(dealId)
+    try {
+      await updateDoc(doc(db, 'crm_deals', dealId), { stage: newStage })
+      setDeals(prev => prev.map(d => d.id === dealId ? { ...d, stage: newStage } : d))
+    } catch (e) { console.error(e) }
+    finally { setFixingStageId(null) }
+  }
+  // Best-guess suggestion per legacy value — admin can override before applying
+  const suggestStage = (oldStage) => {
+    const s = (oldStage || '').toLowerCase()
+    if (s.includes('negotiat')) return 'closing'
+    if (s.includes('propos'))   return 'bid'
+    if (s.includes('quali'))    return 'prebid'
+    return 'lead'
+  }
+
   const [customers, setCustomers] = useState([])
   const [sites, setSites] = useState([])
   const [warehouses, setWarehouses] = useState([])
@@ -627,6 +655,36 @@ export default function Pipeline() {
 
       {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm flex-shrink-0">{error}</div>}
 
+      {isAdmin && mismatchedStageDeals.length > 0 && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm flex-shrink-0 space-y-2">
+          <p className="font-bold text-amber-800">
+            ⚠️ {mismatchedStageDeals.length} deal{mismatchedStageDeals.length > 1 ? 's' : ''} have a stage that doesn't match any board column, so they're invisible on the board below (they still exist and aren't lost — just pick the right column for each):
+          </p>
+          <div className="bg-white rounded-lg border border-amber-200/70 divide-y divide-amber-100">
+            {mismatchedStageDeals.map(d => (
+              <div key={d.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <span className="font-medium text-slate-800 truncate">{d.title || '(untitled)'}</span>
+                  <span className="ml-2 text-xs text-slate-400">
+                    {d.company || '—'} · currently stored as "<code className="text-amber-700">{d.stage}</code>"
+                  </span>
+                </div>
+                <select
+                  defaultValue={suggestStage(d.stage)}
+                  onChange={e => fixDealStage(d.id, e.target.value)}
+                  disabled={fixingStageId === d.id}
+                  className="text-xs border border-slate-300 rounded-lg px-2 py-1 disabled:opacity-50"
+                >
+                  {STAGES.map(s => (
+                    <option key={s.id} value={s.id}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Search + FY filter bar */}
       <div className="flex items-center gap-3 flex-shrink-0 flex-wrap">
         {/* Search */}
@@ -833,11 +891,10 @@ export default function Pipeline() {
                   value={form.salesManagerId || null}
                   onChange={uid => handleManagerChange(uid || '')}
                   placeholder="Search name, role or department…"
-                  filters={{ company: form.company }}
                 />
               </div>
             )}
-            {isAdmin && (
+            {canEdit && (
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Sales Assistants / Team Members</label>
 

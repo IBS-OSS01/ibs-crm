@@ -16,13 +16,26 @@ async function loadUsers() {
   if (loadingPromise) return loadingPromise
 
   loadingPromise = (async () => {
-    const q = query(collection(db, 'users'), orderBy('name'))
-    const snap = await getDocs(q)
+    // Load users and roles together — roles gives us the *current* human
+    // name for each role id (e.g. "sales_director" -> "Sales Director"),
+    // so a rename in Admin > Roles is reflected everywhere immediately
+    // instead of every screen guessing a label from the id string.
+    const [usersSnap, rolesSnap] = await Promise.all([
+      getDocs(query(collection(db, 'users'), orderBy('name'))),
+      getDocs(collection(db, 'roles')),
+    ])
 
-    cachedUsers = snap.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
+    const roleNameById = {}
+    rolesSnap.forEach(d => { roleNameById[d.id] = d.data().name || d.id })
+
+    cachedUsers = usersSnap.docs.map(doc => {
+      const data = doc.data()
+      return {
+        id: doc.id,
+        ...data,
+        roleName: roleNameById[data.role] || data.role || '',
+      }
+    })
 
     return cachedUsers
   })()

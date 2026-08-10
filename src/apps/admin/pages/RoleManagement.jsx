@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { collection, getDocs, doc, addDoc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { collection, getDocs, doc, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { ensureDefaultRoles } from '../defaultRoles'
@@ -7,6 +7,21 @@ import { ensureDefaultRoles } from '../defaultRoles'
 // Same module list used in UserManagement's per-user "Module Access" toggles.
 const MODULES = ['CRM', 'SERVICES', 'HR', 'PROJECTS', 'FINANCE']
 const emptyForm = { name: '', departments: [] }
+
+// Turns a display name into a stable, code-friendly id — e.g.
+// "Sales Director" -> "sales_director". Matches the convention used by
+// DEFAULT_ROLES (admin, service_manager, user) and by every hardcoded
+// role check elsewhere in the app (Pipeline.jsx, CrmApp.jsx, UserSelector.jsx).
+const slugify = (name) =>
+  name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+
+// Ensures a slug is unique among existing role ids (appends _2, _3, ... on collision)
+const uniqueSlug = (base, existingIds) => {
+  if (!existingIds.includes(base)) return base
+  let n = 2
+  while (existingIds.includes(`${base}_${n}`)) n++
+  return `${base}_${n}`
+}
 
 export default function RoleManagement() {
   const { userProfile } = useAuth()
@@ -36,7 +51,68 @@ export default function RoleManagement() {
     finally { setLoading(false) }
   }
 
+  const [migrating, setMigrating] = useState(false)
+  const [migrationLog, setMigrationLog] = useState(null)
+
+  // One-time fix: roles created via the old "+ Add Role" flow got random
+  // Firestore auto-IDs instead of slug ids (e.g. "aB3xY9zQ" instead of
+  // "sales_director"). Every hardcoded role check elsewhere in the app
+  // (Pipeline.jsx, CrmApp.jsx, UserSelector.jsx) compares against the slug,
+  // so those roles silently fail everywhere except this screen. This finds
+  // every mismatched role, creates a correctly-id'd replacement, repoints
+  // every user currently on the old id, then removes the old role doc.
+  const fixRoleIds = async () => {
+    if (!window.confirm(
+      'This will scan every role, fix any whose internal ID doesn\'t match its name, ' +
+      'and update every user assigned to a fixed role. This cannot be undone automatically. Continue?'
+    )) return
+
+    setMigrating(true)
+    setMigrationLog(null)
+    const log = []
+    try {
+      const roleSnap = await getDocs(collection(db, 'roles'))
+      const allRoles = []
+      roleSnap.forEach(d => allRoles.push({ id: d.id, ...d.data() }))
+      const existingIds = allRoles.map(r => r.id)
+
+      for (const r of allRoles) {
+        if (r.id === 'admin') continue // never touch — special-cased throughout the app
+        const desired = uniqueSlug(slugify(r.name || ''), existingIds.filter(id => id !== r.id))
+        if (!desired || desired === r.id) continue // already correct
+
+        // 1) Create the correctly-id'd role doc first
+        const { id, ...data } = r
+        await setDoc(doc(db, 'roles', desired), data)
+        existingIds.push(desired)
+
+        // 2) Repoint every user currently on the old id
+        const usersSnap = await getDocs(query(collection(db, 'users'), where('role', '==', r.id)))
+        const affected = []
+        usersSnap.forEach(u => affected.push(u.id))
+        if (affected.length) {
+          const batch = writeBatch(db)
+          usersSnap.forEach(u => batch.update(doc(db, 'users', u.id), { role: desired }))
+          await batch.commit()
+        }
+
+        // 3) Remove the old role doc last, once nothing points at it anymore
+        await deleteDoc(doc(db, 'roles', r.id))
+
+        log.push({ from: r.id, to: desired, name: r.name, usersFixed: affected.length })
+      }
+
+      setMigrationLog(log)
+      await load()
+    } catch (err) {
+      setError('Migration error: ' + err.message)
+    } finally {
+      setMigrating(false)
+    }
+  }
+
   const resetForm = () => { setForm(emptyForm); setEditing(null); setError('') }
+
 
   const toggleDept = (dept) => {
     setForm(prev => ({
@@ -66,13 +142,15 @@ export default function RoleManagement() {
         setRoles(prev => prev.map(r => r.id === editing ? { ...r, name: form.name, departments: form.departments } : r))
         setSuccess('Role updated.')
       } else {
-        const ref = await addDoc(collection(db, 'roles'), {
+        const slug = uniqueSlug(slugify(form.name), roles.map(r => r.id))
+        const roleData = {
           name: form.name,
           departments: form.departments,
           isSystem: false,
           createdAt: new Date().toISOString(),
-        })
-        setRoles(prev => [...prev, { id: ref.id, name: form.name, departments: form.departments, isSystem: false }])
+        }
+        await setDoc(doc(db, 'roles', slug), roleData)
+        setRoles(prev => [...prev, { id: slug, ...roleData }])
         setSuccess('Role created — it now shows up in the Role dropdown on the Users tab.')
       }
       setShowForm(false)
@@ -110,13 +188,43 @@ export default function RoleManagement() {
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Roles</h2>
           <p className="text-slate-500 text-sm">Define the roles your organisation uses and which modules each one opens by default.</p>
         </div>
-        <button
-          onClick={() => { setShowForm(!showForm); resetForm() }}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition"
-        >
-          {showForm && !editing ? '✕ Cancel' : '+ Add Role'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fixRoleIds}
+            disabled={migrating}
+            title="Fixes roles whose internal ID doesn't match their name (a bug in older role creation), and updates every affected user"
+            className="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-800 text-sm font-medium rounded-lg transition disabled:opacity-50"
+          >
+            {migrating ? '🔧 Fixing…' : '🔧 Fix Role IDs'}
+          </button>
+          <button
+            onClick={() => { setShowForm(!showForm); resetForm() }}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition"
+          >
+            {showForm && !editing ? '✕ Cancel' : '+ Add Role'}
+          </button>
+        </div>
       </div>
+
+      {migrationLog && (
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-sm">
+          {migrationLog.length === 0 ? (
+            <p>✅ Checked all roles — no mismatched IDs found, nothing needed fixing.</p>
+          ) : (
+            <>
+              <p className="font-bold mb-1">✅ Fixed {migrationLog.length} role{migrationLog.length > 1 ? 's' : ''}:</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                {migrationLog.map((m, i) => (
+                  <li key={i}>
+                    "{m.name}": <code className="text-xs bg-white/60 px-1 rounded">{m.from}</code> → <code className="text-xs bg-white/60 px-1 rounded">{m.to}</code>
+                    {' '}({m.usersFixed} user{m.usersFixed === 1 ? '' : 's'} updated)
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
 
       {success && <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">✅ {success}</div>}
 

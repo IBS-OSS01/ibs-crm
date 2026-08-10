@@ -17,6 +17,12 @@
  *   label        {string}       — optional label rendered above the selector
  *   allowClear   {boolean}      — show ✕ clear button (default true)
  *   className    {string}       — wrapper div class
+ *   includeDisabled {boolean}   — include disabled users in search results
+ *                               (default false — disabled users are never
+ *                               offered as a new selection anywhere they're
+ *                               not explicitly opted back in). A user who is
+ *                               already selected still displays correctly
+ *                               even if they've since been disabled.
  *
  * Selection stores only the uid string.
  * Name / email / role / department are always derived from the live cache.
@@ -52,6 +58,7 @@ export default function UserSelector({
   label       = '',
   allowClear  = true,
   className   = '',
+  includeDisabled = false,
 }) {
   const { users, usersReady } = useUsers()
 
@@ -78,13 +85,14 @@ export default function UserSelector({
   // ── Resolve selected user from cache ──────────────────────────────────────
   const selectedUser = useMemo(() => {
     if (!value || !users.length) return null
-    return users.find(u => u.uid === value) || null
+    return users.find(u => u.id === value) || null
   }, [value, users])
 
   // ── Apply optional filters + search ──────────────────────────────────────
   const filtered = useMemo(() => {
     let pool = users
-    if (filters.company)    pool = pool.filter(u => u.company    === filters.company)
+    if (!includeDisabled) pool = pool.filter(u => u.active !== false)
+    if (filters.company)    pool = pool.filter(u => Array.isArray(u.companies) ? u.companies.includes(filters.company) : u.company === filters.company)
     if (filters.department) pool = pool.filter(u => u.department === filters.department)
     if (filters.role)       pool = pool.filter(u => u.role       === filters.role)
 
@@ -92,10 +100,11 @@ export default function UserSelector({
     if (q.length < 2) return []   // wait for 2+ characters
 
     return pool.filter(u =>
-      u.name.toLowerCase().includes(q)       ||
-      u.email.toLowerCase().includes(q)      ||
-      u.department.toLowerCase().includes(q) ||
-      u.role.toLowerCase().includes(q)       ||
+      (u.name || '').toLowerCase().includes(q)       ||
+      (u.email || '').toLowerCase().includes(q)      ||
+      (u.department || '').toLowerCase().includes(q) ||
+      (u.role || '').toLowerCase().includes(q)       ||
+      (u.roleName || '').toLowerCase().includes(q)   ||
       roleLabel(u.role).toLowerCase().includes(q)
     ).slice(0, 12)
   }, [users, filters, query])
@@ -132,7 +141,7 @@ export default function UserSelector({
       setHlIdx(i => Math.max(i - 1, 0))
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      if (filtered[hlIdx]) select(filtered[hlIdx].uid)
+      if (filtered[hlIdx]) select(filtered[hlIdx].id)
     } else if (e.key === 'Escape') {
       setOpen(false)
       setQuery('')
@@ -155,7 +164,12 @@ export default function UserSelector({
             </div>
             {selectedUser.role && (
               <span className="flex-shrink-0 text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                {roleLabel(selectedUser.role)}
+                {selectedUser.roleName || roleLabel(selectedUser.role)}
+              </span>
+            )}
+            {selectedUser.active === false && (
+              <span className="flex-shrink-0 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">
+                Disabled
               </span>
             )}
           </div>
@@ -195,7 +209,12 @@ export default function UserSelector({
             <span className="text-sm font-semibold text-slate-800 truncate">{selectedUser.name}</span>
             {selectedUser.role && (
               <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
-                {roleLabel(selectedUser.role)}
+                {selectedUser.roleName || roleLabel(selectedUser.role)}
+              </span>
+            )}
+            {selectedUser.active === false && (
+              <span className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">
+                Disabled
               </span>
             )}
           </div>
@@ -252,13 +271,13 @@ export default function UserSelector({
           ) : (
             filtered.map((u, idx) => (
               <button
-                key={u.uid}
+                key={u.id}
                 type="button"
-                onMouseDown={() => select(u.uid)}
+                onMouseDown={() => select(u.id)}
                 className={`w-full text-left px-3 py-2.5 flex items-center gap-3 border-b border-slate-50 last:border-0 transition
                   ${idx === hlIdx
                     ? 'bg-blue-50'
-                    : u.uid === value
+                    : u.id === value
                       ? 'bg-green-50'
                       : 'hover:bg-slate-50'
                   }`}
@@ -269,7 +288,7 @@ export default function UserSelector({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold text-slate-800 truncate">{u.name || '—'}</p>
-                    {u.uid === value && (
+                    {u.id === value && (
                       <span className="text-xs text-green-600 font-bold">✓ selected</span>
                     )}
                   </div>
@@ -283,12 +302,7 @@ export default function UserSelector({
                 <div className="flex-shrink-0 flex flex-col items-end gap-1">
                   {u.role && (
                     <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium whitespace-nowrap">
-                      {roleLabel(u.role)}
-                    </span>
-                  )}
-                  {u.company && (
-                    <span className={`text-xs px-1.5 py-0.5 rounded-lg font-bold ${COMPANY_COLOR[u.company] || 'bg-slate-100 text-slate-600'}`}>
-                      {u.company}
+                      {u.roleName || roleLabel(u.role)}
                     </span>
                   )}
                 </div>
@@ -329,6 +343,6 @@ function Avatar({ user, size = 'md' }) {
  */
 export function resolveUserName(users, uid) {
   if (!uid) return ''
-  const u = users.find(x => x.uid === uid)
+  const u = users.find(x => x.id === uid)
   return u?.name || u?.email || uid
 }

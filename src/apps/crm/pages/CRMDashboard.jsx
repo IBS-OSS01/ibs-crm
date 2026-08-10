@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore'
+import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useUsers } from '../../../lib/useUsers'
@@ -630,6 +630,92 @@ export default function CRMDashboard() {
     }
     return base
   }, [deals, co, isAdmin, uid, isWideViewer, isWideAdmin, dateFrom, dateTo, filterUser])
+
+  // ── Data Health: surface deals with no owner, and likely duplicate deals ──
+  // (created by e.g. Clone, or legacy records from before salesManagerId
+  // existed). Admin-only, computed across ALL deals regardless of the
+  // active company tab or filters, so nothing gets hidden from view here.
+  const [healthOpen, setHealthOpen] = useState(false)
+  const [fixingId,   setFixingId]   = useState(null)
+
+  const unassignedDeals = useMemo(() =>
+    deals.filter(d => !d.salesManagerId && !d.assignedToId),
+    [deals]
+  )
+
+  const duplicateGroups = useMemo(() => {
+    const groups = {}
+    deals.forEach(d => {
+      const key = `${(d.title || '').trim().toLowerCase()}|${d.customerId || d.customerName || ''}`
+      if (!key.trim() || key === '|') return
+      ;(groups[key] = groups[key] || []).push(d)
+    })
+    return Object.values(groups)
+      .filter(g => g.length > 1)
+      .map(g => g.slice().sort((a, b) => (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '')))
+  }, [deals])
+
+  const assignToMe = async (dealId) => {
+    setFixingId(dealId)
+    try {
+      await updateDoc(doc(db, 'crm_deals', dealId), {
+        salesManagerId: uid,
+        salesManagerName: userProfile?.name || userProfile?.email || '',
+      })
+      setDeals(prev => prev.map(d => d.id === dealId
+        ? { ...d, salesManagerId: uid, salesManagerName: userProfile?.name || userProfile?.email || '' }
+        : d
+      ))
+    } catch (e) { console.error(e) }
+    finally { setFixingId(null) }
+  }
+
+  const deleteDuplicate = async (dealId) => {
+    if (!window.confirm('Delete this duplicate deal? This cannot be undone.')) return
+    setFixingId(dealId)
+    try {
+      await deleteDoc(doc(db, 'crm_deals', dealId))
+      setDeals(prev => prev.filter(d => d.id !== dealId))
+    } catch (e) { console.error(e) }
+    finally { setFixingId(null) }
+  }
+
+  const deleteUnassignedDeal = async (dealId) => {
+    if (!window.confirm('Delete this deal? This cannot be undone.')) return
+    setFixingId(dealId)
+    try {
+      await deleteDoc(doc(db, 'crm_deals', dealId))
+      setDeals(prev => prev.filter(d => d.id !== dealId))
+      setSelectedUnassigned(prev => prev.filter(id => id !== dealId))
+    } catch (e) { console.error(e) }
+    finally { setFixingId(null) }
+  }
+
+  const [selectedUnassigned, setSelectedUnassigned] = useState([])
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
+  const toggleUnassignedSelected = (dealId) => {
+    setSelectedUnassigned(prev => prev.includes(dealId) ? prev.filter(id => id !== dealId) : [...prev, dealId])
+  }
+
+  const selectAllUnassigned = () => {
+    setSelectedUnassigned(prev =>
+      prev.length === unassignedDeals.length ? [] : unassignedDeals.map(d => d.id)
+    )
+  }
+
+  const deleteSelectedUnassigned = async () => {
+    if (selectedUnassigned.length === 0) return
+    if (!window.confirm(`Delete ${selectedUnassigned.length} selected deal${selectedUnassigned.length > 1 ? 's' : ''}? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    try {
+      await Promise.all(selectedUnassigned.map(id => deleteDoc(doc(db, 'crm_deals', id))))
+      setDeals(prev => prev.filter(d => !selectedUnassigned.includes(d.id)))
+      setSelectedUnassigned([])
+    } catch (e) { console.error(e) }
+    finally { setBulkDeleting(false) }
+  }
+
   const coCustomers = useMemo(() => customers.filter(c => {
     const cos = c.companies || (c.company ? [c.company] : [])
     return cos.length === 0 || cos.includes(co)
@@ -719,6 +805,125 @@ export default function CRMDashboard() {
           </button>
         </div>
       </div>
+
+      {/* ── Data Health Check (admin only) ── */}
+      {isAdmin && (unassignedDeals.length > 0 || duplicateGroups.length > 0) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl overflow-hidden">
+          <button
+            onClick={() => setHealthOpen(o => !o)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left"
+          >
+            <span className="text-sm font-bold text-amber-800">
+              🩺 Data Health — {unassignedDeals.length} unassigned, {duplicateGroups.length} possible duplicate{duplicateGroups.length === 1 ? '' : 's'}
+            </span>
+            <span className="text-amber-600 text-xs">{healthOpen ? '▲ Hide' : '▼ Show'}</span>
+          </button>
+
+          {healthOpen && (
+            <div className="px-4 pb-4 space-y-4">
+              {unassignedDeals.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
+                      Deals with no Sales Manager set
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={selectAllUnassigned}
+                        className="text-xs text-amber-700 hover:text-amber-900 font-medium underline"
+                      >
+                        {selectedUnassigned.length === unassignedDeals.length ? 'Deselect all' : 'Select all'}
+                      </button>
+                      {selectedUnassigned.length > 0 && (
+                        <button
+                          onClick={deleteSelectedUnassigned}
+                          disabled={bulkDeleting}
+                          className="text-xs px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium disabled:opacity-50"
+                        >
+                          {bulkDeleting ? 'Deleting…' : `Delete ${selectedUnassigned.length} selected`}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-xl border border-amber-200/70 divide-y divide-amber-100">
+                    {unassignedDeals.map(d => (
+                      <div key={d.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={selectedUnassigned.includes(d.id)}
+                            onChange={() => toggleUnassignedSelected(d.id)}
+                            className="flex-shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <span className="font-medium text-slate-800 truncate">{d.title || '(untitled)'}</span>
+                            <span className="ml-2 text-xs text-slate-400">{d.company || '—'} · {d.stage || 'lead'}</span>
+                          </div>
+                        </div>
+                        <div className="flex-shrink-0 flex gap-2">
+                          <button
+                            onClick={() => assignToMe(d.id)}
+                            disabled={fixingId === d.id}
+                            className="text-xs px-2.5 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg font-medium disabled:opacity-50"
+                          >
+                            {fixingId === d.id ? 'Saving…' : 'Assign to me'}
+                          </button>
+                          <button
+                            onClick={() => navigate('/crm/pipeline')}
+                            className="text-xs px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-medium"
+                          >
+                            Open Pipeline
+                          </button>
+                          <button
+                            onClick={() => deleteUnassignedDeal(d.id)}
+                            disabled={fixingId === d.id}
+                            className="text-xs px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium disabled:opacity-50"
+                          >
+                            {fixingId === d.id ? 'Deleting…' : 'Delete'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {duplicateGroups.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1.5">
+                    Possible duplicate deals (same title &amp; customer) — newest kept on top, review before deleting
+                  </p>
+                  <div className="space-y-2">
+                    {duplicateGroups.map((group, gi) => (
+                      <div key={gi} className="bg-white rounded-xl border border-amber-200/70 divide-y divide-amber-100">
+                        {group.map((d, i) => (
+                          <div key={d.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                            <div className="min-w-0">
+                              <span className="font-medium text-slate-800 truncate">{d.title || '(untitled)'}</span>
+                              <span className="ml-2 text-xs text-slate-400">
+                                {d.company || '—'} · {d.stage || 'lead'} · {i === 0 ? 'newest' : `updated ${d.updatedAt || d.createdAt || 'unknown'}`}
+                              </span>
+                            </div>
+                            {i > 0 && (
+                              <button
+                                onClick={() => deleteDuplicate(d.id)}
+                                disabled={fixingId === d.id}
+                                className="flex-shrink-0 text-xs px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium disabled:opacity-50"
+                              >
+                                {fixingId === d.id ? 'Deleting…' : 'Delete duplicate'}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Company tabs */}
       {availableCompanies.length > 1 && (
