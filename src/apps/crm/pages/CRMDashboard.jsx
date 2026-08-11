@@ -47,15 +47,12 @@ const fmtINR  = (n) =>
 const todayStr = () => new Date().toISOString().slice(0, 10)
 const addDays  = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10) }
 
-// India FY: Apr 1 – Mar 31
-const fyStart = () => {
-  const now = new Date(); const y = now.getFullYear()
-  return now.getMonth() < 3 ? `${y - 1}-04-01` : `${y}-04-01`
-}
-const fyEnd = () => {
-  const now = new Date(); const y = now.getFullYear()
-  return now.getMonth() < 3 ? `${y}-03-31` : `${y + 1}-03-31`
-}
+// AY = Calendar Year: AY 2026 = Jan 1, 2026 – Dec 31, 2026
+// (matches the AY definition used in Pipeline.jsx — this used to be wired
+// to the India FY, Apr 1 – Mar 31, which is a different date range and was
+// giving "This AY" the wrong bounds here.)
+const ayStart = () => `${new Date().getFullYear()}-01-01`
+const ayEnd   = () => `${new Date().getFullYear()}-12-31`
 
 const PRESETS = [
   { id: 'all',       label: 'All Time' },
@@ -80,7 +77,7 @@ const presetRange = (id) => {
     const qStart = new Date(y, Math.floor(m / 3) * 3, 1)
     return { from: qStart.toISOString().slice(0,10), to: todayStr() }
   }
-  if (id === 'this_fy')  return { from: fyStart(), to: fyEnd() }
+  if (id === 'this_fy')  return { from: ayStart(), to: ayEnd() }
   return { from: '', to: '' }
 }
 
