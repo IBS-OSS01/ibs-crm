@@ -6,6 +6,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Requires that this Firebase Auth account has a matching profile doc
+    // created by an admin (via Admin > Users). Firebase Auth accounts can be
+    // created directly against the public Identity Toolkit REST API using
+    // nothing but the project's public apiKey (which every Firebase web app
+    // ships in its JS bundle by design) — that doesn't go through this app's
+    // UI or its `users/{uid}` bookkeeping at all. Without this check, any
+    // such self-registered account would satisfy plain isSignedIn() and get
+    // full read/write on every collection below. get() on a missing doc
+    // fails closed (denies) when `.data` is accessed, so this is safe by
+    // default even before the profile is created.
+    function isProvisioned() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     // Looks up the requester's own profile to check role. Costs one extra
     // read against the Firestore free/security-rules quota per request,
     // which is negligible at this app's scale.
@@ -14,72 +29,72 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // User profiles — all signed-in users can read (needed for form dropdowns,
+    // User profiles — all provisioned users can read (needed for form dropdowns,
     // team assignment, name lookup). Only admins can create/update/delete.
     match /users/{userId} {
-      allow read: if isSignedIn();
+      allow read: if isProvisioned();
       allow create, update, delete: if isAdmin();
     }
 
-    // Organisation roles (Admin > Roles tab) — any signed-in user can read
+    // Organisation roles (Admin > Roles tab) — any provisioned user can read
     // them (needed to show role names), only admins can create/edit/delete.
     match /roles/{roleId} {
-      allow read: if isSignedIn();
+      allow read: if isProvisioned();
       allow write: if isAdmin();
     }
 
-    // General Tasks module — all signed-in users can read and write their own
-    // tasks; admins/managers can read everything (enforced in the app layer).
+    // General Tasks module — all provisioned users can read and write their
+    // own tasks; admins/managers can read everything (enforced in the app layer).
     match /tasks/{taskId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isProvisioned();
     }
 
-    // Services / Inventory module — open to any signed-in user for now.
+    // Services / Inventory module — open to any provisioned user for now.
     // Tighten to role-based checks later if specific collections need it.
-    match /inventory_items/{id}                    { allow read, write: if isSignedIn(); }
-    match /inventory_warehouses/{id}                { allow read, write: if isSignedIn(); }
-    match /inventory_stocks/{id}                     { allow read, write: if isSignedIn(); }
-    match /inventory_consumption_requests/{id}       { allow read, write: if isSignedIn(); }
-    match /inventory_spare_requests/{id}             { allow read, write: if isSignedIn(); }
-    match /inventory_stock_adjustments/{id}          { allow read, write: if isSignedIn(); }
-    match /inventory_stock_transfers/{id}            { allow read, write: if isSignedIn(); }
-    match /inventory_reorder_consolidations/{id}     { allow read, write: if isSignedIn(); }
+    match /inventory_items/{id}                    { allow read, write: if isProvisioned(); }
+    match /inventory_warehouses/{id}                { allow read, write: if isProvisioned(); }
+    match /inventory_stocks/{id}                     { allow read, write: if isProvisioned(); }
+    match /inventory_consumption_requests/{id}       { allow read, write: if isProvisioned(); }
+    match /inventory_spare_requests/{id}             { allow read, write: if isProvisioned(); }
+    match /inventory_stock_adjustments/{id}          { allow read, write: if isProvisioned(); }
+    match /inventory_stock_transfers/{id}            { allow read, write: if isProvisioned(); }
+    match /inventory_reorder_consolidations/{id}     { allow read, write: if isProvisioned(); }
 
     // CRM module — customers, product catalog, orders, and the sales
-    // pipeline (deals). Open to any signed-in user for now, same pattern
+    // pipeline (deals). Open to any provisioned user for now, same pattern
     // as the inventory collections.
-    match /crm_customers/{id}                        { allow read, write: if isSignedIn(); }
-    match /crm_contacts/{id}                          { allow read, write: if isSignedIn(); }
-    match /crm_products/{id}                         { allow read, write: if isSignedIn(); }
-    match /crm_orders/{id}                            { allow read, write: if isSignedIn(); }
-    match /crm_deals/{id}                             { allow read, write: if isSignedIn(); }
-    match /crm_sites/{id}                             { allow read, write: if isSignedIn(); }
-    match /crm_targets/{id}                           { allow read: if isSignedIn(); allow write: if isAdmin(); }
-    match /crm_tasks/{id}                             { allow read, write: if isSignedIn(); }
+    match /crm_customers/{id}                        { allow read, write: if isProvisioned(); }
+    match /crm_contacts/{id}                          { allow read, write: if isProvisioned(); }
+    match /crm_products/{id}                         { allow read, write: if isProvisioned(); }
+    match /crm_orders/{id}                            { allow read, write: if isProvisioned(); }
+    match /crm_deals/{id}                             { allow read, write: if isProvisioned(); }
+    match /crm_sites/{id}                             { allow read, write: if isProvisioned(); }
+    match /crm_targets/{id}                           { allow read: if isProvisioned(); allow write: if isAdmin(); }
+    match /crm_tasks/{id}                             { allow read, write: if isProvisioned(); }
     match /team_member_requests/{id} {
-      allow read, create: if isSignedIn();
+      allow read, create: if isProvisioned();
       allow update, delete: if isAdmin();
     }
 
     // HR module — employees, attendance, leaves, salary slips, advances, expense claims.
-    match /hr_employees/{id}         { allow read, write: if isSignedIn(); }
-    match /hr_attendance/{id}        { allow read, write: if isSignedIn(); }
-    match /hr_leaves/{id}            { allow read, write: if isSignedIn(); }
-    match /hr_salary_slips/{id}      { allow read, write: if isSignedIn(); }
-    match /hr_salary_revisions/{id}  { allow read: if isSignedIn(); allow write: if isAdmin(); }
-    match /hr_advances/{id}          { allow read, write: if isSignedIn(); }
-    match /hr_expenses/{id}          { allow read, write: if isSignedIn(); }
+    match /hr_employees/{id}         { allow read, write: if isProvisioned(); }
+    match /hr_attendance/{id}        { allow read, write: if isProvisioned(); }
+    match /hr_leaves/{id}            { allow read, write: if isProvisioned(); }
+    match /hr_salary_slips/{id}      { allow read, write: if isProvisioned(); }
+    match /hr_salary_revisions/{id}  { allow read: if isProvisioned(); allow write: if isAdmin(); }
+    match /hr_advances/{id}          { allow read, write: if isProvisioned(); }
+    match /hr_expenses/{id}          { allow read, write: if isProvisioned(); }
 
     // Projects module — tasks, service logs, project register (won CRM deals), cost line items.
-    match /project_tasks/{id}         { allow read, write: if isSignedIn(); }
-    match /project_service_logs/{id}  { allow read, write: if isSignedIn(); }
-    match /projects/{id}              { allow read, write: if isSignedIn(); }
-    match /project_costs/{id}         { allow read, write: if isSignedIn(); }
-    // Project Execution Plan (WBS / Gantt tasks) — all signed-in users can read;
+    match /project_tasks/{id}         { allow read, write: if isProvisioned(); }
+    match /project_service_logs/{id}  { allow read, write: if isProvisioned(); }
+    match /projects/{id}              { allow read, write: if isProvisioned(); }
+    match /project_costs/{id}         { allow read, write: if isProvisioned(); }
+    // Project Execution Plan (WBS / Gantt tasks) — all provisioned users can read;
     // write restricted to project managers, sales managers, and admins.
     match /project_plan_tasks/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && (
+      allow read: if isProvisioned();
+      allow write: if isProvisioned() && (
         isAdmin() ||
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'project_manager' ||
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'sales_manager'
@@ -88,22 +103,22 @@ service cloud.firestore {
 
     // Public task links — no-login external resource access.
     // Anyone can read (token-based security via unguessable URL).
-    // Only signed-in users can create. External users can only update status fields.
+    // Only provisioned users can create. External users can only update status fields.
     match /public_task_links/{token} {
       allow read: if true;
-      allow create: if isSignedIn();
+      allow create: if isProvisioned();
       allow update: if request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['status', 'statusNote', 'updatedAt']);
     }
 
     // Finance module — expenses, payments received, payables (vendor bills), vendors, HSN master, invoices, company settings.
-    match /finance_expenses/{id}     { allow read, write: if isSignedIn(); }
-    match /finance_payments/{id}     { allow read, write: if isSignedIn(); }
-    match /finance_payables/{id}     { allow read, write: if isSignedIn(); }
-    match /finance_vendors/{id}      { allow read, write: if isSignedIn(); }
-    match /finance_hsn_codes/{id}    { allow read, write: if isSignedIn(); }
-    match /finance_invoices/{id}     { allow read, write: if isSignedIn(); }
-    match /company_settings/{id}     { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    match /finance_expenses/{id}     { allow read, write: if isProvisioned(); }
+    match /finance_payments/{id}     { allow read, write: if isProvisioned(); }
+    match /finance_payables/{id}     { allow read, write: if isProvisioned(); }
+    match /finance_vendors/{id}      { allow read, write: if isProvisioned(); }
+    match /finance_hsn_codes/{id}    { allow read, write: if isProvisioned(); }
+    match /finance_invoices/{id}     { allow read, write: if isProvisioned(); }
+    match /company_settings/{id}     { allow read: if isProvisioned(); allow write: if isAdmin(); }
 
     // Anything not explicitly listed above is denied by default.
     match /{document=**} {
