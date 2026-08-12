@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore'
+import { collection, getDocs, getDoc, addDoc, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
@@ -47,6 +47,19 @@ const CURRENCY_SYMBOLS = { INR: '₹', USD: '$', CNY: '¥' }
 const DEFAULT_FX = { INR: 1, USD: 84, CNY: 11.5 }
 const today = () => new Date().toISOString().slice(0, 10)
 
+// Opportunity names used to be free-typed and drifted inconsistent across the
+// team. Build it instead from the structured fields that actually identify
+// the opportunity: Customer / Site / Product-solution / Throughput / Notes.
+const buildOpportunityTitle = (f, customer, site) => {
+  const parts = []
+  if (customer?.shopName)            parts.push(customer.shopName)
+  if (site?.siteName)                parts.push(site.siteName)
+  if ((f.products || []).length)     parts.push(f.products.join('/'))
+  if (f.throughputPPH)               parts.push(`${Number(f.throughputPPH).toLocaleString()} PPH`)
+  if (f.notes?.trim())               parts.push(f.notes.trim())
+  return parts.join(' — ')
+}
+
 // AY = Calendar Year: AY 2026 = Jan 1, 2026 – Dec 31, 2026
 const currentAYYear  = () => new Date().getFullYear()
 const ayLabel        = (y) => `AY ${y}`
@@ -60,8 +73,10 @@ const buildAYOptions = () => {
 }
 const AY_OPTIONS = buildAYOptions()
 const CURRENT_AY = currentAYYear()
-// Products / solutions offered in this opportunity
-const PRODUCTS = [
+// Products / solutions offered in this opportunity — admin-editable via the
+// "⚙ Manage list" button on the deal form (stored in company_settings/product_catalog).
+// This is the seed used the first time that doc doesn't exist yet.
+const DEFAULT_PRODUCTS = [
   'Linear Sorter', 'Cross Belt Sorter', 'Pivot Wheel Sorter', 'Roller Conveyor',
   'Belt Conveyor', 'DWS', 'FAST Sorter', 'Mini Load', 'Racking', 'Cranes', '4 Way Shuttle',
 ]
@@ -96,7 +111,7 @@ const emptyForm = {
   linkedDealId: '',                  // for spares/service — parent won deal
   linkedDealTitle: '',
   linkedProjectNumber: '',
-  products: [],                      // string[] — from PRODUCTS list or custom
+  products: [],                      // string[] — from the admin-managed catalog or custom
   throughputPPH: '',                 // throughput requirement in parcels-per-hour
 }
 
@@ -159,6 +174,9 @@ export default function Pipeline() {
   const [customers, setCustomers] = useState([])
   const [sites, setSites] = useState([])
   const [warehouses, setWarehouses] = useState([])
+  const [productCatalog, setProductCatalog] = useState(DEFAULT_PRODUCTS)
+  const [showProductAdmin, setShowProductAdmin] = useState(false)
+  const [newProductInput, setNewProductInput] = useState('')
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -227,11 +245,12 @@ export default function Pipeline() {
   const load = async () => {
     try {
       // users loaded from session cache (useUsers) — no read here
-      const [dealSnap, custSnap, siteSnap, whSnap] = await Promise.all([
+      const [dealSnap, custSnap, siteSnap, whSnap, catalogSnap] = await Promise.all([
         getDocs(collection(db, 'crm_deals')),
         getDocs(collection(db, 'crm_customers')),
         getDocs(collection(db, 'crm_sites')),
         getDocs(collection(db, 'inventory_warehouses')),
+        getDoc(doc(db, 'company_settings', 'product_catalog')),
       ])
       const dealData = []
       dealSnap.forEach(d => dealData.push({ id: d.id, ...d.data() }))
@@ -248,9 +267,32 @@ export default function Pipeline() {
       // the edit form for Wayzim salespeople whose companies[] isn't set in their profile.
       setCustomers(custData.filter(c => c.active !== false))
       setSites(siteData)
+      if (catalogSnap.exists() && Array.isArray(catalogSnap.data().products)) {
+        setProductCatalog(catalogSnap.data().products)
+      } else if (isAdmin) {
+        // First run — seed it so the list is admin-editable from here on.
+        setDoc(doc(db, 'company_settings', 'product_catalog'), { products: DEFAULT_PRODUCTS }).catch(() => {})
+      }
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
   }
+
+  // Admin-only: persist an edited Products/Solutions catalog to Firestore
+  // (company_settings/product_catalog — same collection CompanySettings.jsx
+  // uses, just a non-company doc id, so no rules change is needed).
+  const saveProductCatalog = async (next) => {
+    setProductCatalog(next)
+    try {
+      await setDoc(doc(db, 'company_settings', 'product_catalog'), { products: next, updatedAt: new Date().toISOString() })
+    } catch (e) { console.error(e) }
+  }
+  const addCatalogProduct = () => {
+    const val = newProductInput.trim()
+    if (!val || productCatalog.includes(val)) { setNewProductInput(''); return }
+    saveProductCatalog([...productCatalog, val])
+    setNewProductInput('')
+  }
+  const removeCatalogProduct = (p) => saveProductCatalog(productCatalog.filter(x => x !== p))
 
   // On-demand pull of the latest data — deals/customers/sites created or edited
   // by other users, plus any team-member approvals, since we don't use live
@@ -341,6 +383,8 @@ export default function Pipeline() {
       linkedDealId: d.linkedDealId || '',
       linkedDealTitle: d.linkedDealTitle || '',
       linkedProjectNumber: d.linkedProjectNumber || '',
+      products: d.products || [],
+      throughputPPH: d.throughputPPH || '',
     })
     setShowForm(true)
   }
@@ -355,17 +399,23 @@ export default function Pipeline() {
   const handleSave = async (e) => {
     e.preventDefault()
     setError('')
-    if (!form.title.trim()) { setError('Opportunity title is required.'); return }
+    if (!form.customerId)   { setError('Customer is required.'); return }
+    if (!form.siteId)       { setError('Site is required.'); return }
+    if (!(form.products || []).length) { setError('At least one Product / Solution is required.'); return }
+    if (!form.throughputPPH) { setError('Throughput is required.'); return }
+    if (!form.notes.trim())  { setError('Additional details (Notes) are required.'); return }
+    const customer = customers.find(c => c.id === form.customerId)
+    const site     = sites.find(s => s.id === form.siteId)
+    const title    = buildOpportunityTitle(form, customer, site)
+    if (!title.trim()) { setError('Could not generate an opportunity name — check the fields above.'); return }
     setSaving(true)
     try {
-      const customer = customers.find(c => c.id === form.customerId)
       const endCustomer = form.endCustomerId ? customers.find(c => c.id === form.endCustomerId) : null
-      const site = sites.find(s => s.id === form.siteId)
       const currency = form.currency || 'INR'
       const valueNum = Number(form.value) || 0
       const valueINR = Math.round(valueNum * (fxRates[currency] || 1))
       const payload = {
-        title: form.title,
+        title,
         customerId: form.customerId,
         customerName: customer?.shopName || '',
         endCustomerId: form.endCustomerId || '',
@@ -393,6 +443,8 @@ export default function Pipeline() {
         linkedDealId: form.linkedDealId || '',
         linkedDealTitle: form.linkedDealTitle || '',
         linkedProjectNumber: form.linkedProjectNumber || '',
+        products: form.products || [],
+        throughputPPH: form.throughputPPH || '',
       }
       if (editing) {
         await updateDoc(doc(db, 'crm_deals', editing), { ...payload, updatedAt: new Date().toISOString() })
@@ -617,6 +669,12 @@ export default function Pipeline() {
 
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>
 
+  const previewTitle = buildOpportunityTitle(
+    form,
+    customers.find(c => c.id === form.customerId),
+    sites.find(s => s.id === form.siteId)
+  )
+
   return (
     <div className="p-6 space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between flex-shrink-0">
@@ -780,16 +838,18 @@ export default function Pipeline() {
           <h3 className="font-bold text-slate-800 mb-4">{editing ? 'Edit Opportunity' : 'Add Opportunity'}</h3>
           <form onSubmit={handleSave} className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Opportunity Title *</label>
-              <input type="text" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} autoComplete="off"
-                placeholder="e.g. Annual supply contract — Sharma Trading Co."
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Opportunity Name <span className="text-slate-400 font-normal text-xs">(auto-generated from the fields below)</span>
+              </label>
+              <div className="w-full px-4 py-2 border border-dashed border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-700 min-h-[2.5rem] flex items-center">
+                {previewTitle || <span className="text-slate-400">Fill in Customer, Site, Products/Solutions, Throughput and Notes below…</span>}
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Customer <span className="text-slate-400 font-normal text-xs">(who places the order / bills to)</span>
+                Customer * <span className="text-slate-400 font-normal text-xs">(who places the order / bills to)</span>
               </label>
-              <select value={form.customerId} onChange={e => handleCustomerChange(e.target.value)}
+              <select value={form.customerId} onChange={e => handleCustomerChange(e.target.value)} required
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">No customer linked</option>
                 {customers.map(c => <option key={c.id} value={c.id}>{c.shopName}</option>)}
@@ -811,9 +871,9 @@ export default function Pipeline() {
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Site (optional)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Site *</label>
               <select value={form.siteId} onChange={e => setForm(p => ({ ...p, siteId: e.target.value }))}
-                disabled={!form.customerId && !form.endCustomerId}
+                disabled={!form.customerId && !form.endCustomerId} required
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100">
                 <option value="">No site linked</option>
                 {/* Show sites for billing customer OR end customer */}
@@ -880,8 +940,10 @@ export default function Pipeline() {
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
-              <input type="text" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} autoComplete="off"
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Additional Details * <span className="text-slate-400 font-normal text-xs">(used in the opportunity name)</span>
+              </label>
+              <input type="text" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} autoComplete="off" required
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             {isAdmin && (
@@ -1032,9 +1094,38 @@ export default function Pipeline() {
 
             {/* Products / Solutions */}
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-2">Products / Solutions</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-slate-700">Products / Solutions *</label>
+                {isAdmin && (
+                  <button type="button" onClick={() => setShowProductAdmin(o => !o)}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                    {showProductAdmin ? '✕ Close' : '⚙ Manage list'}
+                  </button>
+                )}
+              </div>
+              {isAdmin && showProductAdmin && (
+                <div className="border border-blue-200 bg-blue-50 rounded-lg p-3 mb-2 space-y-2">
+                  <p className="text-xs text-blue-700">Add or remove items in the shared Products / Solutions list — changes apply for every user immediately.</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {productCatalog.map(p => (
+                      <span key={p} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-white border border-blue-200 text-blue-700">
+                        {p}
+                        <button type="button" onClick={() => removeCatalogProduct(p)} className="hover:text-red-500 ml-0.5" title="Remove from catalog">✕</button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input type="text" value={newProductInput} onChange={e => setNewProductInput(e.target.value)}
+                      placeholder="New product / solution name…"
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCatalogProduct() } }}
+                      className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    <button type="button" onClick={addCatalogProduct}
+                      className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">+ Add</button>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 border border-slate-200 rounded-lg p-3 bg-slate-50 mb-2">
-                {PRODUCTS.map(p => {
+                {productCatalog.map(p => {
                   const checked = (form.products || []).includes(p)
                   return (
                     <label key={p} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition ${checked ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-white'}`}>
@@ -1070,7 +1161,7 @@ export default function Pipeline() {
                 </div>
               )}
               {/* Custom (non-standard) product tags */}
-              {(form.products || []).filter(p => !PRODUCTS.includes(p)).map(p => (
+              {(form.products || []).filter(p => !productCatalog.includes(p)).map(p => (
                 <span key={p} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700 mr-1 mt-1.5">
                   {p}
                   <button type="button" onClick={() => setForm(prev => ({ ...prev, products: (prev.products || []).filter(x => x !== p) }))} className="hover:text-red-500 ml-0.5">✕</button>
@@ -1081,11 +1172,11 @@ export default function Pipeline() {
             {/* Throughput Requirement */}
             <div className="col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Throughput Requirement <span className="font-normal text-xs text-slate-400">(PPH — Parcels Per Hour)</span>
+                Throughput Requirement * <span className="font-normal text-xs text-slate-400">(PPH — Parcels Per Hour)</span>
               </label>
               <div className="flex items-center gap-2">
                 <input type="number" value={form.throughputPPH} onChange={e => setForm(p => ({ ...p, throughputPPH: e.target.value }))}
-                  placeholder="e.g. 5000" min="0"
+                  placeholder="e.g. 5000" min="0" required
                   className="w-48 px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <span className="text-sm text-slate-500 font-medium">PPH</span>
                 {form.throughputPPH && <span className="text-xs text-slate-400">= {Number(form.throughputPPH).toLocaleString()} parcels/hour</span>}
@@ -1422,7 +1513,7 @@ export default function Pipeline() {
         <RequestUserModal
           initialName={requestPrefillName}
           dealId={editing || ''}
-          dealTitle={form.title || ''}
+          dealTitle={previewTitle || form.title || ''}
           onClose={() => setShowRequestUser(false)}
           onSubmitted={() => setShowRequestUser(false)}
         />

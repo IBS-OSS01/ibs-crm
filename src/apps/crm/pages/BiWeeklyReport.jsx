@@ -256,15 +256,45 @@ async function buildPPT(allDeals, userProfile, config) {
     return (a.closingDate || '9999').localeCompare(b.closingDate || '9999')
   })
 
-  // ── Helper: latest update text for a deal ─────────────────────────────────
-  const getLatestUpdate = (d) => {
-    const acts  = [...(d.activities || [])].sort((a, b) => (b.at || '').localeCompare(a.at || ''))
-    const notes = [...(d.meetingNotes || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
-    const a0 = acts[0]; const n0 = notes[0]
-    if (!a0 && !n0) return { date: '', text: 'No updates yet' }
-    const ad = a0?.at?.slice(0, 10) || ''; const nd = n0?.date || ''
-    if (ad >= nd) return { date: ad, text: (a0.note || a0.text || '').slice(0, 200) || 'No updates yet' }
-    return { date: nd, text: (n0.nextAction || n0.discussion || n0.agenda || '').slice(0, 200) || 'No updates yet' }
+  // ── Helper: latest update PER assigned team member for a deal ─────────────
+  // Previously this only surfaced the single most-recent update on the deal
+  // overall, which in practice meant whichever teammate happened to log last
+  // silently hid everyone else's updates. This instead shows one line per
+  // assigned team member (sales manager + team members), each their own
+  // latest update — only for members who've actually posted one.
+  const getTeamUpdates = (d) => {
+    const acts = (d.activities || []).map(a => ({
+      uid: a.addedBy, name: a.addedByName,
+      date: (a.at || a.createdAt || '').slice(0, 10),
+      text: (a.summary || a.note || a.text || '').trim(),
+    }))
+    const notes = (d.meetingNotes || []).map(n => ({
+      uid: n.addedBy, name: n.addedByName,
+      date: n.date || (n.createdAt || '').slice(0, 10),
+      text: (n.nextAction || n.discussion || n.agenda || '').trim(),
+    }))
+    const all = [...acts, ...notes]
+      .filter(e => e.text)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+
+    // Assigned team for this deal — sales manager first, then team members.
+    const team = []
+    if (d.salesManagerId) team.push({ uid: d.salesManagerId, name: d.salesManagerName || d.assignedToName || 'Sales Manager' })
+    ;(d.teamMembers || []).forEach(t => {
+      if (t.userId && !team.some(m => m.uid === t.userId)) team.push({ uid: t.userId, name: t.userName || t.name || 'Team member' })
+    })
+
+    const perMember = team
+      .map(m => ({ name: m.name, entry: all.find(e => e.uid === m.uid) }))
+      .filter(m => m.entry)
+
+    if (perMember.length === 0) {
+      // No author-tagged update matched an assigned member (legacy data, or
+      // nobody assigned yet) — fall back to the single most recent update.
+      const latest = all[0]
+      return latest ? [{ name: '', date: latest.date, text: latest.text.slice(0, 200) }] : [{ name: '', date: '', text: 'No updates yet' }]
+    }
+    return perMember.map(m => ({ name: m.name, date: m.entry.date, text: m.entry.text.slice(0, 140) }))
   }
 
   // ── SLIDES 3+: PER-SALESPERSON ─────────────────────────────────────────────
@@ -288,15 +318,19 @@ async function buildPPT(allDeals, userProfile, config) {
       s.background = { color: C.white }
       hdr(s, `${smName} — Active Opportunities (${smDeals.length})${pageLabel}`, `Week ${weekNum}  ·  ${config.companyLabel}`)
 
-      const hRow = ['#', 'Opportunity', 'Customer', 'Stage', 'Value', 'Close', 'Latest Update'].map(t => ({
+      const hRow = ['#', 'Opportunity', 'Customer', 'Stage', 'Value', 'Close', 'Product / Throughput', 'Latest Update'].map(t => ({
         text: t, options: { bold: true, color: C.white, fill: { color: C.navy }, fontSize: 8, align: 'center', fontFace: 'Calibri' },
       }))
       const tRows = [hRow]
       chunk.forEach((d, i) => {
-        const bg  = i % 2 === 0 ? C.row0 : C.row1
-        const val = getVal(d)
-        const ov  = d.closingDate && d.closingDate < todayISO
-        const upd = getLatestUpdate(d)
+        const bg      = i % 2 === 0 ? C.row0 : C.row1
+        const val     = getVal(d)
+        const ov      = d.closingDate && d.closingDate < todayISO
+        const updates = getTeamUpdates(d)
+        const prods   = d.products || []
+        const prodTxt = prods.length ? (prods.length > 3 ? `${prods.slice(0, 3).join(', ')} +${prods.length - 3}` : prods.join(', ')) : ''
+        const thrTxt  = d.throughputPPH ? `⚡ ${Number(d.throughputPPH).toLocaleString()} PPH` : ''
+        const prodLines = [prodTxt, thrTxt].filter(Boolean)
         tRows.push([
           { text: String(startIdx + i + 1),
             options: { align: 'center', fontSize: 7.5, fill: { color: bg }, color: C.slate, fontFace: 'Calibri', valign: 'top' } },
@@ -310,14 +344,21 @@ async function buildPPT(allDeals, userProfile, config) {
             options: { fontSize: 7.5, fill: { color: bg }, color: C.accent, bold: true, align: 'right', fontFace: 'Calibri', valign: 'top' } },
           { text: d.closingDate || '-',
             options: { fontSize: 7.5, fill: { color: ov ? C.redBg : bg }, color: ov ? C.red : C.text, align: 'center', fontFace: 'Calibri', valign: 'top' } },
-          { text: upd.date ? `[${upd.date}] ${upd.text}` : (upd.text || '-'),
-            options: { fontSize: 7.5, fill: { color: bg }, color: C.slate, fontFace: 'Calibri', wrap: true, valign: 'top' } },
+          { text: prodLines.length
+              ? prodLines.map((l, idx) => ({ text: l, options: { breakLine: idx < prodLines.length - 1 } }))
+              : '-',
+            options: { fontSize: 7, fill: { color: bg }, color: C.text, fontFace: 'Calibri', wrap: true, valign: 'top' } },
+          { text: updates.map((u, idx) => ({
+              text: u.name ? `${u.name}${u.date ? ` [${u.date}]` : ''}: ${u.text}` : (u.text || '-'),
+              options: { breakLine: idx < updates.length - 1, bold: idx === 0 && updates.length > 1 },
+            })),
+            options: { fontSize: 7, fill: { color: bg }, color: C.slate, fontFace: 'Calibri', wrap: true, valign: 'top' } },
         ])
       })
       // rowH as array: header at 0.36", each data row at 0.58" → fits within slide
       s.addTable(tRows, {
         x: 0.35, y: 0.88, w: 9.3,
-        colW: [0.25, 2.3, 1.5, 0.72, 0.88, 0.8, 2.85],
+        colW: [0.25, 1.85, 1.15, 0.62, 0.78, 0.72, 1.15, 2.78],
         border: { pt: 0.5, color: 'E2E8F0' },
         rowH: [0.36, ...Array(chunk.length).fill(0.58)],
       })

@@ -31,7 +31,7 @@ export default function Customers() {
   const canSelectCompany = isAdmin || userCompanies.length > 1
   const defaultCompany = userCompanies[0] || 'UIPL'
   const [customers, setCustomers] = useState([])
-  const [deals, setDeals]         = useState([])    // used to determine contact visibility
+  const [deals, setDeals]         = useState([])    // used by CustomerHistoryModal
   const [contacts, setContacts]   = useState([])    // crm_contacts, all customers (filtered per-row below)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -84,15 +84,12 @@ export default function Customers() {
     try { await load() } finally { setRefreshing(false) }
   }
 
-  // Contacts tab is visible to: admins always; salespeople only for customers they have a deal on
-  const canSeeContacts = (customer) => {
-    if (isAdmin) return true
-    return deals.some(d => {
-      if (d.customerId !== customer.id) return false
-      const ids = d.assignedUserIds || (d.assignedToId ? [d.assignedToId] : [])
-      return ids.includes(user.uid)
-    })
-  }
+  // Contacts are shared CRM data (any signed-in user can already read/write
+  // crm_contacts directly), so the "only for customers you have a deal on"
+  // restriction here just hid the button from salespeople without actually
+  // protecting anything — including for a customer they were about to create
+  // their very first deal for. Show it to everyone, same as admin.
+  const canSeeContacts = () => true
 
   const resetForm = () => { setForm({ ...emptyForm, companies: [defaultCompany] }); setEditing(null); setError(''); setGstStatus('') }
 
