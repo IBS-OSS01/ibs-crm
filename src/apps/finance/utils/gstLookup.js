@@ -1,10 +1,20 @@
-// GST Taxpayer Lookup — gstincheck.co.in API
-// Simple GET request, no headers needed.
-// Endpoint: https://sheet.gstincheck.co.in/check/{API_KEY}/{GSTIN}
-// Docs: https://documenter.getpostman.com/view/66843/2sBXirj8Lf
+// GST Taxpayer Lookup — Appyflow (https://appyflow.in/verify-gst/)
+// Switched from gstincheck.co.in after its free quota (20 test requests)
+// ran out. Appyflow's free tier is 50 requests/month; get a key_secret at
+// https://dashboard.gstapi.appyflow.in/ and set VITE_APPYFLOW_GST_KEY in
+// .env.local (never commit the real key — .env.local is gitignored).
+//
+// Endpoint: GET https://appyflow.in/api/verifyGST?gstNo={GSTIN}&key_secret={KEY}
+// Docs: https://appyflow.in/verify-gst/#docs
+//
+// Both this and the old provider are thin wrappers around the same
+// government "Search Taxpayer" data, so the underlying field names
+// (lgnm, tradeNam, pradr.addr, ctb, dty, sts/stj...) are shared — the
+// parsing below reads defensively across the small naming differences
+// seen between providers rather than assuming one exact shape.
 
-const GST_API_KEY  = '1a2e0619bd8ea535b1ade4e66d69aab7'
-const GST_API_BASE = 'https://sheet.gstincheck.co.in/check'
+const GST_API_KEY  = import.meta.env.VITE_APPYFLOW_GST_KEY || ''
+const GST_API_BASE = 'https://appyflow.in/api/verifyGST'
 
 /**
  * Fetch taxpayer details from GST portal by GSTIN.
@@ -13,7 +23,12 @@ const GST_API_BASE = 'https://sheet.gstincheck.co.in/check'
  */
 export async function fetchGstinDetails(gstin) {
   const cleanGstin = gstin.toUpperCase().trim()
-  const url = `${GST_API_BASE}/${GST_API_KEY}/${cleanGstin}`
+
+  if (!GST_API_KEY) {
+    throw new Error('GST lookup is not configured — set VITE_APPYFLOW_GST_KEY in .env.local (get a free key at dashboard.gstapi.appyflow.in)')
+  }
+
+  const url = `${GST_API_BASE}?gstNo=${encodeURIComponent(cleanGstin)}&key_secret=${encodeURIComponent(GST_API_KEY)}`
 
   let json
   try {
@@ -23,13 +38,18 @@ export async function fetchGstinDetails(gstin) {
     throw new Error('Network error — check internet connection')
   }
 
-  // flag: true = found, false = not found / error
-  if (!json?.flag || !json.data) {
+  if (json?.error) {
+    throw new Error(json.message || 'GSTIN not found or invalid')
+  }
+
+  // Appyflow nests the result under taxpayerInfo; be tolerant of a flatter
+  // shape too in case that changes.
+  const d = json?.taxpayerInfo || json?.data || json
+  if (!d || !(d.gstin || d.lgnm)) {
     throw new Error(json?.message || 'GSTIN not found or invalid')
   }
 
-  const d   = json.data
-  const adr = d.pradr?.addr || {}
+  const adr = d.pradr?.addr || d.adr || {}
 
   // Prefer district for city; fall back to locality
   const city = (adr.dst && adr.dst.trim())
@@ -44,11 +64,11 @@ export async function fetchGstinDetails(gstin) {
     tradeName:    d.tradeNam || '',   // trade name
     gstin:        d.gstin    || cleanGstin,
     pan,                              // extracted from GSTIN
-    status:       d.sts      || 'Unknown',  // "Active" | "Cancelled"
+    status:       d.sts || d.status || 'Unknown',  // "Active" | "Cancelled"
     businessType: d.ctb      || '',   // "Private Limited Company" | "Proprietorship"
     regType:      d.dty      || '',   // "Regular" | "Composition"
     state:        adr.stcd   || '',   // "Maharashtra"
-    address:      d.pradr?.adr || '', // full formatted address string
+    address:      d.pradr?.adr || d.adr || '', // full formatted address string
     city,                             // "Pune"
     pincode:      adr.pncd   || '',   // "411014"
   }
