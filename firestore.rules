@@ -120,6 +120,16 @@ service cloud.firestore {
     match /finance_invoices/{id}     { allow read, write: if isProvisioned(); }
     match /company_settings/{id}     { allow read: if isProvisioned(); allow write: if isAdmin(); }
 
+    // General Ledger — Chart of Accounts (admin-managed reference data shared
+    // across both companies; individual transactions/journal lines carry a
+    // `company` field for per-entity reporting, same pattern as finance_invoices)
+    // and manual Journal Entries for adjustments/corrections/opening balances
+    // that have no natural source document. Invoices/payments/expenses/payables
+    // are NOT auto-posted here — they're derived into virtual GL lines at
+    // read-time by finance/utils/ledger.js and never separately persisted.
+    match /finance_accounts/{id}         { allow read: if isProvisioned(); allow write: if isAdmin(); }
+    match /finance_journal_entries/{id}  { allow read: if isProvisioned(); allow write: if isAdmin(); }
+
     // Anything not explicitly listed above is denied by default.
     match /{document=**} {
       allow read, write: if false;

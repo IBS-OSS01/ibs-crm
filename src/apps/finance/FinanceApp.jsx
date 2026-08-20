@@ -12,6 +12,11 @@ import CompanySettings from './pages/CompanySettings.jsx'
 import Vendors from './pages/Vendors.jsx'
 import HsnCodes from './pages/HsnCodes.jsx'
 import Invoices from './pages/Invoices.jsx'
+import ChartOfAccounts from './pages/ChartOfAccounts.jsx'
+import JournalEntries from './pages/JournalEntries.jsx'
+import TrialBalance from './pages/TrialBalance.jsx'
+import GeneralLedger from './pages/GeneralLedger.jsx'
+import BalanceSheet from './pages/BalanceSheet.jsx'
 import ModuleMyTasks from '../../components/tasks/ModuleMyTasks.jsx'
 import ModuleTaskTracker from '../../components/tasks/ModuleTaskTracker.jsx'
 
@@ -34,6 +39,11 @@ export default function FinanceApp() {
     { label: '📋 Project Costs',   path: '/finance/projectcosts',  match: (p) => p.startsWith('/finance/projectcosts') },
     { label: '🏪 Vendors',         path: '/finance/vendors',       match: (p) => p.startsWith('/finance/vendors') },
     { label: '📋 HSN / SAC',       path: '/finance/hsn',           match: (p) => p.startsWith('/finance/hsn') },
+    { label: '📚 Chart of Accounts', path: '/finance/accounts',    match: (p) => p.startsWith('/finance/accounts') },
+    { label: '📝 Journal Entries', path: '/finance/journal',       match: (p) => p.startsWith('/finance/journal') },
+    { label: '⚖️ Trial Balance',   path: '/finance/trial-balance', match: (p) => p.startsWith('/finance/trial-balance') },
+    { label: '📖 General Ledger',  path: '/finance/gl',            match: (p) => p.startsWith('/finance/gl') },
+    { label: '🏦 Balance Sheet',   path: '/finance/balance-sheet', match: (p) => p.startsWith('/finance/balance-sheet') },
     { label: '⚙️ Company Settings', path: '/finance/settings',     match: (p) => p.startsWith('/finance/settings') },
     { label: '✅ My Tasks',         path: '/finance/my-tasks',      match: (p) => p.startsWith('/finance/my-tasks') },
     ...(isManager ? [{ label: '📊 Task Tracker', path: '/finance/task-tracker', match: (p) => p.startsWith('/finance/task-tracker') }] : []),
@@ -63,6 +73,11 @@ export default function FinanceApp() {
           <Route path="/projectcosts" element={<ProjectCosts />} />
           <Route path="/vendors"      element={<Vendors />} />
           <Route path="/hsn"          element={<HsnCodes />} />
+          <Route path="/accounts"       element={<ChartOfAccounts />} />
+          <Route path="/journal"        element={<JournalEntries />} />
+          <Route path="/trial-balance"  element={<TrialBalance />} />
+          <Route path="/gl"             element={<GeneralLedger />} />
+          <Route path="/balance-sheet"  element={<BalanceSheet />} />
           <Route path="/settings"     element={<CompanySettings />} />
           <Route path="/my-tasks"     element={<ModuleMyTasks />} />
           <Route path="/task-tracker" element={<ModuleTaskTracker />} />
