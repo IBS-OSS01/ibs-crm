@@ -130,6 +130,11 @@ service cloud.firestore {
     match /finance_accounts/{id}         { allow read: if isProvisioned(); allow write: if isAdmin(); }
     match /finance_journal_entries/{id}  { allow read: if isProvisioned(); allow write: if isAdmin(); }
 
+    // Banking — bank/cash account master data (name, account number, IFSC,
+    // opening balance). Not individually mapped in the GL yet; same
+    // read/write pattern as finance_vendors/finance_hsn_codes.
+    match /finance_bank_accounts/{id}    { allow read, write: if isProvisioned(); }
+
     // Anything not explicitly listed above is denied by default.
     match /{document=**} {
       allow read, write: if false;
