@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import HRDashboard from './pages/HRDashboard.jsx'
 import Employees from './pages/Employees.jsx'
 import EmployeeProfile from './pages/EmployeeProfile.jsx'
+import OrgChart from './pages/OrgChart.jsx'
 import Attendance from './pages/Attendance.jsx'
 import Leaves from './pages/Leaves.jsx'
 import Salary from './pages/Salary.jsx'
@@ -25,6 +26,7 @@ export default function HRApp() {
   const TABS = [
     { label: '📊 Dashboard',     path: '/hr',               match: (p) => p === '/hr' || p === '/hr/' },
     { label: '👤 Employees',     path: '/hr/employees',     match: (p) => p.startsWith('/hr/employees') },
+    { label: '🧭 Org Chart',     path: '/hr/org-chart',     match: (p) => p.startsWith('/hr/org-chart') },
     { label: '📅 Attendance',    path: '/hr/attendance',    match: (p) => p.startsWith('/hr/attendance') },
     { label: '🏖️ Leaves',       path: '/hr/leaves',        match: (p) => p.startsWith('/hr/leaves') },
     { label: '💵 Salary',          path: '/hr/salary',           match: (p) => p.startsWith('/hr/salary') && !p.startsWith('/hr/salary-revision') },
@@ -51,6 +53,7 @@ export default function HRApp() {
         <Routes>
           <Route path="/"             element={<HRDashboard />} />
           <Route path="/employees"        element={<Employees />} />
+          <Route path="/org-chart"        element={<OrgChart />} />
           <Route path="/employee/:id"     element={<EmployeeProfile />} />
           <Route path="/attendance"       element={<Attendance />} />
           <Route path="/leaves"           element={<Leaves />} />

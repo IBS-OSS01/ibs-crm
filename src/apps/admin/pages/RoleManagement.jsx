@@ -4,7 +4,7 @@ import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { ensureDefaultRoles } from '../defaultRoles'
 
-// Same module list used in UserManagement's per-user "Module Access" toggles.
+// Same module list used in Employees' per-user "Module Access" toggles.
 const MODULES = ['CRM', 'SERVICES', 'HR', 'PROJECTS', 'FINANCE']
 const emptyForm = { name: '', departments: [] }
 

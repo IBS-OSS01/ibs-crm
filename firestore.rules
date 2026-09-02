@@ -43,6 +43,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Organisation departments (Admin > Departments tab) — same shape as
+    // roles: any provisioned user can read them (needed for the Employees
+    // "Department" dropdown), only admins can create/edit/delete.
+    match /departments/{deptId} {
+      allow read: if isProvisioned();
+      allow write: if isAdmin();
+    }
+
     // General Tasks module — all provisioned users can read and write their
     // own tasks; admins/managers can read everything (enforced in the app layer).
     match /tasks/{taskId} {
