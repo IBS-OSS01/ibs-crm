@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react'
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
+import ItemsImportModal, { downloadItemsTemplate } from './ItemsImportModal'
+
+const EMPTY_FORM = { name: '', sku: '', unit: 'pcs', minStock: 0, description: '' }
 
 export default function ItemsCatalog() {
   const { user, userProfile } = useAuth()
@@ -9,7 +12,9 @@ export default function ItemsCatalog() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', sku: '', unit: 'pcs', minStock: 0, description: '' })
+  const [editingId, setEditingId] = useState(null)
+  const [showImport, setShowImport] = useState(false)
+  const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const isManager = ['admin', 'service_manager', 'project_manager'].includes(userProfile?.role)
@@ -31,14 +36,51 @@ export default function ItemsCatalog() {
     if (!form.name || !form.sku) { setError('Name and SKU are required.'); return }
     setSaving(true)
     try {
-      const newItem = { ...form, minStock: parseInt(form.minStock), createdBy: user.uid, createdAt: new Date().toISOString() }
-      const docRef = await addDoc(collection(db, 'inventory_items'), newItem)
-      setItems(prev => [...prev, { id: docRef.id, ...newItem }].sort((a, b) => (a.name || '').localeCompare(b.name || '')))
-      setForm({ name: '', sku: '', unit: 'pcs', minStock: 0, description: '' })
+      const payload = { ...form, minStock: parseInt(form.minStock) || 0 }
+      if (editingId) {
+        await updateDoc(doc(db, 'inventory_items', editingId), {
+          ...payload, updatedBy: user.uid, updatedAt: new Date().toISOString(),
+        })
+        setItems(prev => prev.map(i => i.id === editingId ? { ...i, ...payload } : i)
+          .sort((a, b) => (a.name || '').localeCompare(b.name || '')))
+      } else {
+        const newItem = { ...payload, createdBy: user.uid, createdAt: new Date().toISOString() }
+        const docRef = await addDoc(collection(db, 'inventory_items'), newItem)
+        setItems(prev => [...prev, { id: docRef.id, ...newItem }].sort((a, b) => (a.name || '').localeCompare(b.name || '')))
+      }
+      setForm(EMPTY_FORM)
+      setEditingId(null)
       setShowForm(false)
       setError('')
     } catch (err) { setError('Error: ' + err.message) }
     finally { setSaving(false) }
+  }
+
+  const handleEdit = (item) => {
+    setForm({
+      name: item.name || item.itemName || '',
+      sku: item.sku || '',
+      unit: item.unit || 'pcs',
+      minStock: item.minStock ?? 0,
+      description: item.description || '',
+    })
+    setEditingId(item.id)
+    setShowForm(true)
+  }
+
+  const handleAddNew = () => {
+    if (showForm && !editingId) { setShowForm(false); return }
+    setForm(EMPTY_FORM)
+    setEditingId(null)
+    setShowForm(true)
+    setError('')
+  }
+
+  const handleCancelForm = () => {
+    setForm(EMPTY_FORM)
+    setEditingId(null)
+    setShowForm(false)
+    setError('')
   }
 
   const handleDelete = async (id) => {
@@ -63,17 +105,35 @@ export default function ItemsCatalog() {
           <p className="text-slate-500 text-sm">{items.length} items in catalog</p>
         </div>
         {isManager && (
-          <button onClick={() => setShowForm(!showForm)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
-            {showForm ? '✕ Cancel' : '+ Add Item'}
-          </button>
+          <div className="flex gap-2">
+            <button onClick={downloadItemsTemplate}
+              className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">
+              ⬇ Template
+            </button>
+            <button onClick={() => setShowImport(true)}
+              className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">
+              ⬆ Import
+            </button>
+            <button onClick={handleAddNew}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+              {showForm && !editingId ? '✕ Cancel' : '+ Add Item'}
+            </button>
+          </div>
         )}
       </div>
 
-      {/* Add Item Form */}
+      {showImport && (
+        <ItemsImportModal
+          existingItems={items}
+          onClose={() => setShowImport(false)}
+          onImported={() => { setShowImport(false); fetchItems() }}
+        />
+      )}
+
+      {/* Add / Edit Item Form */}
       {showForm && (
         <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-5">
-          <h3 className="font-bold text-slate-800 mb-4">Add New Item</h3>
+          <h3 className="font-bold text-slate-800 mb-4">{editingId ? 'Edit Item' : 'Add New Item'}</h3>
           {error && <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
           <form onSubmit={handleSave} className="grid grid-cols-2 gap-4">
             <div>
@@ -110,9 +170,9 @@ export default function ItemsCatalog() {
             <div className="col-span-2 flex gap-3">
               <button type="submit" disabled={saving}
                 className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-50">
-                {saving ? 'Saving...' : 'Save Item'}
+                {saving ? 'Saving...' : editingId ? 'Update Item' : 'Save Item'}
               </button>
-              <button type="button" onClick={() => setShowForm(false)}
+              <button type="button" onClick={handleCancelForm}
                 className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition">
                 Cancel
               </button>
@@ -159,7 +219,10 @@ export default function ItemsCatalog() {
                   <td className="px-4 py-3 text-slate-500 text-xs">{item.description || '—'}</td>
                   {isManager && (
                     <td className="px-4 py-3">
-                      <button onClick={() => handleDelete(item.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
+                      <div className="flex gap-3">
+                        <button onClick={() => handleEdit(item)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Edit</button>
+                        <button onClick={() => handleDelete(item.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
+                      </div>
                     </td>
                   )}
                 </tr>
