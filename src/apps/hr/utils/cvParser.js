@@ -8,7 +8,7 @@
  *
  * Reliability is NOT uniform across fields:
  *   - Email / Mobile: fixed formats, regex is reliable (~90%+).
- *   - Name / Designation / Experience / Location: heuristic, usually right but not always.
+ *   - Name / Designation / Experience / Location / Education: heuristic, usually right but not always.
  *   - Company: hardest to get right from free text — treat as a starting guess.
  * The calling page must show all of these in an editable form and let a
  * human confirm/correct before saving — never save auto-extracted fields silently.
@@ -138,6 +138,39 @@ const COMPANY_RE = /\b((?:[A-Z][A-Za-z&.'-]*\s){0,4}[A-Z][A-Za-z&.'-]*\s(?:Pvt\.
 const DESIGNATION_KEYWORDS = 'Engineer|Developer|Manager|Executive|Analyst|Consultant|Designer|Director|Officer|Associate|Specialist|Lead|Architect|Administrator|Coordinator|Intern|Supervisor|Technician|Representative|Accountant|Programmer|Head|President|Assistant|Trainee'
 const DESIGNATION_RE = new RegExp(`\\b((?:[A-Z][A-Za-z.'-]*\\s){0,3}[A-Z][A-Za-z.'-]*\\s(?:${DESIGNATION_KEYWORDS}))\\b`)
 
+// Common résumé section-header phrases — matched as a WHOLE line (not a
+// substring, unlike an earlier version of this file that let "PROFESSIONAL
+// SUMMARY" slip through a substring check for "profile") so a real name
+// that happens to contain one of these words never gets rejected by mistake.
+const SECTION_HEADERS = new Set([
+  'resume', 'cv', 'curriculum vitae', 'profile', 'professional profile', 'personal profile', 'about me',
+  'summary', 'professional summary', 'career summary', 'executive summary', 'personal summary',
+  'objective', 'career objective', 'professional objective',
+  'contact', 'contact information', 'contact details', 'address',
+  'skills', 'key skills', 'core skills', 'technical skills', 'core competencies', 'competencies', 'areas of expertise',
+  'experience', 'work experience', 'professional experience', 'employment history', 'career history',
+  'education', 'educational qualification', 'academic qualification', 'qualifications',
+  'certifications', 'certificates', 'training',
+  'achievements', 'accomplishments', 'projects', 'key projects',
+  'personal details', 'personal information', 'declaration', 'references', 'languages', 'hobbies', 'interests', 'strengths',
+])
+function isSectionHeader(line) {
+  return SECTION_HEADERS.has(line.toLowerCase().replace(/:$/, '').trim())
+}
+
+// Highest-education heuristic, ranked so a Master's found anywhere beats a
+// Bachelor's found anywhere, etc. Narrow-column PDFs sometimes wrap a
+// degree across 2-3 short lines ("Diploma in" / "Electrical" /
+// "Engineering") — the caller re-joins short trailing lines to recover that.
+const DEGREE_LEVELS = [
+  { rank: 5, re: /\b(ph\.?d\.?|doctorate)\b/i },
+  { rank: 4, re: /\b(m\.?tech\.?|m\.?e\.?|mba|m\.?sc\.?|m\.?com\.?|mca|master(?:'?s)?(?:\s+of|\s+in)?)\b/i },
+  { rank: 3, re: /\b(b\.?tech\.?|b\.?e\.?|bba|b\.?sc\.?|b\.?com\.?|bca|bachelor(?:'?s)?(?:\s+of|\s+in)?)\b/i },
+  { rank: 2, re: /\bdiploma\b/i },
+  { rank: 1, re: /\b(12th|hsc|higher secondary|intermediate)\b/i },
+  { rank: 0, re: /\b(10th|ssc|matriculation)\b/i },
+]
+
 function extractEmail(text) {
   return (text.match(EMAIL_RE) || [])[0] || ''
 }
@@ -150,17 +183,39 @@ function extractMobile(text) {
 
 function extractName(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  const skipWord = /resume|curriculum vitae|\bcv\b|profile|contact|address|objective/i
   for (const line of lines.slice(0, 10)) {
-    if (skipWord.test(line)) continue
+    if (isSectionHeader(line)) continue
     if (EMAIL_RE.test(line)) continue
     if (/\d/.test(line)) continue
+    if (line.endsWith(':')) continue // section headers often end in a colon; names never do
     const words = line.split(/\s+/).filter(Boolean)
     if (words.length >= 2 && words.length <= 4 && /^[A-Za-z.'\s]+$/.test(line) && line.length <= 40) {
       return line.replace(/\s{2,}/g, ' ')
     }
   }
   return ''
+}
+
+// Fallback when nothing in the document text looks like a name — some
+// resume templates lead with a tagline/title instead of the person's name
+// at all. Filenames very often are "FirstName LastName_....pdf" or
+// "FirstName_LastName_Resume.pdf", so take the first two letters-only
+// words (capped there deliberately — a 3rd+ word off a filename is as
+// likely to be a company/role as part of the name, so this stays
+// conservative and only ever fills in where the text-based pass found nothing).
+const FILENAME_STOPWORDS = /^(resume|cv|ats|profile|updated|latest|final|new|copy)$/i
+
+function extractNameFromFilename(fileName) {
+  if (!fileName) return ''
+  const base = fileName.replace(/\.(pdf|docx?)$/i, '')
+  const words = base.split(/[\s_-]+/).map(w => w.trim()).filter(Boolean)
+  const nameParts = []
+  for (const w of words) {
+    if (FILENAME_STOPWORDS.test(w) || /\d/.test(w) || !/^[A-Za-z.']+$/.test(w)) break
+    nameParts.push(w)
+    if (nameParts.length === 2) break
+  }
+  return nameParts.length === 2 ? nameParts.join(' ') : ''
 }
 
 // Prefers the line right after the detected name — very common resume
@@ -175,14 +230,13 @@ const MAX_DESIGNATION_LINE_LENGTH = 70
 
 function extractDesignation(text, name) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  const skipWord = /resume|curriculum vitae|\bcv\b|profile|contact|address|objective/i
   if (name) {
     const norm = name.replace(/\s{2,}/g, ' ')
     const idx = lines.findIndex(l => l.replace(/\s{2,}/g, ' ') === norm)
     if (idx !== -1) {
       for (let i = idx + 1; i < Math.min(idx + 3, lines.length); i++) {
         const line = lines[i]
-        if (!line || skipWord.test(line) || EMAIL_RE.test(line) || MOBILE_TEST_RE.test(line)) continue
+        if (!line || isSectionHeader(line) || EMAIL_RE.test(line) || MOBILE_TEST_RE.test(line)) continue
         if (/\d/.test(line)) continue
         if (line.length <= 45 && /^[A-Za-z.,&/'\s-]+$/.test(line)) return line.replace(/\s{2,}/g, ' ')
       }
@@ -215,9 +269,39 @@ function extractLocation(text) {
   return ''
 }
 
-/** Runs every extractor over the résumé text. Always review before saving. */
-export function extractFields(text) {
-  const name = extractName(text)
+function extractEducation(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  let best = null, bestIdx = -1
+  lines.forEach((line, i) => {
+    if (line.length > 100) return
+    for (const level of DEGREE_LEVELS) {
+      if (level.re.test(line)) {
+        if (!best || level.rank > best.rank) { best = { rank: level.rank, line }; bestIdx = i }
+        break
+      }
+    }
+  })
+  if (!best) return ''
+  // Re-join a short/fragment-looking match with the next couple of lines —
+  // narrow-column PDFs can put one or two words per line.
+  let result = best.line
+  let i = bestIdx + 1
+  while (result.length < 25 && i < lines.length && i < bestIdx + 4) {
+    const next = lines[i]
+    if (!next || next.length > 30 || isSectionHeader(next) || /\d{4}/.test(next)) break
+    result += ' ' + next
+    i++
+  }
+  return result.replace(/\s{2,}/g, ' ').trim().slice(0, 80)
+}
+
+/**
+ * Runs every extractor over the résumé text. Always review before saving.
+ * `fileName` is optional and only used as a last-resort fallback for name
+ * when nothing in the document text itself looks like one.
+ */
+export function extractFields(text, fileName) {
+  const name = extractName(text) || extractNameFromFilename(fileName)
   return {
     name,
     designation: extractDesignation(text, name),
@@ -226,5 +310,6 @@ export function extractFields(text) {
     experience: extractExperience(text),
     company: extractCompany(text),
     location: extractLocation(text),
+    education: extractEducation(text),
   }
 }

@@ -15,7 +15,7 @@ import { db } from '../../../lib/firebase-config'
 import { useAuth, usePermissions } from '../../../context/AuthContext'
 import { extractTextFromFile, extractFields } from '../utils/cvParser'
 
-const emptyReview = { name: '', designation: '', mobile: '', email: '', experience: '', company: '', location: '' }
+const emptyReview = { name: '', designation: '', mobile: '', email: '', experience: '', company: '', location: '', education: '' }
 
 // ── Interview pipeline ──────────────────────────────────────────────────
 const INTERVIEW_STAGES = [
@@ -102,7 +102,7 @@ export default function CandidateCVs() {
     try {
       const text = await extractTextFromFile(file, (status) => setParseStatus(status))
       if (!text.trim()) throw new Error("No readable text found in this file — even OCR couldn't make it out. Try a clearer scan or a text-based PDF/Word file.")
-      const fields = extractFields(text)
+      const fields = extractFields(text, file.name)
       setFileName(file.name)
       setResumeText(text)
       setReview({ ...emptyReview, ...fields })
@@ -129,6 +129,7 @@ export default function CandidateCVs() {
         experience: review.experience.trim(),
         company: review.company.trim(),
         location: review.location.trim(),
+        education: review.education.trim(),
         resumeText,
         fileName,
         uploadedAt: new Date().toISOString(),
@@ -152,6 +153,7 @@ export default function CandidateCVs() {
     setEditForm({
       name: c.name || '', designation: c.designation || '', mobile: c.mobile || '',
       email: c.email || '', experience: c.experience || '', company: c.company || '', location: c.location || '',
+      education: c.education || '',
     })
     setError(''); setSuccess('')
   }
@@ -167,6 +169,7 @@ export default function CandidateCVs() {
       const update = {
         name: editForm.name.trim(), designation: editForm.designation.trim(), mobile: editForm.mobile.trim(),
         email: editForm.email.trim(), experience: editForm.experience.trim(), company: editForm.company.trim(), location: editForm.location.trim(),
+        education: editForm.education.trim(),
         updatedAt: new Date().toISOString(),
       }
       await updateDoc(doc(db, 'hr_candidates', editingId), update)
@@ -226,7 +229,7 @@ export default function CandidateCVs() {
     if (minExperience && (parseFloat(c.experience) || 0) < parseFloat(minExperience)) return false
     const q = search.toLowerCase()
     if (!q) return true
-    return [c.name, c.designation, c.company, c.location, c.email, c.mobile].some(v => (v || '').toLowerCase().includes(q))
+    return [c.name, c.designation, c.company, c.location, c.email, c.mobile, c.education].some(v => (v || '').toLowerCase().includes(q))
   })
 
   const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -302,6 +305,10 @@ export default function CandidateCVs() {
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Location</label>
               <input className={inp} value={review.location} onChange={e => setField('location', e.target.value)} />
             </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Highest Education</label>
+              <input className={inp} value={review.education} onChange={e => setField('education', e.target.value)} />
+            </div>
           </div>
           <details className="text-xs">
             <summary className="cursor-pointer text-slate-500 font-medium">View extracted résumé text ({resumeText.length.toLocaleString('en-IN')} chars)</summary>
@@ -350,6 +357,10 @@ export default function CandidateCVs() {
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Location</label>
               <input className={inp} value={editForm.location} onChange={e => setEditField('location', e.target.value)} />
             </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Highest Education</label>
+              <input className={inp} value={editForm.education} onChange={e => setEditField('education', e.target.value)} />
+            </div>
           </div>
           <div className="flex gap-3">
             <button onClick={handleSaveEdit} disabled={saving}
@@ -396,6 +407,7 @@ export default function CandidateCVs() {
                 <th className="text-left px-4 py-3">Experience</th>
                 <th className="text-left px-4 py-3">Company</th>
                 <th className="text-left px-4 py-3">Location</th>
+                <th className="text-left px-4 py-3">Highest Education</th>
                 <th className="text-left px-4 py-3">Interview Status</th>
                 <th className="text-left px-4 py-3">Uploaded</th>
                 <th className="text-right px-4 py-3">Actions</th>
@@ -417,6 +429,7 @@ export default function CandidateCVs() {
                     <td className="px-4 py-3 text-slate-600">{c.experience ? `${c.experience} yr(s)` : '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{c.company || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{c.location || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{c.education || '—'}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1 items-start">
                         <span className={`text-xs px-2 py-0.5 rounded-lg font-bold ${OUTCOME_META[outcome].cls}`}>{OUTCOME_META[outcome].label}</span>
@@ -439,7 +452,7 @@ export default function CandidateCVs() {
                   </tr>
                   {expandedId === c.id && (
                     <tr>
-                      <td colSpan={9} className="px-4 py-3 bg-slate-50">
+                      <td colSpan={10} className="px-4 py-3 bg-slate-50">
                         <p className="text-xs text-slate-400 mb-1">{c.fileName} · uploaded by {c.uploadedByName || '—'}</p>
                         <pre className="text-xs text-slate-600 whitespace-pre-wrap max-h-64 overflow-y-auto">{c.resumeText}</pre>
                       </td>
@@ -447,7 +460,7 @@ export default function CandidateCVs() {
                   )}
                   {interviewId === c.id && (
                     <tr>
-                      <td colSpan={9} className="px-4 py-3 bg-purple-50/50">
+                      <td colSpan={10} className="px-4 py-3 bg-purple-50/50">
                         <div className="space-y-3">
                           <h4 className="font-bold text-slate-700 text-sm">Interview Pipeline — {c.name}</h4>
                           <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
@@ -496,7 +509,7 @@ export default function CandidateCVs() {
                 </React.Fragment>
               )})}
               {filtered.length === 0 && (
-                <tr><td colSpan={9} className="text-center py-8 text-slate-400">No candidate CVs yet.</td></tr>
+                <tr><td colSpan={10} className="text-center py-8 text-slate-400">No candidate CVs yet.</td></tr>
               )}
             </tbody>
           </table>
