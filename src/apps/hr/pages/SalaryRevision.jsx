@@ -1,12 +1,16 @@
 /**
  * SalaryRevision — track and record salary revision history for all employees.
- * Collection: hr_salary_revisions
- * Adding a revision also updates employee's current salary in hr_employees.
+ * Collection: hr_salary_revisions (HR/admin-only read+write, same as every
+ * other salary-related collection — see firestore.rules).
+ * Adding a revision also updates the employee's current salary in
+ * hr_salary_structures (Basic only — HR can re-run the Auto-calculate
+ * split on that employee's Profile afterward if the full breakup needs updating).
  */
 import React, { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs, addDoc, doc, updateDoc, query, orderBy } from 'firebase/firestore'
+import { collection, getDocs, addDoc, doc, setDoc, query, orderBy } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
-import { useAuth } from '../../../context/AuthContext'
+import { useAuth, usePermissions } from '../../../context/AuthContext'
+import { DEFAULT_SALARY_STRUCTURE, computeGross } from '../utils/payrollCalc'
 
 const REASONS = [
   'Annual Increment', 'Promotion', 'Performance Bonus', 'Market Correction',
@@ -23,9 +27,12 @@ const emptyForm = {
 
 export default function SalaryRevision() {
   const { userProfile } = useAuth()
+  const { canEdit } = usePermissions()
   const isAdmin = ['admin'].includes(userProfile?.role)
+  const hasHRAccess = isAdmin || canEdit('HR')
 
   const [employees,  setEmployees]  = useState([])
+  const [salaryStructures, setSalaryStructures] = useState({}) // { employeeId: { salaryStructure, salary } }
   const [revisions,  setRevisions]  = useState([])
   const [loading,    setLoading]    = useState(true)
   const [showForm,   setShowForm]   = useState(false)
@@ -35,19 +42,24 @@ export default function SalaryRevision() {
   const [success,    setSuccess]    = useState('')
   const [filterEmp,  setFilterEmp]  = useState('')  // filter by employee
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (hasHRAccess) load() }, [hasHRAccess])
 
   const load = async () => {
     setLoading(true)
     try {
-      const [empSnap, revSnap] = await Promise.all([
+      const [empSnap, revSnap, salSnap] = await Promise.all([
         getDocs(collection(db, 'hr_employees')),
         getDocs(query(collection(db, 'hr_salary_revisions'), orderBy('effectiveDate', 'desc'))),
+        getDocs(collection(db, 'hr_salary_structures')),
       ])
       const emps = []
       empSnap.forEach(d => emps.push({ id: d.id, ...d.data() }))
       emps.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       setEmployees(emps)
+
+      const salMap = {}
+      salSnap.forEach(d => { salMap[d.id] = d.data() })
+      setSalaryStructures(salMap)
 
       const revs = []
       revSnap.forEach(d => revs.push({ id: d.id, ...d.data() }))
@@ -60,7 +72,7 @@ export default function SalaryRevision() {
 
   // When employee changes, auto-fill their current salary as "previous"
   const selectedEmp = employees.find(e => e.id === form.employeeId)
-  const previousSalary = selectedEmp ? (Number(selectedEmp.salary) || 0) : 0
+  const previousSalary = selectedEmp ? (Number(salaryStructures[selectedEmp.id]?.salary) || 0) : 0
 
   const handleSave = async (ev) => {
     ev.preventDefault()
@@ -85,13 +97,19 @@ export default function SalaryRevision() {
       }
       // 1. Save revision record
       const ref = await addDoc(collection(db, 'hr_salary_revisions'), payload)
-      // 2. Update employee's current salary
-      await updateDoc(doc(db, 'hr_employees', form.employeeId), {
-        salary: Number(form.newSalary),
+      // 2. Update employee's current salary — bump Basic to match the new
+      // total, keeping other heads as they were (HR can re-run "Apply
+      // Standard Split" on the Profile's Salary Structure tab afterward if
+      // the full breakup should change too, not just the bottom line).
+      const existing = salaryStructures[form.employeeId]?.salaryStructure || { ...DEFAULT_SALARY_STRUCTURE }
+      const delta = Number(form.newSalary) - previousSalary
+      const newStructure = { ...existing, basic: Math.max((Number(existing.basic) || 0) + delta, 0) }
+      await setDoc(doc(db, 'hr_salary_structures', form.employeeId), {
+        employeeId: form.employeeId, salaryStructure: newStructure, salary: computeGross(newStructure),
         updatedAt: new Date().toISOString(),
-      })
+      }, { merge: true })
       setRevisions(prev => [{ id: ref.id, ...payload }, ...prev])
-      setEmployees(prev => prev.map(e => e.id === form.employeeId ? { ...e, salary: Number(form.newSalary) } : e))
+      setSalaryStructures(prev => ({ ...prev, [form.employeeId]: { salaryStructure: newStructure, salary: computeGross(newStructure) } }))
       setSuccess(`Salary revised for ${emp?.name} — effective ${form.effectiveDate}`)
       setForm(emptyForm)
       setShowForm(false)
@@ -106,6 +124,16 @@ export default function SalaryRevision() {
   const incrementColor = (inc) =>
     inc > 0 ? 'text-green-600' : inc < 0 ? 'text-red-600' : 'text-slate-500'
 
+  if (!hasHRAccess) {
+    return (
+      <div className="p-6">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center text-slate-400">
+          🔒 Salary revisions are visible to HR managers and admins only.
+        </div>
+      </div>
+    )
+  }
+
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading…</div>
 
   return (
@@ -116,7 +144,7 @@ export default function SalaryRevision() {
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Salary Revisions</h2>
           <p className="text-slate-500 text-sm">{revisions.length} revision{revisions.length !== 1 ? 's' : ''} recorded</p>
         </div>
-        {isAdmin && (
+        {hasHRAccess && (
           <button onClick={() => { setShowForm(!showForm); setForm(emptyForm); setError('') }}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition">
             {showForm ? '✕ Cancel' : '+ Add Revision'}
@@ -128,7 +156,7 @@ export default function SalaryRevision() {
       {error   && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">{error}</div>}
 
       {/* Add Form */}
-      {showForm && isAdmin && (
+      {showForm && hasHRAccess && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
           <h3 className="font-bold text-slate-800 mb-4">Record Salary Revision</h3>
           <form onSubmit={handleSave} className="grid grid-cols-2 gap-4">
@@ -220,7 +248,7 @@ export default function SalaryRevision() {
         <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
           <p className="text-2xl mb-2">💰</p>
           <p className="text-sm">No salary revisions recorded yet.</p>
-          {isAdmin && <p className="text-xs mt-1">Click "+ Add Revision" to record the first one.</p>}
+          {hasHRAccess && <p className="text-xs mt-1">Click "+ Add Revision" to record the first one.</p>}
         </div>
       ) : (
         <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 overflow-hidden">

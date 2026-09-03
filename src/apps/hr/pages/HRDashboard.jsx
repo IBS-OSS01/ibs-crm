@@ -2,45 +2,61 @@ import React, { useState, useEffect } from 'react'
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useNavigate } from 'react-router-dom'
+import { useAuth, usePermissions } from '../../../context/AuthContext'
 
 export default function HRDashboard() {
   const navigate = useNavigate()
+  const { userProfile } = useAuth()
+  const { canEdit } = usePermissions()
+  // Salary lives in its own HR/admin-only collection (see firestore.rules) —
+  // this gates both the fetch (a non-HR user's read would just fail) and
+  // the two salary-related cards below.
+  const hasHRAccess = userProfile?.role === 'admin' || canEdit('HR')
+
   const [employees, setEmployees] = useState([])
   const [leaves, setLeaves] = useState([])
   const [advances, setAdvances] = useState([])
   const [slips, setSlips] = useState([])
+  const [monthlyBill, setMonthlyBill] = useState(0)
   const [pinnedPost, setPinnedPost] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [empSnap, leaveSnap, advSnap, slipSnap, announceSnap] = await Promise.all([
+        const [empSnap, leaveSnap, advSnap, announceSnap] = await Promise.all([
           getDocs(collection(db, 'hr_employees')),
           getDocs(collection(db, 'hr_leaves')),
           getDocs(collection(db, 'hr_advances')),
-          getDocs(collection(db, 'hr_salary_slips')),
           getDocs(collection(db, 'hr_announcements')),
         ])
         const toArr = snap => { const a = []; snap.forEach(d => a.push({ id: d.id, ...d.data() })); return a }
         setEmployees(toArr(empSnap))
         setLeaves(toArr(leaveSnap))
         setAdvances(toArr(advSnap))
-        setSlips(toArr(slipSnap))
         const posts = toArr(announceSnap)
         const pinned = posts.filter(p => p.pinned).sort((a, b) => (b.publishedAt || '').localeCompare(a.publishedAt || ''))
         const latest = posts.sort((a, b) => (b.publishedAt || '').localeCompare(a.publishedAt || ''))
         setPinnedPost(pinned[0] || latest[0] || null)
+        if (hasHRAccess) {
+          const [slipSnap, salSnap] = await Promise.all([
+            getDocs(collection(db, 'hr_salary_slips')),
+            getDocs(collection(db, 'hr_salary_structures')),
+          ])
+          setSlips(toArr(slipSnap))
+          let bill = 0
+          salSnap.forEach(d => { bill += Number(d.data().salary) || 0 })
+          setMonthlyBill(bill)
+        }
       } catch (err) { console.error(err) }
       finally { setLoading(false) }
     }
     load()
-  }, [])
+  }, [hasHRAccess])
 
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>
 
   const activeEmp = employees.filter(e => e.active !== false)
-  const monthlyBill = activeEmp.reduce((s, e) => s + (Number(e.salary) || 0), 0)
   const pendingLeaves = leaves.filter(l => l.status === 'pending')
   const pendingAdvances = advances.filter(a => a.status === 'pending')
   const currentMonth = new Date().toISOString().slice(0, 7)
@@ -50,12 +66,12 @@ export default function HRDashboard() {
 
   const cards = [
     { label: 'Active Employees', value: activeEmp.length, total: employees.length, icon: '👤', color: 'text-blue-600', path: '/hr/employees' },
-    { label: 'Monthly Salary Bill', value: `₹${monthlyBill.toLocaleString('en-IN')}`, icon: '💵', color: 'text-green-600', path: '/hr/salary' },
+    hasHRAccess && { label: 'Monthly Salary Bill', value: `₹${monthlyBill.toLocaleString('en-IN')}`, icon: '💵', color: 'text-green-600', path: '/hr/salary' },
     { label: 'Leave Requests', value: pendingLeaves.length, sub: 'pending approval', icon: '🏖️', color: 'text-amber-600', path: '/hr/leaves' },
     { label: 'Advance Requests', value: pendingAdvances.length, sub: 'pending approval', icon: '💳', color: 'text-purple-600', path: '/hr/advances' },
-    { label: 'Salary This Month', value: unpaidSlips.length ? `${unpaidSlips.length} unpaid` : 'All paid', icon: '✅', color: unpaidSlips.length ? 'text-red-600' : 'text-green-600', path: '/hr/salary' },
+    hasHRAccess && { label: 'Salary This Month', value: unpaidSlips.length ? `${unpaidSlips.length} unpaid` : 'All paid', icon: '✅', color: unpaidSlips.length ? 'text-red-600' : 'text-green-600', path: '/hr/salary' },
     { label: 'Onboarding / Offboarding', value: `${onboardingInProgress} / ${offboardingInProgress}`, sub: 'in progress', icon: '🚀', color: 'text-orange-600', path: '/hr/employees' },
-  ]
+  ].filter(Boolean)
 
   // Department breakdown
   const deptMap = {}

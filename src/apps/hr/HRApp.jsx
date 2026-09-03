@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext.jsx'
+import { useAuth, usePermissions } from '../../context/AuthContext.jsx'
 import HRDashboard from './pages/HRDashboard.jsx'
 import Employees from './pages/Employees.jsx'
 import EmployeeProfile from './pages/EmployeeProfile.jsx'
@@ -42,8 +42,8 @@ const NAV_GROUPS = [
     { label: 'Announcements', icon: '📢', path: '/hr/announcements' },
   ]},
   { label: 'Payroll', items: [
-    { label: 'Salary',          icon: '💵', path: '/hr/salary' },
-    { label: 'Salary Revision', icon: '📈', path: '/hr/salary-revision' },
+    { label: 'Salary',          icon: '💵', path: '/hr/salary', hrOnly: true },
+    { label: 'Salary Revision', icon: '📈', path: '/hr/salary-revision', hrOnly: true },
     { label: 'Advances',        icon: '💳', path: '/hr/advances' },
     { label: 'Expenses',        icon: '🧾', path: '/hr/expenses' },
   ]},
@@ -57,12 +57,17 @@ export default function HRApp() {
   const navigate = useNavigate()
   const location = useLocation()
   const { userProfile } = useAuth()
+  const { canEdit } = usePermissions()
   const userRole = userProfile?.role || ''
+  // Salary lives in its own HR/admin-only Firestore collection now (see
+  // firestore.rules) — hide the nav links too so a view-only HR user
+  // doesn't land on a page that just tells them "not for you".
+  const hasHRAccess = userRole === 'admin' || canEdit('HR')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   const filteredGroups = NAV_GROUPS.map(g => ({
     ...g,
-    items: g.items.filter(it => !it.roles || it.roles.includes(userRole)),
+    items: g.items.filter(it => (!it.roles || it.roles.includes(userRole)) && (!it.hrOnly || hasHRAccess)),
   })).filter(g => g.items.length > 0)
 
   const isActive = (item) =>

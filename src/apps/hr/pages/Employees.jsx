@@ -28,7 +28,7 @@ const DEFAULT_MODULE_RIGHTS = Object.fromEntries(MODULES.map(m => [m, 'none']))
 const emptyForm = {
   // HR fields
   name: '', designation: '', department: 'Sales', phone: '', email: '',
-  address: '', emergencyContact: '', joinDate: '', salary: '', active: true,
+  address: '', emergencyContact: '', joinDate: '', active: true,
   reportingManagerId: '', employeeNumber: '', appointedCompany: '',
   // Login fields — only used when granting/editing app access (admin only)
   grantLogin: false, password: '', role: 'user',
@@ -61,6 +61,7 @@ export default function Employees() {
   const [roles, setRoles] = useState([])
   const [departments, setDepartments] = useState([])
   const [userEmailSet, setUserEmailSet] = useState(new Set())
+  const [salaryByEmp, setSalaryByEmp] = useState({})
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -72,7 +73,7 @@ export default function Employees() {
   const [deptFilter, setDeptFilter] = useState('')
   const [importing, setImporting] = useState(false)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [hasHRAccess])
 
   const load = async () => {
     try {
@@ -87,6 +88,16 @@ export default function Employees() {
       empSnap.forEach(d => data.push({ id: d.id, ...d.data() }))
       data.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       setEmployees(data)
+      // Salary lives in its own HR/admin-only collection (see firestore.rules)
+      // — only fetch it when this viewer actually has HR access, so a
+      // non-HR user never triggers a doomed-to-fail permission-denied read.
+      if (hasHRAccess) {
+        getDocs(collection(db, 'hr_salary_structures')).then(snap => {
+          const map = {}
+          snap.forEach(d => { map[d.id] = d.data().salary })
+          setSalaryByEmp(map)
+        }).catch(console.error)
+      }
       const emails = new Set()
       const usersData = []
       userSnap.forEach(d => {
@@ -186,7 +197,7 @@ export default function Employees() {
       name: e.name || '', designation: e.designation || '', department: e.department || 'Sales',
       phone: e.phone || '', email: e.email || '', address: e.address || '',
       emergencyContact: e.emergencyContact || '', joinDate: e.joinDate || '',
-      salary: e.salary ?? '', active: e.active !== false,
+      active: e.active !== false,
       reportingManagerId: e.reportingManagerId || '',
       employeeNumber: e.employeeNumber || '', appointedCompany: e.appointedCompany || '',
       grantLogin: !!linked,
@@ -238,7 +249,7 @@ export default function Employees() {
         name: form.name, designation: form.designation, department: form.department,
         phone: form.phone, email: form.email, address: form.address,
         emergencyContact: form.emergencyContact, joinDate: form.joinDate,
-        salary: Number(form.salary) || 0, active: form.active,
+        active: form.active,
         reportingManagerId: form.reportingManagerId,
         employeeNumber: form.employeeNumber, appointedCompany: form.appointedCompany,
       }
@@ -493,10 +504,11 @@ export default function Employees() {
                 <label className="block text-sm font-medium text-slate-700 mb-1">Joining Date</label>
                 <input type="date" value={form.joinDate} onChange={e => set('joinDate', e.target.value)} className={inp} />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Monthly Salary (₹)</label>
-                <input type="number" value={form.salary} onChange={e => set('salary', e.target.value)} autoComplete="off" min="0" className={inp} />
-              </div>
+              {hasHRAccess && (
+                <p className="col-span-2 text-xs text-slate-400 -mt-1">
+                  💰 Salary is set from that employee's Profile → Salary Structure tab (HR/admin only) — not here.
+                </p>
+              )}
               <div className="flex items-center gap-2 mt-2">
                 <input type="checkbox" checked={form.active} onChange={e => set('active', e.target.checked)} id="emp-active" />
                 <label htmlFor="emp-active" className="text-sm text-slate-700">Active employee</label>
@@ -602,7 +614,7 @@ export default function Employees() {
                     <th className="text-left px-4 py-3">Dept / Designation</th>
                     <th className="text-left px-4 py-3">Phone</th>
                     <th className="text-left px-4 py-3">Joined</th>
-                    <th className="text-right px-4 py-3">Salary</th>
+                    {hasHRAccess && <th className="text-right px-4 py-3">Salary</th>}
                     <th className="text-right px-4 py-3">Actions</th>
                   </tr>
                 </thead>
@@ -646,7 +658,7 @@ export default function Employees() {
                       </td>
                       <td className="px-4 py-3 text-slate-600">{e.phone || '—'}</td>
                       <td className="px-4 py-3 text-slate-500">{e.joinDate || '—'}</td>
-                      <td className="px-4 py-3 text-right text-slate-700 font-medium">₹{(Number(e.salary) || 0).toLocaleString('en-IN')}</td>
+                      {hasHRAccess && <td className="px-4 py-3 text-right text-slate-700 font-medium">₹{(Number(salaryByEmp[e.id]) || 0).toLocaleString('en-IN')}</td>}
                       <td className="px-4 py-3 text-right space-x-3 whitespace-nowrap">
                         <button onClick={() => navigate(`/hr/employee/${e.id}`)} className="text-purple-600 hover:text-purple-700 font-medium">📋 Profile</button>
                         {hasHRAccess && <button onClick={() => handleEdit(e)} className="text-blue-600 hover:text-blue-700 font-medium">✏️ Edit</button>}

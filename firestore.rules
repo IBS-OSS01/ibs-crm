@@ -112,8 +112,19 @@ service cloud.firestore {
       allow create: if isProvisioned();
       allow update, delete: if hasHRWriteAccess();
     }
-    match /hr_salary_slips/{id}      { allow read: if isProvisioned(); allow write: if hasHRWriteAccess(); }
-    match /hr_salary_revisions/{id}  { allow read: if isProvisioned(); allow write: if isAdmin(); }
+    // Salary — HR/admin-only for both read and write, unlike most HR
+    // collections above. Firestore rules can only allow/deny a whole
+    // document, never individual fields, so keeping salary numbers
+    // confidential meant moving them out of hr_employees (which every
+    // provisioned user can read, for names/depts/dropdowns) into their own
+    // collections. hr_salary_structures holds the per-employee earnings
+    // breakup that used to live on hr_employees.salary/.salaryStructure;
+    // hr_salary_slips and hr_salary_revisions were already separate
+    // collections but had leaked salary figures under the old isProvisioned()
+    // read rule — tightened here to match.
+    match /hr_salary_structures/{employeeId} { allow read, write: if hasHRWriteAccess(); }
+    match /hr_salary_slips/{id}      { allow read, write: if hasHRWriteAccess(); }
+    match /hr_salary_revisions/{id}  { allow read, write: if hasHRWriteAccess(); }
     match /hr_advances/{id} {
       allow read: if isProvisioned();
       allow create: if isProvisioned();

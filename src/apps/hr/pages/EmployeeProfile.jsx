@@ -5,7 +5,7 @@
  */
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth, usePermissions } from '../../../context/AuthContext'
 import { DEFAULT_SALARY_STRUCTURE, computeGross, splitGrossIntoStructure } from '../utils/payrollCalc'
@@ -62,13 +62,22 @@ export default function EmployeeProfile() {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [grossInput, setGrossInput] = useState('')
+  const [savedSalaryStructure, setSavedSalaryStructure] = useState(null)
 
   useEffect(() => {
-    getDoc(doc(db, 'hr_employees', id)).then(d => {
+    // Salary lives in its own HR/admin-only collection (see firestore.rules)
+    // so it can be kept confidential — a read attempt by anyone else would
+    // just fail, so only even try when this viewer has HR access.
+    const salaryPromise = hasHRAccess
+      ? getDoc(doc(db, 'hr_salary_structures', id)).catch(() => null)
+      : Promise.resolve(null)
+    Promise.all([getDoc(doc(db, 'hr_employees', id)), salaryPromise]).then(([d, salSnap]) => {
       if (d.exists()) {
         const data = { id: d.id, ...d.data() }
+        const salaryStructure = salSnap?.exists() ? salSnap.data().salaryStructure : null
         setEmp(data)
-        setForm(buildForm(data))
+        setSavedSalaryStructure(salaryStructure)
+        setForm(buildForm(data, salaryStructure))
       }
       setLoading(false)
     })
@@ -78,9 +87,9 @@ export default function EmployeeProfile() {
     getDocs(query(collection(db, 'hr_assets'), where('assignedToEmployeeId', '==', id)))
       .then(snap => { const a = []; snap.forEach(d => a.push({ id: d.id, ...d.data() })); setAssignedAssets(a) })
       .catch(console.error)
-  }, [id])
+  }, [id, hasHRAccess])
 
-  const buildForm = (e) => ({
+  const buildForm = (e, salaryStructure) => ({
     // Identity
     dob:        e.dob        || '',
     bloodGroup: e.bloodGroup || '',
@@ -116,10 +125,10 @@ export default function EmployeeProfile() {
     // doesn't have a record yet (covers employees created before this existed).
     onboarding:  e.onboarding  || { status: 'in_progress', startedAt: e.createdAt || new Date().toISOString(), steps: {} },
     offboarding: e.offboarding || { status: 'not_started', steps: {} },
-    // Salary structure — falls back to putting the whole legacy flat
-    // `salary` number into Basic so existing employees don't show ₹0 the
-    // first time this section is opened.
-    salaryStructure: e.salaryStructure || { ...DEFAULT_SALARY_STRUCTURE, basic: e.salary || 0 },
+    // Salary structure — lives in hr_salary_structures, not on this
+    // document (see firestore.rules); passed in separately after that
+    // collection's own fetch resolves.
+    salaryStructure: salaryStructure || { ...DEFAULT_SALARY_STRUCTURE },
   })
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
@@ -127,12 +136,18 @@ export default function EmployeeProfile() {
   const handleSave = async () => {
     setSaving(true); setError('')
     try {
-      // Keep the legacy flat `salary` field in sync as a derived display
-      // value (sum of the structure) — Employees.jsx list, HRDashboard's
-      // monthly bill total, and Attendance/Leaves elsewhere still read it.
-      const payload = { ...form, salary: computeGross(form.salaryStructure) }
-      await updateDoc(doc(db, 'hr_employees', id), { ...payload, updatedAt: new Date().toISOString() })
-      setEmp(prev => ({ ...prev, ...payload }))
+      // Salary goes to its own HR/admin-only collection, everything else
+      // stays on hr_employees — see firestore.rules for why they're split.
+      const { salaryStructure, ...employeeFields } = form
+      await updateDoc(doc(db, 'hr_employees', id), { ...employeeFields, updatedAt: new Date().toISOString() })
+      if (hasHRAccess) {
+        await setDoc(doc(db, 'hr_salary_structures', id), {
+          employeeId: id, salaryStructure, salary: computeGross(salaryStructure),
+          updatedAt: new Date().toISOString(),
+        }, { merge: true })
+        setSavedSalaryStructure(salaryStructure)
+      }
+      setEmp(prev => ({ ...prev, ...employeeFields }))
       setEditing(false)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
@@ -236,7 +251,7 @@ export default function EmployeeProfile() {
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50">
                 {saving ? 'Saving…' : 'Save Changes'}
               </button>
-              <button onClick={() => { setEditing(false); setForm(buildForm(emp)) }}
+              <button onClick={() => { setEditing(false); setForm(buildForm(emp, savedSalaryStructure)) }}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition">
                 Cancel
               </button>
@@ -252,9 +267,12 @@ export default function EmployeeProfile() {
 
       {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">{error}</div>}
 
-      {/* Section tabs */}
+      {/* Section tabs — Salary Structure hidden entirely from anyone without
+          HR access (not just gated on click); the real enforcement is the
+          hr_salary_structures Firestore rule, this just keeps a view-only
+          HR user from seeing an empty/broken tab for data they can't fetch. */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl overflow-x-auto">
-        {SECTIONS.map(s => (
+        {SECTIONS.filter(s => s.id !== 'salary' || hasHRAccess).map(s => (
           <button key={s.id} onClick={() => setActiveSection(s.id)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
               activeSection === s.id ? 'bg-white text-blue-700 shadow' : 'text-slate-500 hover:text-slate-700'
@@ -293,7 +311,7 @@ export default function EmployeeProfile() {
         )}
 
         {/* ── Salary Structure ── */}
-        {activeSection === 'salary' && (() => {
+        {activeSection === 'salary' && hasHRAccess && (() => {
           const ss = form.salaryStructure || DEFAULT_SALARY_STRUCTURE
           const setSS = (k, v) => setForm(p => ({ ...p, salaryStructure: { ...(p.salaryStructure || DEFAULT_SALARY_STRUCTURE), [k]: v } }))
           const gross = computeGross(ss)

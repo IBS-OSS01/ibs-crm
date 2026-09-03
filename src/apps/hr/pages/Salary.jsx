@@ -90,6 +90,7 @@ export default function Salary() {
   const [slips, setSlips] = useState([])
   const [advances, setAdvances] = useState([])
   const [holidays, setHolidays] = useState([])
+  const [salaryStructures, setSalaryStructures] = useState({}) // { employeeId: { salaryStructure, salary } }
   const [sellers, setSellers] = useState({})
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
@@ -103,6 +104,7 @@ export default function Salary() {
   const monthKey = `${selYear}-${String(selMonth + 1).padStart(2, '0')}`
 
   useEffect(() => {
+    if (!hasHRAccess) return
     getDocs(collection(db, 'hr_employees')).then(snap => {
       const data = []; snap.forEach(d => data.push({ id: d.id, ...d.data() }))
       setEmployees(data.filter(e => e.active !== false))
@@ -115,12 +117,17 @@ export default function Salary() {
       const data = []; snap.forEach(d => data.push({ id: d.id, ...d.data() }))
       setHolidays(data)
     })
+    // Salary lives in its own HR/admin-only collection (see firestore.rules).
+    getDocs(collection(db, 'hr_salary_structures')).then(snap => {
+      const map = {}; snap.forEach(d => { map[d.id] = d.data() })
+      setSalaryStructures(map)
+    })
     Promise.all([getDoc(doc(db, 'company_settings', 'UIPL')), getDoc(doc(db, 'company_settings', 'Wayzim'))]).then(([u, w]) => {
       setSellers({ UIPL: u.exists() ? u.data() : {}, Wayzim: w.exists() ? w.data() : {} })
     })
-  }, [])
+  }, [hasHRAccess])
 
-  useEffect(() => { loadSlips() }, [monthKey])
+  useEffect(() => { if (hasHRAccess) loadSlips() }, [monthKey, hasHRAccess])
 
   const loadSlips = async () => {
     setLoading(true); setError('')
@@ -158,7 +165,7 @@ export default function Salary() {
       for (const emp of toCreate) {
         const empAdvances = advances.filter(a => a.employeeId === emp.id && a.status === 'approved' && a.deductFromMonth === monthKey)
         const totalAdvanceDeduct = empAdvances.reduce((s, a) => s + (Number(a.amount) || 0), 0)
-        const structure = emp.salaryStructure || { ...DEFAULT_SALARY_STRUCTURE, basic: Number(emp.salary) || 0 }
+        const structure = salaryStructures[emp.id]?.salaryStructure || { ...DEFAULT_SALARY_STRUCTURE }
         const att = attByEmp[emp.id] || { present: 0, half: 0, paidLeave: 0 }
         const breakup = computePayrollBreakup({
           structure,
@@ -236,6 +243,16 @@ export default function Salary() {
   const paidCount = slips.filter(s => s.status === 'paid').length
 
   const years = [today.getFullYear(), today.getFullYear() - 1]
+
+  if (!hasHRAccess) {
+    return (
+      <div className="p-6">
+        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-8 text-center text-slate-400">
+          🔒 Salary and payroll are visible to HR managers and admins only.
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 space-y-4">
