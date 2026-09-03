@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth'
 import { auth } from '../../lib/firebase-config'
@@ -23,7 +23,17 @@ export default function Login() {
   const [resetSending, setResetSending] = useState(false)
   const [resetMessage, setResetMessage] = useState('')
   const navigate = useNavigate()
-  const { disabledMessage, clearDisabledMessage } = useAuth()
+  const { user, disabledMessage, clearDisabledMessage } = useAuth()
+
+  // Navigate only once AuthContext actually has the signed-in user (it does
+  // an async Firestore profile fetch after Firebase Auth confirms the
+  // credentials) — navigating right after signInWithEmailAndPassword()
+  // resolves races ahead of that fetch: ProtectedRoute still sees user===null
+  // for a moment and bounces straight back to /login, wiping the form and
+  // making the first login attempt look like it silently failed.
+  useEffect(() => {
+    if (user) navigate('/', { replace: true })
+  }, [user, navigate])
 
   const handleEmailLogin = async (e) => {
     e.preventDefault()
@@ -32,10 +42,12 @@ export default function Login() {
     setLoading(true)
     try {
       await signInWithEmailAndPassword(auth, email, password)
-      navigate('/')
+      // Don't navigate here and don't clear `loading` — the effect above
+      // does both once `user` is actually populated, so the button stays
+      // in "Signing in…" through the gap instead of the page looking like
+      // it did nothing until you resubmit.
     } catch {
       setError('Invalid email or password.')
-    } finally {
       setLoading(false)
     }
   }
