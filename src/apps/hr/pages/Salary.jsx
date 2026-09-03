@@ -163,6 +163,7 @@ export default function Salary() {
       const holidayDays = holidays.filter(h => h.date && h.date.startsWith(monthKey)).length
 
       const newSlips = []
+      const noAttendanceNames = []
       for (const emp of toCreate) {
         const empAdvances = advances.filter(a => a.employeeId === emp.id && a.status === 'approved' && a.deductFromMonth === monthKey)
         const totalAdvanceDeduct = empAdvances.reduce((s, a) => s + (Number(a.amount) || 0), 0)
@@ -170,6 +171,7 @@ export default function Salary() {
         // here since Professional Tax (Maharashtra) needs it for the exemption slab.
         const structure = { ...(salaryStructures[emp.id]?.salaryStructure || DEFAULT_SALARY_STRUCTURE), gender: emp.gender }
         const att = attByEmp[emp.id] || { present: 0, half: 0, paidLeave: 0 }
+        if (att.present === 0 && att.half === 0 && att.paidLeave === 0) noAttendanceNames.push(emp.name || 'Unnamed')
         const breakup = computePayrollBreakup({
           structure,
           attendance: { presentDays: att.present, halfDays: att.half, paidLeaveDays: att.paidLeave, holidayDays, sundays, totalDaysInMonth },
@@ -198,7 +200,10 @@ export default function Salary() {
         newSlips.push({ id: ref.id, ...payload })
       }
       setSlips(prev => [...prev, ...newSlips])
-      setSuccess(`Generated ${newSlips.length} salary slip(s) with full statutory breakup (PF/ESI/PT/TDS, attendance-prorated).`)
+      const warning = noAttendanceNames.length > 0
+        ? ` ⚠️ No attendance was marked at all for ${noAttendanceNames.join(', ')} this month — their gross was prorated down to just Sundays/holidays (near-zero), not their real salary. Mark attendance on the Attendance page and regenerate (delete the slip first) once it's filled in.`
+        : ''
+      setSuccess(`Generated ${newSlips.length} salary slip(s) with full statutory breakup (PF/ESI/PT/TDS, attendance-prorated).${warning}`)
     } catch (err) { setError('Error: ' + err.message) }
     finally { setGenerating(false) }
   }
@@ -324,6 +329,8 @@ export default function Salary() {
                 const gross = slip.grossProrated ?? slip.baseSalary ?? 0
                 const d = slip.deductions || {}
                 const totalDeductions = (d.pf||0)+(d.esi||0)+(d.professionalTax||0)+(d.tds||0)+(slip.advancesDeducted||0)+(d.other||0)
+                const att = slip.attendanceSummary
+                const noAttendanceMarked = att && (att.presentDays || 0) === 0 && (att.halfDays || 0) === 0 && (att.paidLeaveDays || 0) === 0
                 return (
                 <React.Fragment key={slip.id}>
                 <tr>
@@ -332,6 +339,10 @@ export default function Salary() {
                     <button onClick={() => setExpandedId(expandedId === slip.id ? null : slip.id)} className="ml-2 text-xs text-blue-500 hover:underline">
                       {expandedId === slip.id ? 'hide breakup' : 'view breakup'}
                     </button>
+                    {noAttendanceMarked && (
+                      <span title="No attendance marked this month — gross is prorated down to just Sundays/holidays, not the real salary."
+                        className="ml-2 text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded-lg font-bold">⚠️ No attendance</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right text-slate-600">₹{gross.toLocaleString('en-IN')}</td>
                   <td className="px-4 py-3 text-right text-red-600">₹{totalDeductions.toLocaleString('en-IN')}</td>
