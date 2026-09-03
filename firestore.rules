@@ -135,6 +135,11 @@ service cloud.firestore {
     // Policies & Announcements (HR > Announcements) — everyone reads, only HR/admin publishes.
     match /hr_announcements/{id}     { allow read: if isProvisioned(); allow write: if hasHRWriteAccess(); }
 
+    // Candidate CV repository (HR > Candidate CVs) — external candidate PII
+    // (name/mobile/email/résumé text), not employee data, so unlike the
+    // employee directory this is HR/admin-only for both read and write.
+    match /hr_candidates/{id}        { allow read, write: if hasHRWriteAccess(); }
+
     // Projects module — tasks, service logs, project register (won CRM deals), cost line items.
     match /project_tasks/{id}         { allow read, write: if isProvisioned(); }
     match /project_service_logs/{id}  { allow read, write: if isProvisioned(); }

@@ -8,11 +8,13 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth, usePermissions } from '../../../context/AuthContext'
+import { DEFAULT_SALARY_STRUCTURE, computeGross } from '../utils/payrollCalc'
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
 
 const SECTIONS = [
   { id: 'identity',    label: '🪪 Identity',       icon: '🪪' },
+  { id: 'salary',      label: '💰 Salary Structure', icon: '💰' },
   { id: 'insurance',   label: '🏥 Insurance',       icon: '🏥' },
   { id: 'education',   label: '🎓 Education',       icon: '🎓' },
   { id: 'employment',  label: '📄 Employment Docs', icon: '📄' },
@@ -113,6 +115,10 @@ export default function EmployeeProfile() {
     // doesn't have a record yet (covers employees created before this existed).
     onboarding:  e.onboarding  || { status: 'in_progress', startedAt: e.createdAt || new Date().toISOString(), steps: {} },
     offboarding: e.offboarding || { status: 'not_started', steps: {} },
+    // Salary structure — falls back to putting the whole legacy flat
+    // `salary` number into Basic so existing employees don't show ₹0 the
+    // first time this section is opened.
+    salaryStructure: e.salaryStructure || { ...DEFAULT_SALARY_STRUCTURE, basic: e.salary || 0 },
   })
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
@@ -120,8 +126,12 @@ export default function EmployeeProfile() {
   const handleSave = async () => {
     setSaving(true); setError('')
     try {
-      await updateDoc(doc(db, 'hr_employees', id), { ...form, updatedAt: new Date().toISOString() })
-      setEmp(prev => ({ ...prev, ...form }))
+      // Keep the legacy flat `salary` field in sync as a derived display
+      // value (sum of the structure) — Employees.jsx list, HRDashboard's
+      // monthly bill total, and Attendance/Leaves elsewhere still read it.
+      const payload = { ...form, salary: computeGross(form.salaryStructure) }
+      await updateDoc(doc(db, 'hr_employees', id), { ...payload, updatedAt: new Date().toISOString() })
+      setEmp(prev => ({ ...prev, ...payload }))
       setEditing(false)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
@@ -248,7 +258,7 @@ export default function EmployeeProfile() {
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
               activeSection === s.id ? 'bg-white text-blue-700 shadow' : 'text-slate-500 hover:text-slate-700'
             }`}>
-            {s.icon} {s.label.replace(/^. /, '')}
+            {s.icon} {s.label.replace(/^\S+\s/, '')}
           </button>
         ))}
       </div>
@@ -280,6 +290,58 @@ export default function EmployeeProfile() {
             )}
           </div>
         )}
+
+        {/* ── Salary Structure ── */}
+        {activeSection === 'salary' && (() => {
+          const ss = form.salaryStructure || DEFAULT_SALARY_STRUCTURE
+          const setSS = (k, v) => setForm(p => ({ ...p, salaryStructure: { ...(p.salaryStructure || DEFAULT_SALARY_STRUCTURE), [k]: v } }))
+          const gross = computeGross(ss)
+          const SF = ({ label, k }) => (
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">{label} (₹/month)</label>
+              {editing ? (
+                <input type="number" min="0" value={ss[k] ?? 0} onChange={e => setSS(k, Number(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              ) : (
+                <p className="text-sm text-slate-800 py-1">₹{(Number(ss[k]) || 0).toLocaleString('en-IN')}</p>
+              )}
+            </div>
+          )
+          return (
+            <div className="space-y-5">
+              <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide border-b pb-2">Monthly Earnings Breakup</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <SF label="Basic" k="basic" />
+                <SF label="HRA" k="hra" />
+                <SF label="Conveyance" k="conveyance" />
+                <SF label="Medical" k="medical" />
+                <SF label="Special Allowance" k="specialAllowance" />
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between">
+                <span className="text-sm font-semibold text-blue-800">Gross Monthly (CTC basis)</span>
+                <span className="text-lg font-bold text-blue-800">₹{gross.toLocaleString('en-IN')}</span>
+              </div>
+
+              <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide border-b pb-2 pt-2">Statutory Deductions</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={ss.pfApplicable !== false} disabled={!editing}
+                    onChange={e => setSS('pfApplicable', e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-blue-600" />
+                  <span className="text-sm text-slate-700">PF applicable (12% of Basic, capped ₹15,000 basic)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={ss.esiApplicable !== false} disabled={!editing}
+                    onChange={e => setSS('esiApplicable', e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-blue-600" />
+                  <span className="text-sm text-slate-700">ESI applicable (0.75% of gross, while gross ≤ ₹21,000)</span>
+                </label>
+              </div>
+              <p className="text-xs text-slate-400">
+                Professional tax (Maharashtra slab) and an estimated TDS are computed automatically each month on the Salary page
+                based on actual attendance — they aren't stored here.
+              </p>
+            </div>
+          )
+        })()}
 
         {/* ── Insurance ── */}
         {activeSection === 'insurance' && (

@@ -21,6 +21,8 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.2.0",
     "lucide-react": "^1.27.0",
+    "mammoth": "^1.12.2",
+    "pdfjs-dist": "^6.3.289",
     "pptxgenjs": "^3.12.0",
     "prettier": "^3.9.6",
     "react": "^18.2.0",
