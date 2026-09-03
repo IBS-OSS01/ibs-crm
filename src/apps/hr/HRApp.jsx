@@ -14,6 +14,7 @@ import Attendance from './pages/Attendance.jsx'
 import Leaves from './pages/Leaves.jsx'
 import Salary from './pages/Salary.jsx'
 import SalaryRevision from './pages/SalaryRevision.jsx'
+import Bonus from './pages/Bonus.jsx'
 import Advances from './pages/Advances.jsx'
 import HRExpenses from './pages/Expenses.jsx'
 import ModuleMyTasks from '../../components/tasks/ModuleMyTasks.jsx'
@@ -44,6 +45,7 @@ const NAV_GROUPS = [
   { label: 'Payroll', items: [
     { label: 'Salary',          icon: '💵', path: '/hr/salary', hrOnly: true },
     { label: 'Salary Revision', icon: '📈', path: '/hr/salary-revision', hrOnly: true },
+    { label: 'Statutory Bonus', icon: '🎁', path: '/hr/bonus', hrOnly: true },
     { label: 'Advances',        icon: '💳', path: '/hr/advances' },
     { label: 'Expenses',        icon: '🧾', path: '/hr/expenses' },
   ]},
@@ -139,6 +141,7 @@ export default function HRApp() {
           <Route path="/leaves"        element={<Leaves />} />
           <Route path="/salary"           element={<Salary />} />
           <Route path="/salary-revision"  element={<SalaryRevision />} />
+          <Route path="/bonus"            element={<Bonus />} />
           <Route path="/advances"         element={<Advances />} />
           <Route path="/expenses"         element={<HRExpenses />} />
           <Route path="/my-tasks"         element={<ModuleMyTasks />} />

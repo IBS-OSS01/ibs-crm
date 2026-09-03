@@ -8,9 +8,12 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth, usePermissions } from '../../../context/AuthContext'
-import { DEFAULT_SALARY_STRUCTURE, computeGross, splitGrossIntoStructure } from '../utils/payrollCalc'
+import { DEFAULT_SALARY_STRUCTURE, computeGross, splitGrossIntoStructure, computeGratuity } from '../utils/payrollCalc'
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+const GENDERS = ['Male', 'Female', 'Other']
+const EMPLOYMENT_TYPES = ['Permanent', 'Fixed-term']
+const PT_STATES = ['Maharashtra', 'Karnataka', 'Tamil Nadu', 'West Bengal', 'Gujarat', 'Telangana', 'Andhra Pradesh', 'Delhi', 'Haryana', 'Uttar Pradesh', 'Other (no PT)']
 
 const SECTIONS = [
   { id: 'identity',    label: '🪪 Identity',       icon: '🪪' },
@@ -92,6 +95,7 @@ export default function EmployeeProfile() {
   const buildForm = (e, salaryStructure) => ({
     // Identity
     dob:        e.dob        || '',
+    gender:     e.gender     || '',
     bloodGroup: e.bloodGroup || '',
     panNumber:  e.panNumber  || '',
     aadharNumber: e.aadharNumber || '',
@@ -115,6 +119,7 @@ export default function EmployeeProfile() {
     relievingLetterDate:    e.relievingLetterDate    || '',
     pfAccountNo:            e.pfAccountNo            || '',
     esiNo:                  e.esiNo                  || '',
+    employmentType:         e.employmentType         || 'Permanent',
     // Bank
     bankName:       e.bankName       || '',
     bankAccountNo:  e.bankAccountNo  || '',
@@ -289,6 +294,7 @@ export default function EmployeeProfile() {
             <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide border-b pb-2">Identity Documents</h3>
             <div className="grid grid-cols-2 gap-4">
               <F label="Date of Birth" value={emp.dob} editKey="dob" type="date" />
+              <F label="Gender" value={emp.gender} editKey="gender" options={GENDERS} />
               <F label="Blood Group" value={emp.bloodGroup} editKey="bloodGroup" options={BLOOD_GROUPS} />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -331,6 +337,12 @@ export default function EmployeeProfile() {
             if (!g || g <= 0) return
             setForm(p => ({ ...p, salaryStructure: splitGrossIntoStructure(g, p.salaryStructure) }))
           }
+          const gratuity = computeGratuity({
+            basicPlusDA: (Number(ss.basic) || 0) + (Number(ss.dearnessAllowance) || 0),
+            joinDate: emp.joinDate,
+            asOfDate: new Date(),
+            employmentType: (form.employmentType || 'Permanent').toLowerCase() === 'fixed-term' ? 'fixed-term' : 'permanent',
+          })
           return (
             <div className="space-y-5">
               {editing && (
@@ -356,6 +368,7 @@ export default function EmployeeProfile() {
               <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide border-b pb-2">Monthly Earnings Breakup</h3>
               <div className="grid grid-cols-2 gap-4">
                 <SF label="Basic" k="basic" />
+                <SF label="Dearness Allowance (DA)" k="dearnessAllowance" />
                 <SF label="HRA" k="hra" />
                 <SF label="Conveyance" k="conveyance" />
                 <SF label="Medical" k="medical" />
@@ -365,23 +378,100 @@ export default function EmployeeProfile() {
                 <span className="text-sm font-semibold text-blue-800">Gross Monthly (CTC basis)</span>
                 <span className="text-lg font-bold text-blue-800">₹{gross.toLocaleString('en-IN')}</span>
               </div>
+              <p className="text-xs text-slate-400">
+                Basic + DA is the "statutory wage" the Code on Wages 2019 uses for PF/gratuity — if it works out below 50% of
+                gross, the app automatically treats the wage base as 50% of gross for those calculations (you don't need to
+                adjust anything here for that; it happens on the Salary page).
+              </p>
 
               <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide border-b pb-2 pt-2">Statutory Deductions</h3>
               <div className="grid grid-cols-2 gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={ss.pfApplicable !== false} disabled={!editing}
                     onChange={e => setSS('pfApplicable', e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-blue-600" />
-                  <span className="text-sm text-slate-700">PF applicable (12% of Basic, capped ₹15,000 basic)</span>
+                  <span className="text-sm text-slate-700">PF applicable (12% of Basic+DA, capped ₹15,000 wage)</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={ss.esiApplicable !== false} disabled={!editing}
                     onChange={e => setSS('esiApplicable', e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-blue-600" />
                   <span className="text-sm text-slate-700">ESI applicable (0.75% of gross, while gross ≤ ₹21,000)</span>
                 </label>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Professional Tax State</label>
+                  {editing ? (
+                    <select value={ss.professionalTaxState || 'Maharashtra'} onChange={e => setSS('professionalTaxState', e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                      {PT_STATES.map(st => <option key={st} value={st}>{st}</option>)}
+                    </select>
+                  ) : (
+                    <p className="text-sm text-slate-800 py-1">{ss.professionalTaxState || 'Maharashtra'}</p>
+                  )}
+                </div>
+              </div>
+              {(ss.professionalTaxState || 'Maharashtra') === 'Maharashtra' && (
+                <p className="text-xs text-slate-400">
+                  Maharashtra is the one state with a gender-based PT slab (women exempt up to ₹25,000/month) — set Gender on the
+                  Identity tab so this is applied correctly.
+                </p>
+              )}
+
+              <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide border-b pb-2 pt-2">Income Tax (TDS) Regime</h3>
+              <div className="flex gap-2">
+                {['new', 'old'].map(r => (
+                  <button key={r} type="button" disabled={!editing} onClick={() => setSS('taxRegime', r)}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium border transition ${
+                      (ss.taxRegime || 'new') === r ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300'
+                    } ${!editing ? 'cursor-default' : ''}`}>
+                    {r === 'new' ? 'New Regime (default)' : 'Old Regime'}
+                  </button>
+                ))}
+              </div>
+              {(ss.taxRegime || 'new') === 'old' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
+                  <p className="text-xs text-slate-500">Old-regime declarations — used only for this employee's monthly TDS estimate on the Salary page.</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Annual Rent Paid (₹)</label>
+                      {editing ? (
+                        <input type="number" min="0" value={ss.declaredRentPaidAnnual ?? 0} onChange={e => setSS('declaredRentPaidAnnual', Number(e.target.value) || 0)}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm" />
+                      ) : <p className="text-sm text-slate-800 py-1">₹{(Number(ss.declaredRentPaidAnnual) || 0).toLocaleString('en-IN')}</p>}
+                    </div>
+                    <div className="flex items-end pb-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={!!ss.isMetroCity} disabled={!editing}
+                          onChange={e => setSS('isMetroCity', e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-blue-600" />
+                        <span className="text-sm text-slate-700">Metro city (Mumbai/Delhi/Kolkata/Chennai) — 50% HRA exemption vs 40%</span>
+                      </label>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Declared 80C (₹/year, cap 1,50,000)</label>
+                      {editing ? (
+                        <input type="number" min="0" max="150000" value={ss.declared80C ?? 0} onChange={e => setSS('declared80C', Number(e.target.value) || 0)}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm" />
+                      ) : <p className="text-sm text-slate-800 py-1">₹{(Number(ss.declared80C) || 0).toLocaleString('en-IN')}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Declared 80D (₹/year, cap 25,000)</label>
+                      {editing ? (
+                        <input type="number" min="0" max="25000" value={ss.declared80D ?? 0} onChange={e => setSS('declared80D', Number(e.target.value) || 0)}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm" />
+                      ) : <p className="text-sm text-slate-800 py-1">₹{(Number(ss.declared80D) || 0).toLocaleString('en-IN')}</p>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide border-b pb-2 pt-2">Gratuity (accrual estimate)</h3>
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 grid grid-cols-3 gap-3 text-sm">
+                <div><p className="text-xs text-purple-600 uppercase font-semibold">Completed Service</p><p className="font-bold text-purple-900">{gratuity.years} yr(s)</p></div>
+                <div><p className="text-xs text-purple-600 uppercase font-semibold">Eligible ({gratuity.minYears}+ yrs)</p><p className="font-bold text-purple-900">{gratuity.eligible ? 'Yes' : 'Not yet'}</p></div>
+                <div><p className="text-xs text-purple-600 uppercase font-semibold">Accrued Amount</p><p className="font-bold text-purple-900">₹{gratuity.amount.toLocaleString('en-IN')}</p></div>
               </div>
               <p className="text-xs text-slate-400">
-                Professional tax (Maharashtra slab) and an estimated TDS are computed automatically each month on the Salary page
-                based on actual attendance — they aren't stored here.
+                15 days' wages (Basic+DA) per completed year of service ÷ 26 — payable on separation, not a monthly deduction.
+                Fixed-term employees qualify after 1 year (pro-rata); permanent employees after 5 years, per the Code on Social
+                Security. This is an estimate for planning purposes, not a substitute for your final settlement calculation.
               </p>
             </div>
           )
@@ -434,6 +524,7 @@ export default function EmployeeProfile() {
               <F label="Relieving Letter Date" value={emp.relievingLetterDate} editKey="relievingLetterDate" type="date" />
               <F label="PF Account No." value={emp.pfAccountNo} editKey="pfAccountNo" />
               <F label="ESI No." value={emp.esiNo} editKey="esiNo" />
+              <F label="Employment Type" value={emp.employmentType} editKey="employmentType" options={EMPLOYMENT_TYPES} />
             </div>
           </div>
         )}

@@ -20,7 +20,7 @@ function buildPayslipHtml({ slip, employee, seller }) {
   const e = slip.earnings || {}
   const d = slip.deductions || {}
   const earningRows = [
-    ['Basic', e.basic], ['HRA', e.hra], ['Conveyance', e.conveyance],
+    ['Basic', e.basic], ['Dearness Allowance', e.dearnessAllowance], ['HRA', e.hra], ['Conveyance', e.conveyance],
     ['Medical', e.medical], ['Special Allowance', e.specialAllowance],
   ].filter(([, v]) => v).map(([label, v]) => `<tr><td style="padding:6px 8px">${label}</td><td style="padding:6px 8px;text-align:right">${Number(v).toLocaleString('en-IN')}</td></tr>`).join('')
   const deductionRows = [
@@ -71,6 +71,7 @@ function buildPayslipHtml({ slip, employee, seller }) {
   <div class="net"><span>Net Pay</span><span class="amt">₹${(slip.netSalary || 0).toLocaleString('en-IN')}</span></div>
   <div class="words">${amountInWords(slip.netSalary || 0)}</div>
   ${att.totalDaysInMonth ? `<div class="att">Payable days: ${att.payableDays ?? '—'} / ${att.totalDaysInMonth} (Present: ${att.presentDays ?? 0}, Half-day: ${att.halfDays ?? 0}, Paid leave: ${att.paidLeaveDays ?? 0}, Holidays: ${att.holidayDays ?? 0}, Sundays: ${att.sundays ?? 0})</div>` : ''}
+  ${slip.employerContributions ? `<div class="att">Employer's PF contribution this month (not deducted from you): ₹${(slip.employerContributions.pf?.total || 0).toLocaleString('en-IN')} · Employer's ESI contribution: ₹${(slip.employerContributions.esi || 0).toLocaleString('en-IN')}</div>` : ''}
   <div class="att" style="margin-top:10px">This is a system-generated payslip. TDS shown is an estimate — refer to Form 16 for the final annual figure.</div>
   </body></html>`
 }
@@ -165,7 +166,9 @@ export default function Salary() {
       for (const emp of toCreate) {
         const empAdvances = advances.filter(a => a.employeeId === emp.id && a.status === 'approved' && a.deductFromMonth === monthKey)
         const totalAdvanceDeduct = empAdvances.reduce((s, a) => s + (Number(a.amount) || 0), 0)
-        const structure = salaryStructures[emp.id]?.salaryStructure || { ...DEFAULT_SALARY_STRUCTURE }
+        // gender lives on hr_employees (KYC), not the salary-structure doc — merged in
+        // here since Professional Tax (Maharashtra) needs it for the exemption slab.
+        const structure = { ...(salaryStructures[emp.id]?.salaryStructure || DEFAULT_SALARY_STRUCTURE), gender: emp.gender }
         const att = attByEmp[emp.id] || { present: 0, half: 0, paidLeave: 0 }
         const breakup = computePayrollBreakup({
           structure,
@@ -182,6 +185,7 @@ export default function Salary() {
           grossProrated: breakup.grossProrated,
           baseSalary: breakup.grossProrated, // kept for backward-compat with anything still reading the old field name
           deductions: breakup.deductions,
+          employerContributions: breakup.employerContributions, // PF/ESI employer-side outflow — not deducted from the employee, kept for statutory-cost visibility and return prep
           advancesDeducted: totalAdvanceDeduct,
           netSalary,
           attendanceSummary: { ...att, payableDays: breakup.payableDays, holidayDays, sundays, totalDaysInMonth,
@@ -373,20 +377,33 @@ export default function Salary() {
                 {expandedId === slip.id && (
                   <tr className="bg-slate-50">
                     <td colSpan={6} className="px-4 py-3">
-                      <div className="grid grid-cols-2 gap-6 text-xs">
+                      <div className="grid grid-cols-3 gap-6 text-xs">
                         <div>
                           <p className="font-bold text-slate-600 mb-1">Earnings</p>
-                          {['basic','hra','conveyance','medical','specialAllowance'].map(k => (
+                          {['basic','dearnessAllowance','hra','conveyance','medical','specialAllowance'].map(k => (
                             (slip.earnings?.[k] || 0) > 0 &&
                             <div key={k} className="flex justify-between py-0.5"><span className="text-slate-500 capitalize">{k.replace(/([A-Z])/g, ' $1')}</span><span>₹{(slip.earnings[k]||0).toLocaleString('en-IN')}</span></div>
                           ))}
                         </div>
                         <div>
-                          <p className="font-bold text-slate-600 mb-1">Deductions</p>
+                          <p className="font-bold text-slate-600 mb-1">Employee Deductions</p>
                           {[['pf','PF'],['esi','ESI'],['professionalTax','Professional Tax'],['tds','TDS (est.)'],['other','Other']].map(([k,label]) => (
                             (d[k] || 0) > 0 && <div key={k} className="flex justify-between py-0.5"><span className="text-slate-500">{label}</span><span>₹{(d[k]||0).toLocaleString('en-IN')}</span></div>
                           ))}
                           {(slip.advancesDeducted || 0) > 0 && <div className="flex justify-between py-0.5"><span className="text-slate-500">Advance Recovery</span><span>₹{slip.advancesDeducted.toLocaleString('en-IN')}</span></div>}
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-600 mb-1">Employer Cost (not deducted)</p>
+                          {slip.employerContributions ? (
+                            <>
+                              <div className="flex justify-between py-0.5"><span className="text-slate-500">PF — EPS</span><span>₹{(slip.employerContributions.pf?.eps||0).toLocaleString('en-IN')}</span></div>
+                              <div className="flex justify-between py-0.5"><span className="text-slate-500">PF — EPF</span><span>₹{(slip.employerContributions.pf?.epf||0).toLocaleString('en-IN')}</span></div>
+                              <div className="flex justify-between py-0.5"><span className="text-slate-500">PF — EDLI</span><span>₹{(slip.employerContributions.pf?.edli||0).toLocaleString('en-IN')}</span></div>
+                              <div className="flex justify-between py-0.5"><span className="text-slate-500">PF — Admin Charges</span><span>₹{(slip.employerContributions.pf?.adminCharges||0).toLocaleString('en-IN')}</span></div>
+                              <div className="flex justify-between py-0.5"><span className="text-slate-500">ESI (employer)</span><span>₹{(slip.employerContributions.esi||0).toLocaleString('en-IN')}</span></div>
+                              <div className="flex justify-between py-0.5 font-semibold border-t border-slate-200 mt-1 pt-1"><span className="text-slate-600">Total CTC this month</span><span>₹{(slip.employerContributions.totalEmployerCost||0).toLocaleString('en-IN')}</span></div>
+                            </>
+                          ) : <p className="text-slate-400">Generated before employer-contribution tracking was added — regenerate to see this.</p>}
                         </div>
                       </div>
                       {slip.attendanceSummary?.totalDaysInMonth && (

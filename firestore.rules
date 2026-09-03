@@ -125,6 +125,7 @@ service cloud.firestore {
     match /hr_salary_structures/{employeeId} { allow read, write: if hasHRWriteAccess(); }
     match /hr_salary_slips/{id}      { allow read, write: if hasHRWriteAccess(); }
     match /hr_salary_revisions/{id}  { allow read, write: if hasHRWriteAccess(); }
+    match /hr_bonus_records/{id}     { allow read, write: if hasHRWriteAccess(); }
     match /hr_advances/{id} {
       allow read: if isProvisioned();
       allow create: if isProvisioned();
