@@ -28,6 +28,42 @@ export function computeGross(structure = {}) {
 }
 
 /**
+ * Standard Indian small/medium-company salary-structure template. Given a
+ * single "Monthly Gross" figure, splits it into the usual heads so HR only
+ * ever has to know/enter one number per employee instead of guessing a
+ * breakup by hand:
+ *
+ *   Basic                50% of Gross — kept at/above half in line with the
+ *                         Code on Wages 2019's "wages" definition (allowances
+ *                         excluded from PF/gratuity wages are capped at 50%
+ *                         of total remuneration; the Code isn't fully in
+ *                         force yet, but structuring this way from the start
+ *                         avoids a rework later).
+ *   HRA                  50% of Basic (= 25% of Gross) — standard metro rate.
+ *   Conveyance/Transport  ₹1,600/month, capped by whatever's left.
+ *   Medical Allowance     ₹1,250/month, capped by whatever's left.
+ *   Special Allowance     the balance — so the heads always sum back to
+ *                         Gross exactly, even for very low salaries where
+ *                         the fixed allowances above don't fully fit.
+ *
+ * This is a starting template, not a legal mandate — every head stays a
+ * plain editable number afterward; re-running this only overwrites what's
+ * explicitly re-applied.
+ */
+export function splitGrossIntoStructure(gross, overrides = {}) {
+  const g = Math.max(num(gross), 0)
+  const basic = Math.round(g * 0.50)
+  const hra = Math.round(basic * 0.50)
+  let remaining = g - basic - hra
+  const conveyance = Math.min(1600, Math.max(remaining, 0))
+  remaining -= conveyance
+  const medical = Math.min(1250, Math.max(remaining, 0))
+  remaining -= medical
+  const specialAllowance = Math.max(remaining, 0)
+  return { ...DEFAULT_SALARY_STRUCTURE, ...overrides, basic, hra, conveyance, medical, specialAllowance }
+}
+
+/**
  * Attendance-linked pro-ration fraction for one month.
  * payableDays = present + (half-day × 0.5) + paid leave + holidays + Sundays
  * (Sundays/holidays are paid days by default — they're not something an

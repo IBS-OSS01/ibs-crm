@@ -8,7 +8,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth, usePermissions } from '../../../context/AuthContext'
-import { DEFAULT_SALARY_STRUCTURE, computeGross } from '../utils/payrollCalc'
+import { DEFAULT_SALARY_STRUCTURE, computeGross, splitGrossIntoStructure } from '../utils/payrollCalc'
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
 
@@ -61,6 +61,7 @@ export default function EmployeeProfile() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [grossInput, setGrossInput] = useState('')
 
   useEffect(() => {
     getDoc(doc(db, 'hr_employees', id)).then(d => {
@@ -307,8 +308,33 @@ export default function EmployeeProfile() {
               )}
             </div>
           )
+          const applyAutoSplit = () => {
+            const g = Number(grossInput)
+            if (!g || g <= 0) return
+            setForm(p => ({ ...p, salaryStructure: splitGrossIntoStructure(g, p.salaryStructure) }))
+          }
           return (
             <div className="space-y-5">
+              {editing && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                  <label className="block text-xs font-semibold text-amber-800 uppercase tracking-wide mb-1">
+                    ⚡ Auto-calculate from Monthly Gross
+                  </label>
+                  <div className="flex gap-2 items-center">
+                    <input type="number" min="0" value={grossInput} onChange={e => setGrossInput(e.target.value)}
+                      placeholder={`current: ₹${gross.toLocaleString('en-IN')}`}
+                      className="w-40 px-3 py-2 border border-amber-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                    <button type="button" onClick={applyAutoSplit}
+                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-xl transition">
+                      Apply Standard Split
+                    </button>
+                  </div>
+                  <p className="text-xs text-amber-700 mt-1.5">
+                    Enter one monthly gross figure — fills Basic 50% / HRA 25% / Conveyance ₹1,600 / Medical ₹1,250 / Special Allowance (balance)
+                    below automatically. Each field stays editable afterward if you need to hand-adjust anything.
+                  </p>
+                </div>
+              )}
               <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide border-b pb-2">Monthly Earnings Breakup</h3>
               <div className="grid grid-cols-2 gap-4">
                 <SF label="Basic" k="basic" />
