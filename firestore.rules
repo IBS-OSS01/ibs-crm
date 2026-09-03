@@ -140,6 +140,11 @@ service cloud.firestore {
     // employee directory this is HR/admin-only for both read and write.
     match /hr_candidates/{id}        { allow read, write: if hasHRWriteAccess(); }
 
+    // Shift Scheduling (HR > Shifts) — templates and the weekly roster are
+    // admin-managed reference/schedule data, same posture as holidays/assets.
+    match /hr_shift_templates/{id}   { allow read: if isProvisioned(); allow write: if hasHRWriteAccess(); }
+    match /hr_rosters/{id}           { allow read: if isProvisioned(); allow write: if hasHRWriteAccess(); }
+
     // Projects module — tasks, service logs, project register (won CRM deals), cost line items.
     match /project_tasks/{id}         { allow read, write: if isProvisioned(); }
     match /project_service_logs/{id}  { allow read, write: if isProvisioned(); }

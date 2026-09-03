@@ -7,6 +7,7 @@ import EmployeeProfile from './pages/EmployeeProfile.jsx'
 import OrgChart from './pages/OrgChart.jsx'
 import HolidayCalendar from './pages/HolidayCalendar.jsx'
 import CandidateCVs from './pages/CandidateCVs.jsx'
+import ShiftScheduling from './pages/ShiftScheduling.jsx'
 import AssetManagement from './pages/AssetManagement.jsx'
 import Announcements from './pages/Announcements.jsx'
 import Attendance from './pages/Attendance.jsx'
@@ -35,6 +36,7 @@ const NAV_GROUPS = [
   { label: 'Workforce', items: [
     { label: 'Holidays',      icon: '🎉', path: '/hr/holidays' },
     { label: 'Attendance',    icon: '📅', path: '/hr/attendance' },
+    { label: 'Shifts',        icon: '🕐', path: '/hr/shifts' },
     { label: 'Leaves',        icon: '🏖️', path: '/hr/leaves' },
     { label: 'Assets',        icon: '💻', path: '/hr/assets' },
     { label: 'Announcements', icon: '📢', path: '/hr/announcements' },
@@ -124,6 +126,7 @@ export default function HRApp() {
           <Route path="/org-chart"     element={<OrgChart />} />
           <Route path="/holidays"      element={<HolidayCalendar />} />
           <Route path="/candidates"    element={<CandidateCVs />} />
+          <Route path="/shifts"        element={<ShiftScheduling />} />
           <Route path="/assets"        element={<AssetManagement />} />
           <Route path="/announcements" element={<Announcements />} />
           <Route path="/employee/:id"  element={<EmployeeProfile />} />
