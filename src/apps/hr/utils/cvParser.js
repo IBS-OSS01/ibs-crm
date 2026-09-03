@@ -165,7 +165,14 @@ function extractName(text) {
 
 // Prefers the line right after the detected name — very common resume
 // layout is "Name" then "Designation" as the next line. Falls back to a
-// regex scan of the whole text for a role-noun-ending phrase.
+// per-line regex scan for a role-noun-ending phrase, but only accepts a
+// match whose *containing line* is short (a title sits alone on its own
+// line or job-history header, e.g. "SIEMENS | Project Engineer") — this
+// keeps the regex from matching a software/tool name like "SIMATIC
+// Manager" buried mid-sentence in a long skills paragraph, since "Manager"
+// alone is too generic a keyword to otherwise tell those apart.
+const MAX_DESIGNATION_LINE_LENGTH = 70
+
 function extractDesignation(text, name) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   const skipWord = /resume|curriculum vitae|\bcv\b|profile|contact|address|objective/i
@@ -181,8 +188,12 @@ function extractDesignation(text, name) {
       }
     }
   }
-  const m = text.match(DESIGNATION_RE)
-  return m ? m[1].replace(/\s{2,}/g, ' ').trim() : ''
+  for (const line of lines) {
+    if (line.length > MAX_DESIGNATION_LINE_LENGTH) continue // long prose sentence, not a title line
+    const m = line.match(DESIGNATION_RE)
+    if (m) return m[1].replace(/\s{2,}/g, ' ').trim()
+  }
+  return ''
 }
 
 function extractExperience(text) {
