@@ -3,7 +3,7 @@ import { initializeApp, getApps } from 'firebase/app'
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth'
 import { collection, getDocs, addDoc, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { auth, db, firebaseConfig } from '../../../lib/firebase-config'
-import { useAuth } from '../../../context/AuthContext'
+import { useAuth, usePermissions } from '../../../context/AuthContext'
 import { invalidatePeopleCache } from '../../../lib/usePeople'
 import { useNavigate } from 'react-router-dom'
 import { ensureDefaultRoles } from '../../admin/defaultRoles'
@@ -49,7 +49,13 @@ const inp = 'w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:o
 export default function Employees() {
   const navigate = useNavigate()
   const { user, userProfile } = useAuth()
+  const { canEdit } = usePermissions()
   const isAdmin = userProfile?.role === 'admin'
+  // Matches firestore.rules' hasHRWriteAccess() exactly (admin, or explicit
+  // HR:edit, or the legacy departments[] fallback) — keeping the UI gate and
+  // the server-side rule in agreement so a visible button never dead-ends
+  // in a permission-denied write.
+  const hasHRAccess = isAdmin || canEdit('HR')
   const [employees, setEmployees] = useState([])
   const [appUsers, setAppUsers] = useState([])            // full users collection — login accounts
   const [roles, setRoles] = useState([])
@@ -294,6 +300,26 @@ export default function Employees() {
     } catch (err) { setError('Error: ' + err.message) }
   }
 
+  // Starts the offboarding checklist (tracked on EmployeeProfile.jsx) —
+  // deliberately does NOT touch the login or active flag; disabling access
+  // stays a separate, explicit action so a manager can run the checklist
+  // (exit interview, asset return, F&F) before access is actually cut.
+  const handleInitiateOffboarding = async (e) => {
+    if (e.offboarding?.status && e.offboarding.status !== 'not_started') {
+      navigate(`/hr/employee/${e.id}`)
+      return
+    }
+    const lastWorkingDay = window.prompt(`Last working day for ${e.name}? (YYYY-MM-DD)`, '')
+    if (!lastWorkingDay) return
+    const reason = window.prompt('Reason for leaving (optional):', '') || ''
+    try {
+      const offboarding = { status: 'in_progress', initiatedAt: new Date().toISOString(), initiatedBy: user.uid, lastWorkingDay, reason, steps: {} }
+      await updateDoc(doc(db, 'hr_employees', e.id), { offboarding, updatedAt: new Date().toISOString() })
+      setEmployees(prev => prev.map(x => x.id === e.id ? { ...x, offboarding } : x))
+      navigate(`/hr/employee/${e.id}`)
+    } catch (err) { setError('Error: ' + err.message) }
+  }
+
   const handleResetPassword = async (linked) => {
     if (!linked?.email) return
     if (!window.confirm(`Send a password reset link to ${linked.email}?`)) return
@@ -377,10 +403,12 @@ export default function Employees() {
               {importing ? 'Importing…' : `🔗 Import from App Users (${usersWithoutEmployeeRecord.length + usersNeedingLinkBackfill.length})`}
             </button>
           )}
-          <button onClick={() => { setShowForm(!showForm); resetForm() }}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
-            {showForm && !editing ? '✕ Cancel' : '+ Add Employee'}
-          </button>
+          {hasHRAccess && (
+            <button onClick={() => { setShowForm(!showForm); resetForm() }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+              {showForm && !editing ? '✕ Cancel' : '+ Add Employee'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -397,7 +425,7 @@ export default function Employees() {
       {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
       {success && <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">✅ {success}</div>}
 
-      {showForm && (
+      {showForm && hasHRAccess && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => { setShowForm(false); resetForm() }}>
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200/70 p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between mb-4">
@@ -621,7 +649,14 @@ export default function Employees() {
                       <td className="px-4 py-3 text-right text-slate-700 font-medium">₹{(Number(e.salary) || 0).toLocaleString('en-IN')}</td>
                       <td className="px-4 py-3 text-right space-x-3 whitespace-nowrap">
                         <button onClick={() => navigate(`/hr/employee/${e.id}`)} className="text-purple-600 hover:text-purple-700 font-medium">📋 Profile</button>
-                        <button onClick={() => handleEdit(e)} className="text-blue-600 hover:text-blue-700 font-medium">✏️ Edit</button>
+                        {hasHRAccess && <button onClick={() => handleEdit(e)} className="text-blue-600 hover:text-blue-700 font-medium">✏️ Edit</button>}
+                        {hasHRAccess && e.active !== false && (
+                          <button onClick={() => handleInitiateOffboarding(e)}
+                            title={e.offboarding?.status && e.offboarding.status !== 'not_started' ? 'Offboarding in progress — open profile' : 'Start the offboarding checklist'}
+                            className="text-orange-600 hover:text-orange-700 font-medium">
+                            🚪 {e.offboarding?.status && e.offboarding.status !== 'not_started' ? 'Offboarding' : 'Offboard'}
+                          </button>
+                        )}
                         {isAdmin && linkedUser && (
                           <>
                             <button onClick={() => handleResetPassword(linkedUser)} className="text-indigo-600 hover:text-indigo-700 font-medium">🔑 Reset</button>

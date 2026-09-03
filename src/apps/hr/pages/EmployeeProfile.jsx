@@ -5,27 +5,53 @@
  */
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { doc, getDoc, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
-import { useAuth } from '../../../context/AuthContext'
+import { useAuth, usePermissions } from '../../../context/AuthContext'
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
 
 const SECTIONS = [
-  { id: 'identity',   label: '🪪 Identity',       icon: '🪪' },
-  { id: 'insurance',  label: '🏥 Insurance',       icon: '🏥' },
-  { id: 'education',  label: '🎓 Education',       icon: '🎓' },
-  { id: 'employment', label: '📄 Employment Docs', icon: '📄' },
-  { id: 'bank',       label: '🏦 Bank Details',    icon: '🏦' },
+  { id: 'identity',    label: '🪪 Identity',       icon: '🪪' },
+  { id: 'insurance',   label: '🏥 Insurance',       icon: '🏥' },
+  { id: 'education',   label: '🎓 Education',       icon: '🎓' },
+  { id: 'employment',  label: '📄 Employment Docs', icon: '📄' },
+  { id: 'bank',        label: '🏦 Bank Details',    icon: '🏦' },
+  { id: 'onboarding',  label: '🚀 Onboarding',      icon: '🚀' },
+  { id: 'offboarding', label: '🚪 Offboarding',     icon: '🚪' },
+]
+
+const ONBOARDING_STEPS = [
+  { id: 'offerLetter',    label: 'Offer letter sent' },
+  { id: 'employmentLetter', label: 'Employment / appointment letter issued' },
+  { id: 'bankDetails',    label: 'Bank details collected' },
+  { id: 'idVerified',     label: 'PAN / Aadhar verified' },
+  { id: 'loginCreated',   label: 'App login created' },
+  { id: 'assetIssued',    label: 'Asset(s) issued' },
+  { id: 'induction',      label: 'Induction completed' },
+]
+
+const OFFBOARDING_STEPS = [
+  { id: 'exitInterview',  label: 'Exit interview conducted' },
+  { id: 'assetsReturned', label: 'Asset(s) returned' },
+  { id: 'accessRevoked',  label: 'Login access revoked' },
+  { id: 'fullAndFinal',   label: 'Full & final settlement processed' },
+  { id: 'relievingLetter', label: 'Relieving letter issued' },
+  { id: 'experienceLetter', label: 'Experience letter issued' },
 ]
 
 export default function EmployeeProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { userProfile } = useAuth()
-  const isAdmin = ['admin', 'service_manager', 'project_manager'].includes(userProfile?.role)
+  const { canEdit } = usePermissions()
+  // Matches firestore.rules' hasHRWriteAccess() — this page writes KYC/bank
+  // fields straight onto the hr_employees doc, so the button that opens
+  // editing must be gated the same way the write itself is now enforced.
+  const hasHRAccess = userProfile?.role === 'admin' || canEdit('HR')
 
   const [emp, setEmp] = useState(null)
+  const [assignedAssets, setAssignedAssets] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeSection, setActiveSection] = useState('identity')
   const [editing, setEditing] = useState(false)
@@ -43,6 +69,12 @@ export default function EmployeeProfile() {
       }
       setLoading(false)
     })
+    // Read-only — which company assets are currently assigned to this
+    // person, so the Offboarding checklist's "return assets" step isn't a
+    // guessing game.
+    getDocs(query(collection(db, 'hr_assets'), where('assignedToEmployeeId', '==', id)))
+      .then(snap => { const a = []; snap.forEach(d => a.push({ id: d.id, ...d.data() })); setAssignedAssets(a) })
+      .catch(console.error)
   }, [id])
 
   const buildForm = (e) => ({
@@ -77,6 +109,10 @@ export default function EmployeeProfile() {
     bankIfsc:       e.bankIfsc       || '',
     bankBranch:     e.bankBranch     || '',
     upiId:          e.upiId          || '',
+    // Onboarding / Offboarding — auto-starts onboarding for anyone who
+    // doesn't have a record yet (covers employees created before this existed).
+    onboarding:  e.onboarding  || { status: 'in_progress', startedAt: e.createdAt || new Date().toISOString(), steps: {} },
+    offboarding: e.offboarding || { status: 'not_started', steps: {} },
   })
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
@@ -127,6 +163,46 @@ export default function EmployeeProfile() {
     </div>
   )
 
+  // Checklist for the Onboarding/Offboarding sections — toggling a step
+  // records who/when, but (like every other field on this page) only
+  // actually saves once "Save Changes" is clicked.
+  const Checklist = ({ steps, sectionKey }) => {
+    const section = form[sectionKey] || { steps: {} }
+    const stepsState = section.steps || {}
+    return (
+      <div className="space-y-1">
+        {steps.map(s => {
+          const st = stepsState[s.id] || {}
+          return (
+            <label key={s.id}
+              className={`flex items-center gap-3 p-2 rounded-lg ${editing ? 'hover:bg-slate-50 cursor-pointer' : ''}`}>
+              <input type="checkbox" checked={!!st.done} disabled={!editing}
+                onChange={e => {
+                  const done = e.target.checked
+                  setForm(p => ({
+                    ...p,
+                    [sectionKey]: {
+                      ...(p[sectionKey] || {}),
+                      steps: { ...(p[sectionKey]?.steps || {}), [s.id]: { done, doneAt: done ? new Date().toISOString() : null } },
+                    },
+                  }))
+                }}
+                className="w-4 h-4 rounded border-slate-300 text-blue-600 disabled:opacity-70" />
+              <span className={`text-sm flex-1 ${st.done ? 'text-slate-800' : 'text-slate-600'}`}>{s.label}</span>
+              {st.done && st.doneAt && (
+                <span className="text-xs text-slate-400">{new Date(st.doneAt).toLocaleDateString('en-IN')}</span>
+              )}
+            </label>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const markSectionStatus = (sectionKey, status) => {
+    setForm(p => ({ ...p, [sectionKey]: { ...(p[sectionKey] || {}), status, completedAt: status === 'completed' ? new Date().toISOString() : null } }))
+  }
+
   return (
     <div className="p-4 max-w-4xl mx-auto space-y-4">
       {/* Header */}
@@ -154,12 +230,12 @@ export default function EmployeeProfile() {
                 Cancel
               </button>
             </>
-          ) : (
+          ) : hasHRAccess ? (
             <button onClick={() => setEditing(true)}
               className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-semibold rounded-xl transition">
               ✏️ Edit Profile
             </button>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -269,6 +345,89 @@ export default function EmployeeProfile() {
             </div>
           </div>
         )}
+
+        {/* ── Onboarding ── */}
+        {activeSection === 'onboarding' && (() => {
+          const onb = emp.onboarding || { status: 'in_progress', steps: {} }
+          const doneCount = ONBOARDING_STEPS.filter(s => onb.steps?.[s.id]?.done).length
+          return (
+            <div className="space-y-5">
+              <div className="flex items-center justify-between border-b pb-2">
+                <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide">Onboarding Checklist</h3>
+                {onb.status === 'completed' ? (
+                  <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">
+                    ✓ Completed {onb.completedAt ? new Date(onb.completedAt).toLocaleDateString('en-IN') : ''}
+                  </span>
+                ) : (
+                  <span className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded-full font-medium">{doneCount} / {ONBOARDING_STEPS.length} done</span>
+                )}
+              </div>
+              <Checklist steps={ONBOARDING_STEPS} sectionKey="onboarding" />
+              {editing && form.onboarding?.status !== 'completed' && (
+                <button type="button" onClick={() => markSectionStatus('onboarding', 'completed')}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-xl transition">
+                  ✓ Mark Onboarding Complete
+                </button>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* ── Offboarding ── */}
+        {activeSection === 'offboarding' && (() => {
+          const offb = emp.offboarding || { status: 'not_started', steps: {} }
+          const doneCount = OFFBOARDING_STEPS.filter(s => offb.steps?.[s.id]?.done).length
+          if (offb.status === 'not_started') {
+            return (
+              <div className="space-y-3">
+                <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide border-b pb-2">Offboarding</h3>
+                <p className="text-sm text-slate-400">
+                  Not initiated. Start this from HR → Employees → "🚪 Initiate Offboarding" on this person's row —
+                  that's where the last working day and reason are recorded.
+                </p>
+              </div>
+            )
+          }
+          return (
+            <div className="space-y-5">
+              <div className="flex items-center justify-between border-b pb-2">
+                <h3 className="font-bold text-slate-700 text-sm uppercase tracking-wide">Offboarding Checklist</h3>
+                {offb.status === 'completed' ? (
+                  <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">
+                    ✓ Completed {offb.completedAt ? new Date(offb.completedAt).toLocaleDateString('en-IN') : ''}
+                  </span>
+                ) : (
+                  <span className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium">{doneCount} / {OFFBOARDING_STEPS.length} done</span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Last Working Day</p>
+                  <p className="text-slate-800">{offb.lastWorkingDay || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Reason</p>
+                  <p className="text-slate-800">{offb.reason || '—'}</p>
+                </div>
+              </div>
+              {assignedAssets.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
+                  <p className="font-semibold text-amber-800 mb-1">⚠️ {assignedAssets.length} asset(s) still assigned — return via HR → Assets before checking off "Asset(s) returned":</p>
+                  <ul className="list-disc list-inside text-amber-700 text-xs space-y-0.5">
+                    {assignedAssets.map(a => <li key={a.id}>{a.name} ({a.assetTag})</li>)}
+                  </ul>
+                </div>
+              )}
+              <Checklist steps={OFFBOARDING_STEPS} sectionKey="offboarding" />
+              {editing && form.offboarding?.status !== 'completed' && (
+                <button type="button" onClick={() => markSectionStatus('offboarding', 'completed')}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-xl transition">
+                  ✓ Mark Offboarding Complete
+                </button>
+              )}
+            </div>
+          )
+        })()}
       </div>
     </div>
   )

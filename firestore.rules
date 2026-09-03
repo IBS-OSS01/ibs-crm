@@ -29,6 +29,22 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    // Admins, or anyone explicitly granted "Edit" on the HR module (Admin >
+    // Users / HR > Employees "App Login Access" section). Lets HR managers
+    // approve leaves/expenses/advances and run payroll without needing the
+    // admin role, while still keeping plain employees from writing directly
+    // to records the UI only shows them as read-only or self-service-create.
+    // Mirrors src/auth/permissions.js's hasPermission() resolution order —
+    // moduleRights.HR first, falling back to the legacy departments[] array
+    // for logins created before per-module rights existed — so the client
+    // UI (gated the same way) and this rule never disagree about who can write.
+    function hasHRWriteAccess() {
+      let profile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return isAdmin() ||
+        ('moduleRights' in profile && profile.moduleRights.HR == 'edit') ||
+        (!('moduleRights' in profile) && 'departments' in profile && 'HR' in profile.departments);
+    }
+
     // User profiles — all provisioned users can read (needed for form dropdowns,
     // team assignment, name lookup). Only admins can create/update/delete.
     match /users/{userId} {
@@ -85,13 +101,39 @@ service cloud.firestore {
     }
 
     // HR module — employees, attendance, leaves, salary slips, advances, expense claims.
-    match /hr_employees/{id}         { allow read, write: if isProvisioned(); }
-    match /hr_attendance/{id}        { allow read, write: if isProvisioned(); }
-    match /hr_leaves/{id}            { allow read, write: if isProvisioned(); }
-    match /hr_salary_slips/{id}      { allow read, write: if isProvisioned(); }
+    // hr_employees/hr_attendance/hr_salary_slips are HR-generated records (not
+    // self-service) — full write requires HR/admin access. hr_leaves/hr_advances/
+    // hr_expenses are self-service requests: anyone provisioned can create their
+    // own, but only HR/admin can approve/reject/modify an existing one.
+    match /hr_employees/{id}         { allow read: if isProvisioned(); allow write: if hasHRWriteAccess(); }
+    match /hr_attendance/{id}        { allow read: if isProvisioned(); allow write: if hasHRWriteAccess(); }
+    match /hr_leaves/{id} {
+      allow read: if isProvisioned();
+      allow create: if isProvisioned();
+      allow update, delete: if hasHRWriteAccess();
+    }
+    match /hr_salary_slips/{id}      { allow read: if isProvisioned(); allow write: if hasHRWriteAccess(); }
     match /hr_salary_revisions/{id}  { allow read: if isProvisioned(); allow write: if isAdmin(); }
-    match /hr_advances/{id}          { allow read, write: if isProvisioned(); }
-    match /hr_expenses/{id}          { allow read, write: if isProvisioned(); }
+    match /hr_advances/{id} {
+      allow read: if isProvisioned();
+      allow create: if isProvisioned();
+      allow update, delete: if hasHRWriteAccess();
+    }
+    match /hr_expenses/{id} {
+      allow read: if isProvisioned();
+      allow create: if isProvisioned();
+      allow update, delete: if hasHRWriteAccess();
+    }
+
+    // Holiday calendar (HR > Holidays) — admin-managed reference list, same
+    // posture as roles/departments: everyone reads, only HR/admin writes.
+    match /hr_holidays/{id}          { allow read: if isProvisioned(); allow write: if hasHRWriteAccess(); }
+
+    // Asset management (HR > Assets) — company equipment issued to staff.
+    match /hr_assets/{id}            { allow read: if isProvisioned(); allow write: if hasHRWriteAccess(); }
+
+    // Policies & Announcements (HR > Announcements) — everyone reads, only HR/admin publishes.
+    match /hr_announcements/{id}     { allow read: if isProvisioned(); allow write: if hasHRWriteAccess(); }
 
     // Projects module — tasks, service logs, project register (won CRM deals), cost line items.
     match /project_tasks/{id}         { allow read, write: if isProvisioned(); }

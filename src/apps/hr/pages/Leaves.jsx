@@ -13,10 +13,23 @@ const STATUS_COLORS = {
 // Standard annual leave allocation per employee
 const LEAVE_ALLOC = { 'Casual Leave': 12, 'Sick Leave': 12, 'Earned Leave': 15, 'Unpaid Leave': 999 }
 
-function daysBetween(from, to) {
+// 'YYYY-MM-DD' from a local Date, without the UTC-shift toISOString() causes.
+const toLocalISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+// Counts working days in [from, to] inclusive — Sundays and company
+// holidays don't count against the employee's leave balance.
+function daysBetween(from, to, holidaySet = new Set()) {
   if (!from || !to) return 1
-  const d = (new Date(to) - new Date(from)) / (1000 * 60 * 60 * 24) + 1
-  return d > 0 ? d : 1
+  const start = new Date(from + 'T00:00:00')
+  const end = new Date(to + 'T00:00:00')
+  if (end < start) return 1
+  let count = 0
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    if (d.getDay() === 0) continue              // Sunday
+    if (holidaySet.has(toLocalISO(d))) continue // company holiday
+    count++
+  }
+  return count > 0 ? count : 1
 }
 
 export default function Leaves() {
@@ -25,6 +38,7 @@ export default function Leaves() {
 
   const [employees, setEmployees] = useState([])
   const [leaves, setLeaves] = useState([])
+  const [holidaySet, setHolidaySet] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ employeeId: '', type: 'Casual Leave', fromDate: '', toDate: '', reason: '' })
@@ -37,9 +51,10 @@ export default function Leaves() {
 
   const load = async () => {
     try {
-      const [empSnap, leaveSnap] = await Promise.all([
+      const [empSnap, leaveSnap, holidaySnap] = await Promise.all([
         getDocs(collection(db, 'hr_employees')),
         getDocs(collection(db, 'hr_leaves')),
+        getDocs(collection(db, 'hr_holidays')),
       ])
       const emps = []; empSnap.forEach(d => emps.push({ id: d.id, ...d.data() }))
       emps.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
@@ -48,6 +63,10 @@ export default function Leaves() {
       const lv = []; leaveSnap.forEach(d => lv.push({ id: d.id, ...d.data() }))
       lv.sort((a, b) => (b.fromDate || '').localeCompare(a.fromDate || ''))
       setLeaves(lv)
+
+      const holidays = new Set()
+      holidaySnap.forEach(d => { const date = d.data().date; if (date) holidays.add(date) })
+      setHolidaySet(holidays)
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
   }
@@ -62,7 +81,7 @@ export default function Leaves() {
     setSaving(true)
     try {
       const emp = employees.find(e => e.id === form.employeeId)
-      const days = daysBetween(form.fromDate, form.toDate)
+      const days = daysBetween(form.fromDate, form.toDate, holidaySet)
       const payload = {
         employeeId: form.employeeId,
         employeeName: emp?.name || '',
@@ -156,7 +175,7 @@ export default function Leaves() {
             </div>
             {form.fromDate && form.toDate && (
               <div className="col-span-2 text-xs text-blue-600">
-                Duration: {daysBetween(form.fromDate, form.toDate)} day(s)
+                Duration: {daysBetween(form.fromDate, form.toDate, holidaySet)} working day(s) (Sundays & holidays excluded)
                 {form.employeeId && (
                   <span className="ml-3 text-slate-500">
                     Used {LEAVE_TYPES.includes(form.type) ? (usedLeaves[form.employeeId]?.[form.type] || 0) : 0} / {LEAVE_ALLOC[form.type]} {form.type} this year

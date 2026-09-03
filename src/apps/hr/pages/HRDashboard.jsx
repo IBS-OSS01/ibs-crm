@@ -9,22 +9,28 @@ export default function HRDashboard() {
   const [leaves, setLeaves] = useState([])
   const [advances, setAdvances] = useState([])
   const [slips, setSlips] = useState([])
+  const [pinnedPost, setPinnedPost] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [empSnap, leaveSnap, advSnap, slipSnap] = await Promise.all([
+        const [empSnap, leaveSnap, advSnap, slipSnap, announceSnap] = await Promise.all([
           getDocs(collection(db, 'hr_employees')),
           getDocs(collection(db, 'hr_leaves')),
           getDocs(collection(db, 'hr_advances')),
           getDocs(collection(db, 'hr_salary_slips')),
+          getDocs(collection(db, 'hr_announcements')),
         ])
         const toArr = snap => { const a = []; snap.forEach(d => a.push({ id: d.id, ...d.data() })); return a }
         setEmployees(toArr(empSnap))
         setLeaves(toArr(leaveSnap))
         setAdvances(toArr(advSnap))
         setSlips(toArr(slipSnap))
+        const posts = toArr(announceSnap)
+        const pinned = posts.filter(p => p.pinned).sort((a, b) => (b.publishedAt || '').localeCompare(a.publishedAt || ''))
+        const latest = posts.sort((a, b) => (b.publishedAt || '').localeCompare(a.publishedAt || ''))
+        setPinnedPost(pinned[0] || latest[0] || null)
       } catch (err) { console.error(err) }
       finally { setLoading(false) }
     }
@@ -39,6 +45,8 @@ export default function HRDashboard() {
   const pendingAdvances = advances.filter(a => a.status === 'pending')
   const currentMonth = new Date().toISOString().slice(0, 7)
   const unpaidSlips = slips.filter(s => s.month === currentMonth && s.status !== 'paid')
+  const onboardingInProgress = employees.filter(e => e.onboarding?.status === 'in_progress').length
+  const offboardingInProgress = employees.filter(e => e.offboarding?.status === 'in_progress').length
 
   const cards = [
     { label: 'Active Employees', value: activeEmp.length, total: employees.length, icon: '👤', color: 'text-blue-600', path: '/hr/employees' },
@@ -46,6 +54,7 @@ export default function HRDashboard() {
     { label: 'Leave Requests', value: pendingLeaves.length, sub: 'pending approval', icon: '🏖️', color: 'text-amber-600', path: '/hr/leaves' },
     { label: 'Advance Requests', value: pendingAdvances.length, sub: 'pending approval', icon: '💳', color: 'text-purple-600', path: '/hr/advances' },
     { label: 'Salary This Month', value: unpaidSlips.length ? `${unpaidSlips.length} unpaid` : 'All paid', icon: '✅', color: unpaidSlips.length ? 'text-red-600' : 'text-green-600', path: '/hr/salary' },
+    { label: 'Onboarding / Offboarding', value: `${onboardingInProgress} / ${offboardingInProgress}`, sub: 'in progress', icon: '🚀', color: 'text-orange-600', path: '/hr/employees' },
   ]
 
   // Department breakdown
@@ -75,6 +84,18 @@ export default function HRDashboard() {
           </button>
         ))}
       </div>
+
+      {pinnedPost && (
+        <button onClick={() => navigate('/hr/announcements')}
+          className="w-full text-left bg-amber-50 border border-amber-200 rounded-2xl p-4 hover:border-amber-300 transition">
+          <div className="flex items-center gap-2 mb-1">
+            {pinnedPost.pinned && <span>📌</span>}
+            <span className="text-xs px-2 py-0.5 rounded-lg font-bold bg-white text-amber-700">{pinnedPost.type === 'policy' ? 'Policy' : 'Announcement'}</span>
+            <span className="font-bold text-slate-800 text-sm">{pinnedPost.title}</span>
+          </div>
+          <p className="text-xs text-slate-600 line-clamp-2">{pinnedPost.body}</p>
+        </button>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Department breakdown */}

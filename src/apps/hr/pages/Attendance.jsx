@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { collection, getDocs, writeBatch, doc, query, where } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
-import { useAuth } from '../../../context/AuthContext'
+import { useAuth, usePermissions } from '../../../context/AuthContext'
 
 const STATUS_CYCLE = ['present', 'absent', 'half-day', 'paid-leave']
 const STATUS_META = {
@@ -17,10 +17,16 @@ function isSunday(year, month, day) { return new Date(year, month, day).getDay()
 
 export default function Attendance() {
   const { userProfile } = useAuth()
-  const isAdmin = userProfile?.role === 'admin'
+  const { canEdit } = usePermissions()
+  // Matches firestore.rules' hasHRWriteAccess() — attendance is marked by
+  // HR/managers for the team, not self-service, so this page was previously
+  // wide open to anyone who could navigate here (isAdmin was declared but
+  // never actually used to gate anything).
+  const hasHRAccess = userProfile?.role === 'admin' || canEdit('HR')
 
   const today = new Date()
   const [employees, setEmployees] = useState([])
+  const [holidayMap, setHolidayMap] = useState({}) // { 'YYYY-MM-DD': name }
   const [selectedEmp, setSelectedEmp] = useState('')
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth())
@@ -38,6 +44,11 @@ export default function Attendance() {
       const activeEmps = data.filter(e => e.active)
       setEmployees(activeEmps)
       if (activeEmps.length > 0) setSelectedEmp(activeEmps[0].id)
+    })
+    getDocs(collection(db, 'hr_holidays')).then(snap => {
+      const map = {}
+      snap.forEach(d => { const h = d.data(); if (h.date) map[h.date] = h.name })
+      setHolidayMap(map)
     })
   }, [])
 
@@ -112,20 +123,26 @@ export default function Attendance() {
           className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
           {years.map(y => <option key={y} value={y}>{y}</option>)}
         </select>
-        <button onClick={handleSave} disabled={!dirty || saving}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-50">
-          {saving ? 'Saving...' : '💾 Save Attendance'}
-        </button>
+        {hasHRAccess && (
+          <button onClick={handleSave} disabled={!dirty || saving}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-50">
+            {saving ? 'Saving...' : '💾 Save Attendance'}
+          </button>
+        )}
         {dirty && <span className="text-xs text-amber-600">Unsaved changes</span>}
         {msg && <span className={`text-xs ${msg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>{msg}</span>}
       </div>
+
+      {!hasHRAccess && (
+        <p className="text-xs text-slate-400">🔒 View-only — only HR/admin can mark attendance.</p>
+      )}
 
       {/* Legend */}
       <div className="flex gap-3 flex-wrap text-xs">
         {Object.entries(STATUS_META).filter(([k]) => k !== '').map(([k, v]) => (
           <span key={k} className={`px-2 py-1 rounded-lg font-medium ${v.bg}`}>{v.label} = {v.full}</span>
         ))}
-        <span className="text-slate-400">Click a day to cycle status. Sundays shown in grey.</span>
+        <span className="text-slate-400">Click a day to cycle status. Sundays and 🎉 holidays shown in grey.</span>
       </div>
 
       {loading ? <div className="text-slate-400 text-sm">Loading attendance...</div> : (
@@ -146,12 +163,15 @@ export default function Attendance() {
                 const meta = STATUS_META[status] || STATUS_META['']
                 const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day
                 const sun = isSunday(year, month, day)
+                const holidayName = holidayMap[dateStr]
+                const locked = sun || !!holidayName
+                const clickable = hasHRAccess && !locked
                 return (
-                  <button key={day} onClick={() => !sun && toggle(day)}
-                    title={`${day} ${MONTHS[month]} — ${meta.full}`}
-                    className={`relative rounded-lg p-1 text-center transition ${sun ? 'bg-slate-50 cursor-default' : `${meta.bg} hover:opacity-80 cursor-pointer`} ${isToday ? 'ring-2 ring-blue-500' : ''}`}>
+                  <button key={day} onClick={() => clickable && toggle(day)}
+                    title={`${day} ${MONTHS[month]} — ${holidayName || meta.full}`}
+                    className={`relative rounded-lg p-1 text-center transition ${locked ? 'bg-slate-50 cursor-default' : `${meta.bg} ${clickable ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'}`} ${isToday ? 'ring-2 ring-blue-500' : ''}`}>
                     <div className="text-xs text-slate-500">{day}</div>
-                    <div className="text-xs font-bold">{sun ? '—' : meta.label}</div>
+                    <div className="text-xs font-bold">{locked ? (holidayName ? '🎉' : '—') : meta.label}</div>
                   </button>
                 )
               })}
