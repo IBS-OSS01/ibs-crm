@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs -n1 basename)",
+      "Bash(npm run *)"
+    ]
+  }
+}

@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from 'react'
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
+import { useAuth } from '../../../context/AuthContext'
+import StockImportModal from './StockImportModal'
 
 export default function StockLevels() {
+  const { userProfile } = useAuth()
   const [stocks, setStocks] = useState([])
   const [warehouses, setWarehouses] = useState([])
   const [items, setItems] = useState([])
   const [selectedWarehouse, setSelectedWarehouse] = useState('all')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
+  const [showImport, setShowImport] = useState(false)
+  const isManager = ['admin', 'service_manager', 'project_manager'].includes(userProfile?.role)
 
   useEffect(() => { fetchAll() }, [])
 
@@ -30,6 +35,8 @@ export default function StockLevels() {
     finally { setLoading(false) }
   }
 
+  const warehouseName = (id) => warehouses.find(w => w.id === id)?.name || id || '—'
+
   const filtered = stocks.filter(s => {
     const matchWh = selectedWarehouse === 'all' || s.locationId === selectedWarehouse
     const matchSearch = !search || s.itemName?.toLowerCase().includes(search.toLowerCase()) || s.sku?.toLowerCase().includes(search.toLowerCase())
@@ -40,10 +47,28 @@ export default function StockLevels() {
 
   return (
     <div className="p-6 space-y-4">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stock Levels</h2>
-        <p className="text-slate-500 text-sm">{filtered.length} items</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stock Levels</h2>
+          <p className="text-slate-500 text-sm">{filtered.length} items</p>
+        </div>
+        {isManager && (
+          <button onClick={() => setShowImport(true)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+            ⬆ Bulk Upload Stock
+          </button>
+        )}
       </div>
+
+      {showImport && (
+        <StockImportModal
+          warehouses={warehouses}
+          existingItems={items}
+          existingStocks={stocks}
+          onClose={() => setShowImport(false)}
+          onImported={() => { setShowImport(false); fetchAll() }}
+        />
+      )}
 
       {/* Filters */}
       <div className="flex gap-3 flex-wrap">
@@ -90,7 +115,7 @@ export default function StockLevels() {
                 <tr key={s.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-slate-800">{s.itemName || '—'}</td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{s.sku || '—'}</td>
-                  <td className="px-4 py-3 text-slate-600">{s.locationId || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">{warehouseName(s.locationId)}</td>
                   <td className="px-4 py-3 font-bold text-slate-800">{s.qty ?? 0}</td>
                   <td className="px-4 py-3 text-slate-500">{s.minStock ?? '—'}</td>
                   <td className="px-4 py-3">
