@@ -35,6 +35,7 @@ export const COLLECTIONS = {
   consumptionRequests: 'inventory_consumption_requests',
   tdsSections: 'finance_tds_sections',
   tdsChallans: 'finance_tds_challans',
+  tdsReturns: 'finance_tds_returns',
   gstChallans: 'finance_gst_challans',
   gstr2bImports: 'finance_gstr2b_imports',
   bankStatements: 'finance_bank_statement_lines',

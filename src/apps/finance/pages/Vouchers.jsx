@@ -23,7 +23,7 @@ export default function Vouchers() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
   const { canWrite } = useFinancePerms()
-  const data = useFinanceData(['hsnCodes', 'stockItems', 'tdsSections'])
+  const data = useFinanceData(['hsnCodes', 'tdsSections', 'costCentres'])
   const { raw, loading, reload } = data
   const { open, modal } = useVoucherModal({ raw, allLines: data.allLines, reload })
   const [company, setCompany] = useState('UIPL')

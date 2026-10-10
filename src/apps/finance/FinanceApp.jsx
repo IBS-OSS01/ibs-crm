@@ -23,6 +23,15 @@ import Vouchers from './pages/Vouchers.jsx'
 import Parties from './pages/Parties.jsx'
 import GstReturns from './pages/GstReturns.jsx'
 import StockItems from './pages/StockItems.jsx'
+import TdsCompliance from './pages/TdsCompliance.jsx'
+import Statements from './pages/Statements.jsx'
+import CostCentres from './pages/CostCentres.jsx'
+import Budgets from './pages/Budgets.jsx'
+import BankRecon from './pages/BankRecon.jsx'
+import AuditTrail from './pages/AuditTrail.jsx'
+import DataExport from './pages/DataExport.jsx'
+import Analysis from './pages/Analysis.jsx'
+import ReportsHub from './pages/ReportsHub.jsx'
 import StockReports from './pages/StockReports.jsx'
 import DayBook from './pages/DayBook.jsx'
 import LedgerStatement from './pages/LedgerStatement.jsx'
@@ -40,6 +49,7 @@ const MANAGER_ROLES = ['admin','sales_manager','sales_director','project_manager
 const NAV_GROUPS = [
   { label: 'Dashboard', items: [
     { label: 'Dashboard', icon: '📊', path: '/finance' },
+    { label: 'All Reports & Functions', icon: '🗂️', path: '/finance/reports' },
   ]},
   { label: 'Vouchers', items: [
     { label: 'Sales Invoices', icon: '🧾', path: '/finance/invoices' },
@@ -84,7 +94,7 @@ const NAV_GROUPS = [
     { label: 'Receivables (Bill-wise)', icon: '📥', path: '/finance/outstanding/receivables' },
     { label: 'Payables (Bill-wise)',    icon: '📤', path: '/finance/outstanding/payables' },
   ]},
-  { label: 'Filing & Compliance', items: [
+  { label: 'GST', items: [
     { label: 'GSTR-1',            icon: '📤', path: '/finance/gst/gstr1' },
     { label: 'GSTR-3B',           icon: '🧮', path: '/finance/gst/gstr3b' },
     { label: 'HSN Summary',       icon: '🔢', path: '/finance/gst/hsn' },
@@ -92,11 +102,32 @@ const NAV_GROUPS = [
     { label: 'GSTR-2B Recon',     icon: '🔍', path: '/finance/gst/recon' },
     { label: 'GST Ledger Summary', icon: '📑', path: '/finance/gst-filing' },
   ]},
+  { label: 'TDS', items: [
+    { label: 'TDS Dashboard',     icon: '🏛️', path: '/finance/tds/dashboard' },
+    { label: 'TDS Register',      icon: '📒', path: '/finance/tds/register' },
+    { label: 'TDS Challans',      icon: '🧾', path: '/finance/tds/challans' },
+    { label: 'TDS Statements',    icon: '📤', path: '/finance/tds/returns' },
+    { label: 'Deductee Statements', icon: '📄', path: '/finance/tds/certificates' },
+    { label: 'TDS Receivable',    icon: '📥', path: '/finance/tds/receivable' },
+    { label: 'TDS Sections & Rates', icon: '⚙️', path: '/finance/tds/sections' },
+  ]},
   { label: 'Statements', items: [
     { label: 'Trial Balance', icon: '⚖️', path: '/finance/trial-balance' },
-    { label: 'P&L Report',    icon: '📈', path: '/finance/pl' },
+    { label: 'Trading & P&L', icon: '📈', path: '/finance/statements/trading' },
     { label: 'Balance Sheet', icon: '🏛️', path: '/finance/balance-sheet' },
+    { label: 'Cash Flow',     icon: '💧', path: '/finance/statements/cashflow' },
+    { label: 'Ratio Analysis', icon: '🧪', path: '/finance/statements/ratios' },
+    { label: 'Sales by Party / Item', icon: '🧮', path: '/finance/analysis/sales-party' },
+    { label: 'Purchases by Party / Item', icon: '🛍️', path: '/finance/analysis/purchase-party' },
+    { label: 'Cost Centres',  icon: '🎯', path: '/finance/cost-centres' },
+    { label: 'Budgets',       icon: '📐', path: '/finance/budgets' },
     { label: 'Project Costs', icon: '📋', path: '/finance/projectcosts' },
+    { label: 'P&L (older)',   icon: '📉', path: '/finance/pl' },
+  ]},
+  { label: 'Controls', items: [
+    { label: 'Bank Reconciliation', icon: '🏦', path: '/finance/bank-recon' },
+    { label: 'Audit Trail & Lock',  icon: '🔒', path: '/finance/audit' },
+    { label: 'Export & Backup',     icon: '📤', path: '/finance/export' },
   ]},
   { label: 'Older pages', items: [
     { label: 'Payments In (old)', icon: '💳', path: '/finance/payments' },
@@ -200,6 +231,15 @@ export default function FinanceApp() {
           <Route path="/balance-sheet"  element={<BalanceSheet />} />
           <Route path="/banking"        element={<BankAccounts />} />
           <Route path="/gst-filing"     element={<GstFiling />} />
+          <Route path="/reports"         element={<ReportsHub />} />
+          <Route path="/statements/:tab" element={<Statements />} />
+          <Route path="/analysis/:tab"   element={<Analysis />} />
+          <Route path="/cost-centres"    element={<CostCentres />} />
+          <Route path="/budgets"         element={<Budgets />} />
+          <Route path="/bank-recon"      element={<BankRecon />} />
+          <Route path="/audit"           element={<AuditTrail />} />
+          <Route path="/export"          element={<DataExport />} />
+          <Route path="/tds/:tab"        element={<TdsCompliance />} />
           <Route path="/stock-items"     element={<StockItems />} />
           <Route path="/stock/:tab"      element={<StockReports />} />
           <Route path="/gst/:tab"        element={<GstReturns />} />

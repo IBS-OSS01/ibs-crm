@@ -45,6 +45,7 @@ export default function Parties() {
       openingBalance: p.openingBalance ?? '', openingType: p.openingType || (isCust ? 'Dr' : 'Cr'), openingDate: p.openingDate || '',
       openingCompany: p.openingCompany || (isCust ? (p.companies || [p.company])[0] : '') || 'UIPL',
       tdsSection: p.tdsSection || '', tdsRate: p.tdsRate ?? '',
+      ldcNumber: p.ldcNumber || '', ldcSection: p.ldcSection || '', ldcRate: p.ldcRate ?? '', ldcFrom: p.ldcFrom || '', ldcTo: p.ldcTo || '', ldcLimit: p.ldcLimit ?? '',
     })
   }
 
@@ -58,7 +59,8 @@ export default function Parties() {
     const patch = {
       gstin, pan, openingBalance: num(form.openingBalance), openingType: form.openingType, openingDate: form.openingDate || '',
       openingCompany: form.openingCompany,
-      ...(isCust ? { creditDays: num(form.creditDays) } : { paymentTerms: form.paymentTerms, tdsSection: form.tdsSection || '', tdsRate: form.tdsSection ? num(form.tdsRate) : '' }),
+      ...(isCust ? { creditDays: num(form.creditDays) } : { paymentTerms: form.paymentTerms, tdsSection: form.tdsSection || '', tdsRate: form.tdsSection ? num(form.tdsRate) : '',
+        ldcNumber: form.ldcNumber.trim(), ldcSection: form.ldcSection, ldcRate: form.ldcNumber.trim() ? num(form.ldcRate) : '', ldcFrom: form.ldcFrom, ldcTo: form.ldcTo, ldcLimit: form.ldcNumber.trim() ? num(form.ldcLimit) : '' }),
     }
     setSaving(true)
     try {
@@ -127,6 +129,20 @@ export default function Parties() {
                 <Field label="Default TDS rate %"><input type="number" step="any" value={form.tdsRate} onChange={set('tdsRate')} className={formInputCls} disabled={!form.tdsSection} /></Field>
               </>}
             </div>
+            {!isCust && (
+              <div className="rounded-xl border border-slate-200 p-3 space-y-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase">Lower / nil deduction certificate (Form 13 / s.197)</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <Field label="Certificate no."><input value={form.ldcNumber} onChange={set('ldcNumber')} className={formInputCls} /></Field>
+                  <Field label="Section (blank = any)"><select value={form.ldcSection} onChange={set('ldcSection')} className={formInputCls}><option value="">Any</option>{sections.map(s => <option key={s.code} value={s.code}>{s.code}</option>)}</select></Field>
+                  <Field label="Rate % (0 = nil)"><input type="number" step="any" min="0" value={form.ldcRate} onChange={set('ldcRate')} className={formInputCls} /></Field>
+                  <Field label="Valid from"><input type="date" value={form.ldcFrom} onChange={set('ldcFrom')} className={formInputCls} /></Field>
+                  <Field label="Valid to"><input type="date" value={form.ldcTo} onChange={set('ldcTo')} className={formInputCls} /></Field>
+                  <Field label="Amount limit (₹)"><input type="number" min="0" step="any" value={form.ldcLimit} onChange={set('ldcLimit')} className={formInputCls} /></Field>
+                </div>
+                <p className="text-xs text-slate-400">When set, Purchase / Payment vouchers use this rate for dates inside the validity window. Keep track of the amount limit yourself.</p>
+              </div>
+            )}
             <div className="rounded-xl border border-slate-200 p-3 space-y-2">
               <p className="text-xs font-semibold text-slate-500 uppercase">Opening balance</p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

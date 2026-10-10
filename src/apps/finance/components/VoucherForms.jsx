@@ -6,7 +6,7 @@ import { addDays } from '../utils/voucherEngine.js'
 import ItemsEditor, { newLine, TotalsBox } from './ItemsEditor.jsx'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
 import {
-  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need,
+  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect,
   vendorOptions, customerOptions, creditDaysFromTerms, companyStateCode, stateCodeFromName,
   todayStr, normName, num, gstinToStateCode, fmtAmt,
 } from './formShared.jsx'
@@ -32,6 +32,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
   const [items, setItems] = useState(seed?.items?.length ? seed.items.map(lineFrom) : [newLine()])
   const [tds, setTds] = useState(initial?.tds?.applicable ? { applicable: true, section: initial.tds.section, rate: initial.tds.rate, baseOverride: initial.tds.base } : { applicable: false })
   const [warehouseId, setWarehouseId] = useState(seed?.warehouseId || '')
+  const [costCentreId, setCostCentreId] = useState(seed?.costCentreId || '')
   const [narration, setNarration] = useState(seed?.narration || '')
 
   const compState = companyStateCode(raw, company)
@@ -65,7 +66,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
         voucherType: 'purchase', company, date, partyType: 'vendor', partyId: vendor.id, partyName: vendor.name, partyGstin: vendor.gstin,
         partyState: vendor.state, partyStateCode: vendorState, placeOfSupplyCode: compState, companyStateCode: compState, supplyType,
         refNumber: refNumber.trim(), refDate, creditDays: num(creditDays), dueDate: addDays(date, creditDays),
-        applyGst, rcm, itcEligible, purchaseAccountCode: '5000', warehouseId, ...(seed?.purchaseOrderId ? { purchaseOrderId: seed.purchaseOrderId, purchaseOrderNumber: seed.purchaseOrderNumber || '' } : {}),
+        applyGst, rcm, itcEligible, purchaseAccountCode: '5000', warehouseId, costCentreId, ...(seed?.purchaseOrderId ? { purchaseOrderId: seed.purchaseOrderId, purchaseOrderNumber: seed.purchaseOrderNumber || '' } : {}),
         items: t.items.map(i => ({ ...i, accountCode: i.accountCode || '5000' })), gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal,
         roundOff: t.roundOff, total: t.total, tds: finalTds(tds, t.subTotal), narration: narration.trim(),
       }
@@ -90,6 +91,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
         <Field label="Supply"><div className={`${formInputCls} bg-slate-100`}>{vendor ? (supplyType === 'intra' ? 'Intra-state → CGST + SGST' : 'Inter-state → IGST') : '—'}</div></Field>
       </div>
       {vendor && <p className="text-xs text-slate-500 -mt-2">GSTIN {vendor.gstin || <span className="text-amber-600">not on file (unregistered supplier — usually no GST, unless reverse charge applies)</span>} · {vendor.state || 'state not set'}{!compState && <span className="text-amber-600"> · set your own state in Company Settings so CGST/SGST vs IGST is right</span>}</p>}
+      <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
       {(raw.warehouses || []).length > 0 && (raw.stockItems || []).length > 0 && (
         <Field label="Receive stock into godown" className="max-w-xs"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={formInputCls}><option value="">Default godown</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></Field>
       )}
@@ -100,7 +102,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
       </div>
       <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={stockItems} hsnCodes={raw.hsnCodes || []}
         accounts={expenseAccounts} accountLabel="Purchase ledger" defaultAccountCode="5000" applyGst={applyGst} />
-      <TdsBlock raw={raw} vendor={vendor} base={totals.subTotal} tds={tds} setTds={setTds} fy={date ? `${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0)).slice(2)}-${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0) + 1).slice(2)}` : ''}
+      <TdsBlock raw={raw} vendor={vendor} date={date} base={totals.subTotal} tds={tds} setTds={setTds} fy={date ? `${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0)).slice(2)}-${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0) + 1).slice(2)}` : ''}
         partyId={vendor?.id} currentDocId={initial?.id} />
       <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} placeholder="Optional note" /></Field>
       <TotalsBox totals={totals} rcm={rcm} tds={tdsFinal}
@@ -128,6 +130,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
   const [supplyType, setSupplyType] = useState(initial?.supplyType || 'intra')
   const [itcEligible, setItcEligible] = useState(initial?.itcEligible !== false)
   const [narration, setNarration] = useState(initial?.narration || '')
+  const [costCentreId, setCostCentreId] = useState(initial?.costCentreId || '')
 
   // Parties that actually have documents to refer back to, plus master parties.
   const invoices = useMemo(() => (raw.invoices || []).filter(i => isAccountingInvoice(i) && i.invoiceDate && i.company === company), [raw, company])
@@ -178,7 +181,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
         ...(isCredit
           ? { refInvoiceId: original?.id || '', refInvoiceNumber: original?.invoiceNumber || '', refInvoiceDate: original?.invoiceDate || '', placeOfSupplyCode: original?.posStateCode || '' }
           : { refPurchaseId: original?.id || '', refInvoiceNumber: original?.refNumber || original?.voucherNumber || '', refInvoiceDate: original?.refDate || original?.date || '' }),
-        reasonCode, reason: CN_REASONS.find(r => r[0] === reasonCode)?.[1] || '', applyGst, supplyType, itcEligible,
+        reasonCode, reason: CN_REASONS.find(r => r[0] === reasonCode)?.[1] || '', applyGst, supplyType, itcEligible, costCentreId,
         companyStateCode: companyStateCode(raw, company),
         items: t.items, gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal, roundOff: t.roundOff, total: t.total, narration: narration.trim(),
       }
@@ -212,6 +215,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
         </select>
         {original && <p className="text-xs text-slate-400 mt-1">Items, GST rates and supply type loaded from the original — reduce quantities to the returned amount, or replace with a single "post-sale discount" line.</p>}
       </div>
+      <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
       <div className="flex gap-5 flex-wrap text-sm">
         <label className="flex items-center gap-2"><input type="checkbox" checked={applyGst} onChange={e => setApplyGst(e.target.checked)} />GST applicable</label>
         <label className="flex items-center gap-2">Supply

@@ -29,7 +29,7 @@ const UIPL_DEFAULTS = {
 }
 
 const EMPTY = {
-  legalName: '', companyId: '', gstin: '', pan: '', state: '', stateCode: '',
+  legalName: '', companyId: '', gstin: '', pan: '', tan: '', tdsPersonName: '', tdsPersonDesignation: '', booksLockedUpTo: '', state: '', stateCode: '',
   address: '', city: '', pincode: '', phone: '', email: '', website: '',
   bankName: '', bankAccount: '', ifsc: '', bankBranch: '', termsAndConditions: '',
 }
@@ -205,6 +205,13 @@ export default function CompanySettings() {
         <div><label className={lbl}>CIN / Company ID</label><input className={inp} value={form.companyId} onChange={f('companyId')} /></div>
         <div><label className={lbl}>GSTIN</label><input className={inp} value={form.gstin} onChange={f('gstin')} maxLength={15} placeholder="27AADCU8036C1ZF" /></div>
         <div><label className={lbl}>PAN</label><input className={inp} value={form.pan} onChange={f('pan')} maxLength={10} /></div>
+        <div><label className={lbl}>TAN (for TDS)</label><input className={inp} value={form.tan || ''} onChange={e => setForm(p => ({ ...p, tan: e.target.value.toUpperCase() }))} maxLength={10} placeholder="PNEU12345A" /></div>
+        <div><label className={lbl}>TDS responsible person</label><input className={inp} value={form.tdsPersonName || ''} onChange={f('tdsPersonName')} /></div>
+        <div><label className={lbl}>Designation</label><input className={inp} value={form.tdsPersonDesignation || ''} onChange={f('tdsPersonDesignation')} /></div>
+        <div>
+          <label className={lbl}>Books locked up to <span className="text-slate-400">(no voucher on or before this date can be added or changed)</span></label>
+          <input type="date" className={inp} value={form.booksLockedUpTo || ''} onChange={f('booksLockedUpTo')} />
+        </div>
         <div>
           <label className={lbl}>State (auto-fills from GSTIN)</label>
           <select className={inp} value={form.state} onChange={f('state')}>

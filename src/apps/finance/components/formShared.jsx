@@ -4,7 +4,7 @@ import { useAuth } from '../../../context/AuthContext'
 import { createVoucher, updateVoucher, getBooksLockDate, VoucherError } from '../utils/voucherService.js'
 import { COMPANIES, todayStr, fmtAmt, num, normName } from '../utils/financeConstants.js'
 import { INDIA_STATES, gstinToStateCode } from '../utils/indiaConstants.js'
-import { DEFAULT_TDS_SECTIONS, tdsRateFor, thresholdCrossed } from '../utils/tdsMaster.js'
+import { DEFAULT_TDS_SECTIONS, tdsRateFor, thresholdCrossed, ldcFor } from '../utils/tdsMaster.js'
 import { isValidPan } from '../utils/financeConstants.js'
 import { formInputCls, labelCls, cardCls, btnPrimary, btnGhost } from './FinanceUI.jsx'
 
@@ -87,6 +87,12 @@ export function FormShell({ title, subtitle, children, onSubmit, onCancel, savin
   )
 }
 
+export function CostCentreSelect({ raw, value, onChange }) {
+  const list = (raw?.costCentres || []).filter(c => c.active !== false)
+  if (!list.length) return null
+  return <Field label="Cost centre"><select value={value || ''} onChange={e => onChange(e.target.value)} className={formInputCls}><option value="">None</option>{list.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+}
+
 export function HeaderFields({ company, setCompany, date, setDate, locked, extra }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -100,7 +106,7 @@ export function HeaderFields({ company, setCompany, date, setDate, locked, extra
 }
 
 // TDS block used on Purchase and Payment vouchers.
-export function TdsBlock({ raw, vendor, base, tds, setTds, fy, partyId, currentDocId }) {
+export function TdsBlock({ raw, vendor, base, tds, setTds, fy, date, partyId, currentDocId }) {
   const sections = tdsSectionList(raw)
   const section = sections.find(s => s.code === tds.section)
   const pan = vendor?.pan || ''
@@ -109,10 +115,12 @@ export function TdsBlock({ raw, vendor, base, tds, setTds, fy, partyId, currentD
     .filter(v => v.status !== 'cancelled' && v.id !== currentDocId && v.fy === fy && v.partyId === partyId && v.tds?.applicable && v.tds.section === section.code)
     .reduce((s, v) => s + num(v.tds.base), 0) : 0
   const crossed = section ? thresholdCrossed(section, { current: base, paidYTD: ytd }) : false
+  const ldc = section ? ldcFor(vendor?.raw, section.code, date) : null
   const apply = (code) => {
     const sec = sections.find(s => s.code === code)
     const { rate } = tdsRateFor(sec, { pan, hasValidPan })
-    setTds({ ...tds, section: code, rate })
+    const l = ldcFor(vendor?.raw, code, date)
+    setTds({ ...tds, section: code, rate: l ? l.rate : rate })
   }
   const amount = tds.applicable ? Math.round(num(base) * num(tds.rate) / 100) : 0
   return (
@@ -138,6 +146,7 @@ export function TdsBlock({ raw, vendor, base, tds, setTds, fy, partyId, currentD
               {crossed ? '✓' : 'ℹ'} Paid so far this FY under {section.code}: ₹{fmtAmt(ytd)} · threshold {section.singleLimit ? `₹${fmtAmt(section.singleLimit)} per payment` : ''}{section.singleLimit && section.annualLimit ? ' or ' : ''}{section.annualLimit ? `₹${fmtAmt(section.annualLimit)} per year` : ''} — {crossed ? 'threshold crossed, deduction applies' : 'below threshold, TDS may not be required yet'}.
             </p>
           )}
+          {ldc && <p className="text-xs text-green-700">✓ Lower-deduction certificate {ldc.number} on file for this vendor{ldc.limit ? ` (covers up to ₹${fmtAmt(ldc.limit)})` : ''} — rate set to {ldc.rate}%. Re-pick the section to re-apply it after editing the rate.</p>}
           {!hasValidPan && <p className="text-xs text-red-600">This vendor has no valid PAN on file — section 206AA requires deduction at the higher rate (minimum 20%, 5% for 194Q/194O).</p>}
         </>
       )}

@@ -211,6 +211,7 @@ export function deriveVoucherLines(v, accounts) {
       sourceId: v.id,
       sourceDocNumber: v.voucherNumber || v.id,
       description: l.description || v.partyName || v.narration || '',
+      ...(v.costCentreId ? { costCentreId: v.costCentreId } : {}),
     }))
 }
 

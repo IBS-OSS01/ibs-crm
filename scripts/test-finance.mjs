@@ -9,6 +9,9 @@ import { ledgerStatement } from '../src/apps/finance/utils/statements.js'
 import { normalizeTaxDocs, rateWiseFromGstLines } from '../src/apps/finance/utils/taxDocs.js'
 import { buildVoucherIndex } from '../src/apps/finance/utils/voucherIndex.js'
 import { collectMovements, valueMovements, deriveStockLines, computeStock } from '../src/apps/finance/utils/stockEngine.js'
+import { deductionRows, monthlyPosition, depositDueDate, monthsLate, lateFee, returnDueDate, quarterData, receivableRows, deducteeSummary } from '../src/apps/finance/utils/tdsReports.js'
+import { tradingPL, cashFlow, ratios, costCentreSummary, budgetVsActual, balanceUpTo } from '../src/apps/finance/utils/financialStatements.js'
+import { parseBankStatement, bookEntries, autoMatch, reconciliation } from '../src/apps/finance/utils/bankRecon.js'
 import { buildGstr1, gstr1Json, buildGstr3b, setOff, hsnSummary, itcRegister, reconcile2b, parseGstr2bJson, normInvNo } from '../src/apps/finance/utils/gstReturns.js'
 
 let pass = 0, fail = 0
@@ -224,6 +227,77 @@ const cnt = collectMovements({ stockItems: sItems, warehouses: sWh, adjustments:
 eq(valueMovements(cnt, sItems).summary.find(x => x.itemId === 'it1').qty, 4, "'set exact quantity' adjusts to the counted figure")
 const mfg = valueMovements(collectMovements({ stockItems: sItems, warehouses: sWh, stockJournals: [{ id: 'j1', type: 'manufacture', date: '2026-06-02', company: 'UIPL', consume: [{ itemId: 'it1', qty: 4, warehouseId: 'w1' }], produce: [{ itemId: 'it2', qty: 10, warehouseId: 'w1' }] }] }), sItems)
 eq(mfg.summary.find(x => x.itemId === 'it2').value, 400, 'manufactured goods carry the cost of the materials consumed')
+
+section('TDS compliance')
+ok(depositDueDate('2026-06') === '2026-07-07' && depositDueDate('2027-03') === '2027-04-30' && depositDueDate('2026-12') === '2027-01-07', 'TDS deposit due dates (7th; 30 April for March)')
+ok(returnDueDate('26-27', 'Q1') === '2026-07-31' && returnDueDate('26-27', 'Q4') === '2027-05-31', 'quarterly statement due dates')
+ok(monthsLate('2026-06-10', '2026-07-07') === 1 && monthsLate('2026-06-10', '2026-07-11') === 2 && monthsLate('2026-06-10', '2026-06-10') === 0, 'part month counts as a full month')
+eq(lateFee(5000, '2026-07-31', '2026-08-10'), 2000, 'late fee ₹200/day'); eq(lateFee(1000, '2026-07-31', '2026-08-30'), 1000, 'late fee capped at TDS')
+const tv = [
+  { id: 't1', voucherType: 'purchase', voucherNumber: 'PUR/1', company: 'UIPL', date: '2026-06-10', partyId: 'v1', partyName: 'Acme', status: 'active', tds: { applicable: true, section: '194C', base: 100000, rate: 1, amount: 1000 } },
+  { id: 't2', voucherType: 'payment', voucherNumber: 'PAY/1', company: 'UIPL', date: '2026-06-20', partyId: 'v1', partyName: 'Acme', status: 'active', tds: { applicable: true, section: '194C', base: 50000, rate: 1, amount: 500 } },
+  { id: 't3', voucherType: 'purchase', voucherNumber: 'PUR/2', company: 'UIPL', date: '2026-06-25', partyName: 'Gone', status: 'cancelled', tds: { applicable: true, section: '194C', base: 1, rate: 1, amount: 99 } },
+  { id: 't4', voucherType: 'purchase', voucherNumber: 'PUR/3', company: 'Wayzim', date: '2026-06-25', partyName: 'Other co', status: 'active', tds: { applicable: true, section: '194C', base: 1000, rate: 1, amount: 10 } },
+]
+const drows = deductionRows(tv, [{ id: 'v1', pan: 'ABCDE1234F' }], { company: 'UIPL' })
+ok(drows.length === 2 && drows[0].pan === 'ABCDE1234F', 'deduction register skips cancelled / other-company vouchers and picks up PAN')
+const junPos = (ch, asOf) => monthlyPosition(drows, ch, { company: 'UIPL', fy: '26-27', asOf }).find(m => m.month === '2026-06')
+eq(junPos([], '2026-07-05').deducted, 1500, 'June TDS deducted'); ok(junPos([], '2026-07-05').status === 'pending' && junPos([], '2026-07-05').interest === 0, 'not yet due → no interest')
+ok(junPos([], '2026-08-02').status === 'overdue', 'overdue after the 7th')
+// unpaid: 1000 deducted 10 Jun and 500 on 20 Jun; asOf 2 Aug is inside the 2nd month for both → 2 months each
+eq(junPos([], '2026-08-02').interest, 1000 * 0.015 * 2 + 500 * 0.015 * 2, 'interest on unpaid tax runs to today')
+const paidLate = junPos([{ company: 'UIPL', forMonth: '2026-06', depositDate: '2026-07-20', tax: 1500, interest: 0 }], '2026-08-02')
+ok(paidLate.status === 'paid-late', 'deposit after due date flagged'); eq(paidLate.interest, 1000 * 0.015 * 2 + 500 * 0.015 * 1, 'late-deposit interest from deduction date to deposit')
+ok(junPos([{ company: 'UIPL', forMonth: '2026-06', depositDate: '2026-07-07', tax: 1500 }], '2026-08-02').status === 'paid', 'deposit on the due date is on time')
+eq(quarterData(drows, [], { company: 'UIPL', fy: '26-27', q: 'Q1' }).totalDeducted, 1500, 'Q1 statement total')
+eq(deducteeSummary(drows)[0].amount, 1500, 'deductee-wise totals combine bill and payment deductions')
+eq(receivableRows([{ id: 'r', voucherType: 'receipt', company: 'UIPL', date: '2026-06-02', partyName: 'C', status: 'active', partyAmount: 10000, tdsReceivable: { applicable: true, amount: 200, section: '194C' } }], { company: 'UIPL' })[0].amount, 200, 'TDS receivable register')
+
+section('financial statements')
+const mkL = (accountCode, debit, credit, date, extra = {}) => ({ accountCode, debit, credit, date, company: 'UIPL', sourceType: 'x', sourceId: extra.sourceId || accountCode + date, ...extra })
+const stLines = [
+  ...sLines,                                                            // stock valuation from the engine
+  mkL('5000', 4200, 0, '2026-05-02', { sourceId: 'p' }), mkL('2100', 0, 4200, '2026-05-02', { sourceId: 'p' }),       // purchases
+  mkL('2100', 240, 0, '2026-05-12', { sourceId: 'dn' }), mkL('5000', 0, 240, '2026-05-12', { sourceId: 'dn' }),       // purchase return
+  mkL('1200', 6000, 0, '2026-05-10', { sourceId: 's' }), mkL('4000', 0, 6000, '2026-05-10', { sourceId: 's' }),        // sales
+  mkL('5100', 500, 0, '2026-05-20', { sourceId: 'rent' }), mkL('1100', 0, 500, '2026-05-20', { sourceId: 'rent' }),
+  mkL('1100', 6000, 0, '2026-05-25', { sourceId: 'rc' }), mkL('1200', 0, 6000, '2026-05-25', { sourceId: 'rc' }),
+]
+const tp = tradingPL(stLines, accounts, { company: 'UIPL', from: '2026-04-01', to: '2026-06-30' })
+eq(tp.openingStock, 1000, 'opening stock'); eq(tp.closingStock, 2410, 'closing stock = ledger value'); eq(tp.purchases, 3960, 'net purchases')
+eq(tp.cogs, 1000 + 3960 - 2410, 'cost of goods = opening + purchases − closing'); eq(tp.grossProfit, 6000 - 2550, 'gross profit'); eq(tp.residualStock, 0, 'no unexplained stock adjustment')
+eq(tp.netProfit, 6000 - 2550 - 500, 'net profit after rent')
+const tbNet = accounts.filter(a => a.type === 'income').reduce((s, a) => s + balanceUpTo(stLines, a.code, { company: 'UIPL', asOf: '2026-06-30' }) * -1, 0) - accounts.filter(a => a.type === 'expense').reduce((s, a) => s + balanceUpTo(stLines, a.code, { company: 'UIPL', asOf: '2026-06-30' }), 0)
+eq(tp.netProfit, tbNet, 'trading/P&L net profit equals income − expense straight from the ledger')
+const cf = cashFlow(stLines, accounts, { company: 'UIPL', from: '2026-04-01', to: '2026-06-30' })
+eq(cf.netChange, 6000 - 500, 'cash flow net change'); eq(cf.closing, 5500, 'closing cash')
+eq(cf.sections[0].inflow, 6000, 'operating inflow (customers)')
+const rt = ratios(stLines, accounts, { company: 'UIPL', from: '2026-04-01', to: '2026-06-30' })
+ok(rt.items.find(i => i.key === 'gm').value > 50, 'gross margin computed')
+const ccL = [mkL('5100', 300, 0, '2026-05-01', { costCentreId: 'cc1' }), mkL('4000', 0, 1000, '2026-05-01', { costCentreId: 'cc1' }), mkL('5100', 50, 0, '2026-05-01')]
+eq(costCentreSummary(ccL, accounts, { company: 'UIPL', from: '2026-04-01', to: '2026-06-30' })[0].net, 700, 'cost-centre net = income − expense for tagged lines only')
+eq(budgetVsActual(ccL, accounts, [{ company: 'UIPL', accountCode: '5100', amount: 12000, costCentreId: 'cc1' }], { company: 'UIPL', from: '2026-04-01', to: '2026-06-30' })[0].budget, 3000, 'budget pro-rated by months in period')
+
+section('bank reconciliation')
+const parsed = parseBankStatement([
+  ['HDFC Bank Statement'], ['Date', 'Narration', 'Chq./Ref.No.', 'Withdrawal Amt.', 'Deposit Amt.', 'Closing Balance'],
+  ['10/05/26', 'NEFT-BETA LTD', 'N123', '', '10,000.00', '60,000.00'], ['12/05/26', 'CHQ 000045 ACME', '000045', '5,000.00', '', '55,000.00'], ['15-Jun-2026', 'INT CREDIT', '', '', '100.00', '55,100.00'],
+])
+ok(parsed.lines.length === 3 && parsed.lines[0].credit === 10000 && parsed.lines[1].debit === 5000 && parsed.lines[2].date === '2026-06-15', 'bank statement parsed (date formats, columns, amounts)')
+const bankLines = [
+  { accountCode: '1100', debit: 50000, credit: 0, date: '2026-04-01', company: 'UIPL', sourceType: 'opening', sourceId: 'bank-b1', bankAccountId: 'b1' },
+  { accountCode: '1100', debit: 10000, credit: 0, date: '2026-05-11', company: 'UIPL', sourceType: 'receipt', sourceId: 'r1', sourceDocNumber: 'RCT/1', bankAccountId: 'b1' },
+  { accountCode: '1100', debit: 0, credit: 5000, date: '2026-05-08', company: 'UIPL', sourceType: 'payment', sourceId: 'p1', sourceDocNumber: 'PAY/1', bankAccountId: 'b1' },
+  { accountCode: '1100', debit: 0, credit: 700, date: '2026-05-30', company: 'UIPL', sourceType: 'payment', sourceId: 'p2', sourceDocNumber: 'PAY/2', bankAccountId: 'b1' },
+]
+const ents = bookEntries(bankLines, { company: 'UIPL', bankAccountId: 'b1' })
+const stm = parsed.lines.map((l, i) => ({ ...l, id: 's' + i, matchedKey: '' }))
+const props = autoMatch(stm, ents)
+ok(props.length === 2, 'auto-match pairs same-amount entries within the date window')
+props.forEach(p => { stm.find(s => s.id === p.statementId).matchedKey = p.key })
+const rec2 = reconciliation(stm, ents, '2026-06-30')
+eq(rec2.bookBalance, 50000 + 10000 - 5000 - 700, 'book balance'); eq(rec2.chequesOutstanding, 700, 'cheque issued but not cleared'); eq(rec2.bankOnlyNet, 100, 'bank credit not in books')
+eq(rec2.expected, 54300 + 700 + 100, 'expected bank balance'); eq(rec2.difference, 55100 - 55100, 'reconciles to the statement balance')
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

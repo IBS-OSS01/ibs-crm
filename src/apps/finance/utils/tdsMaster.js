@@ -52,3 +52,13 @@ export function thresholdCrossed(section, { current = 0, paidYTD = 0 } = {}) {
   if (annual && (Number(paidYTD) + Number(current)) > annual) return true
   return false
 }
+
+// Lower / nil deduction certificate (s.197 of the old Act) held for a vendor.
+// Stored on the vendor: ldcNumber, ldcSection (blank = any), ldcRate, ldcFrom, ldcTo, ldcLimit.
+export function ldcFor(vendor, sectionCode, date) {
+  if (!vendor?.ldcNumber || vendor.ldcRate === undefined || vendor.ldcRate === '') return null
+  if (vendor.ldcSection && sectionCode && vendor.ldcSection !== sectionCode) return null
+  if (vendor.ldcFrom && date && date < vendor.ldcFrom) return null
+  if (vendor.ldcTo && date && date > vendor.ldcTo) return null
+  return { number: vendor.ldcNumber, rate: Number(vendor.ldcRate) || 0, limit: Number(vendor.ldcLimit) || 0 }
+}

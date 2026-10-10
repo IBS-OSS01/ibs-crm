@@ -4,7 +4,7 @@ import { pendingBillsForParty } from '../utils/outstanding.js'
 import { fyOf } from '../utils/financeConstants.js'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
 import {
-  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need,
+  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect,
   cashBankOptions, customerOptions, vendorOptions, tdsSectionList,
   todayStr, normName, num, fmtAmt,
 } from './formShared.jsx'
@@ -92,6 +92,7 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
   const bank = banks.find(b => b.key === bankKey) || banks[0]
   const [refNumber, setRefNumber] = useState(initial?.refNumber || '')
   const [narration, setNarration] = useState(initial?.narration || '')
+  const [costCentreId, setCostCentreId] = useState(initial?.costCentreId || '')
   const bills = useBills({ allLines, kind: 'payable', company, party: mode === 'vendor' ? vendor : null, date, initial })
   const [alloc, setAlloc] = useState(initAlloc(initial))
   const [onAccount, setOnAccount] = useState(() => {
@@ -128,7 +129,7 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
         voucherType: 'payment', company, date,
         ...(mode === 'vendor' ? { partyType: 'vendor', partyId: vendor.id, partyName: vendor.name } : {}),
         partyAmount, allocations, accountLines: lines, tds: tdsF,
-        bankAccountCode: bank.code, bankAccountId: bank.id, refNumber: refNumber.trim(), narration: narration.trim(), amount: bankAmt,
+        bankAccountCode: bank.code, bankAccountId: bank.id, refNumber: refNumber.trim(), narration: narration.trim(), amount: bankAmt, costCentreId,
       }
     },
   })
@@ -154,8 +155,9 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
         </>
       )}
       <AccountLines lines={accLines} setLines={setAccLines} accounts={payAccounts} label={mode === 'vendor' ? 'Other charges paid in the same payment (optional)' : 'Expense / ledger being paid'} />
-      <TdsBlock raw={raw} vendor={vendor} base={partyAmount + (mode === 'expense' ? accSum : 0)} tds={tds} setTds={setTds} fy={fyOf(date)}
+      <TdsBlock raw={raw} vendor={vendor} date={date} base={partyAmount + (mode === 'expense' ? accSum : 0)} tds={tds} setTds={setTds} fy={fyOf(date)}
         partyId={vendor?.id} currentDocId={initial?.id} />
+      <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
       <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
       <div className="ml-auto w-full max-w-sm space-y-1 text-sm">
         {mode === 'vendor' && <SumRow label="To vendor (gross)" value={partyAmount} />}
