@@ -50,6 +50,7 @@ export const CASH_CODES = new Set(['1100', '1110'])
 const classOf = (acct) => {
   if (!acct) return ['operating', 'Other']
   if (acct.code === '1500') return ['investing', 'Fixed assets']
+  if (/deposit|\bfd\b|trust|invest|bond|mutual/i.test(acct.name || '') && acct.type === 'asset') return ['investing', 'Fixed deposits & investments']
   if (acct.type === 'equity') return ['financing', 'Capital / equity']
   if (acct.code === '3200') return ['financing', 'Opening balances']
   if (acct.code === '2900') return ['financing', 'Loans & other liabilities']

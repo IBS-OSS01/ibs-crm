@@ -323,5 +323,16 @@ ok(ewayProblems({ mode: 1, distance: '' }, einv).length >= 2, 'e-way bill needs 
 const j3 = gstr3bJson(g3, { gstin: sellerCo.gstin, to: '2026-06-30' })
 ok(j3.ret_period === '062026' && j3.sup_details.osup_det.camt === 2970 && j3.itc_elg.itc_avl.find(x => x.ty === 'OTH').camt === 900, 'GSTR-3B JSON mapping')
 
+section('fixed deposit / trust accounting')
+const fdAccts = [...accounts, { code: '1600', name: 'Fixed Deposit - HDFC', type: 'asset', normalBalance: 'debit' }]
+let fdv = { id: 'fd1', voucherType: 'contra', voucherNumber: 'CON/9', company: 'UIPL', date: '2026-06-01', amount: 100000, fromAccountCode: '1100', toAccountCode: '1600', fromBankAccountId: 'bank1' }
+let fdL = deriveVoucherLines(fdv, fdAccts)
+ok(balanced(fdL), 'bank to FD contra balances'); eq(sumBy(fdL, '1600', 'debit'), 100000, 'Dr Fixed Deposit'); eq(sumBy(fdL, '1100', 'credit'), 100000, 'Cr bank')
+fdv = { id: 'fd2', voucherType: 'receipt', voucherNumber: 'RCT/9', company: 'UIPL', date: '2027-06-01', partyAmount: 0, bankAccountCode: '1100', bankAccountId: 'bank1',
+  accountLines: [{ accountCode: '1600', amount: 100000 }, { accountCode: '4910', amount: 7000 }], tdsReceivable: { applicable: true, amount: 700, section: '194A' } }
+fdL = deriveVoucherLines(fdv, fdAccts)
+ok(balanced(fdL), 'FD maturity receipt (principal + interest, bank TDS) balances')
+eq(sumBy(fdL, '1100', 'debit'), 106300, 'bank receives principal + interest - TDS'); eq(sumBy(fdL, '1310', 'debit'), 700, 'TDS receivable booked'); eq(sumBy(fdL, '1600', 'credit'), 100000, 'FD closed'); eq(sumBy(fdL, '4910', 'credit'), 7000, 'interest income')
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -9,6 +9,8 @@ import { OPENING_DEFAULT_DATE } from '../utils/stockEngine.js'
 import { fmtAmt, gstRatesFor, todayStr, num } from '../utils/financeConstants.js'
 import { UNITS } from '../components/ItemsEditor.jsx'
 import { Field } from '../components/formShared.jsx'
+import AttachmentPanel, { useAttachmentDraft } from '../components/AttachmentPanel.jsx'
+import { uploadAttachments } from '../utils/attachments.js'
 import { ReportShell, CompanyToggle, Badge, Empty, cardCls, btnPrimary, btnGhost, formInputCls, inputCls, useFinancePerms } from '../components/FinanceUI.jsx'
 
 const blank = { name: '', sku: '', unit: 'pcs', hsnCode: '', gstRate: 18, purchaseRate: '', saleRate: '', minStock: 0, valuationMethod: 'avg', description: '', openingDate: '', opening: {} }
@@ -24,6 +26,7 @@ export default function StockItems() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
+  const draft = useAttachmentDraft()
   const [info, setInfo] = useState('')
 
   const items = raw?.stockItems || []
@@ -33,7 +36,7 @@ export default function StockItems() {
   const opts = raw?.companySettings?.UIPL?.stockOptions || {}
 
   const open = (it) => {
-    setError('')
+    setError(''); draft.reset()
     if (it === 'new') { setForm(blank); setEdit('new'); return }
     setForm({
       name: it.name || it.itemName || '', sku: it.sku || '', unit: it.unit || 'pcs', hsnCode: it.hsnCode || '', gstRate: it.gstRate ?? 18, purchaseRate: it.purchaseRate ?? '', saleRate: it.saleRate ?? '',
@@ -58,8 +61,11 @@ export default function StockItems() {
     }
     setSaving(true)
     try {
-      if (edit === 'new') await addDoc(collection(db, 'inventory_items'), { ...payload, createdBy: user?.uid || '', createdAt: new Date().toISOString() })
+      let itemId = edit.id
+      if (edit === 'new') itemId = (await addDoc(collection(db, 'inventory_items'), { ...payload, createdBy: user?.uid || '', createdAt: new Date().toISOString() })).id
       else await updateDoc(doc(db, 'inventory_items', edit.id), { ...payload, updatedBy: user?.uid || '', updatedAt: new Date().toISOString() })
+      if (draft.pending.length) await uploadAttachments(draft.pending, { entityType: 'stock_item', entityId: itemId, company: '', user })
+      draft.reset()
       invalidateFinanceCache(); reload(); setEdit(null)
     } catch (e) { setError(e.code === 'permission-denied' ? 'You do not have permission to change stock items.' : 'Could not save: ' + e.message) }
     finally { setSaving(false) }
@@ -167,6 +173,7 @@ export default function StockItems() {
               ))}
               <p className="text-xs text-slate-400">Opening stock value is posted to the books against Opening Balance Equity. Don't also book it as a manual journal.</p>
             </div>
+            <AttachmentPanel entityType="stock_item" entityId={edit === 'new' ? undefined : edit.id} company="" draft={draft} label="Item photos / spec sheet / datasheet" hint="Photo of the item, datasheet or supplier catalogue page." />
             <div className="flex gap-2"><button onClick={save} disabled={saving} className={btnPrimary}>{saving ? 'Saving…' : 'Save'}</button><button onClick={() => setEdit(null)} className={btnGhost}>Cancel</button></div>
           </div>
         </div>

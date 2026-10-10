@@ -152,6 +152,7 @@ service cloud.firestore {
     match /finance_bank_statement_lines/{id} { allow read, write: if isProvisioned(); }
     match /finance_cost_centres/{id}       { allow read, write: if isProvisioned(); }
     match /finance_budgets/{id}            { allow read, write: if isProvisioned(); }
+    match /finance_attachments/{id}        { allow read, write: if isProvisioned(); }
     match /finance_audit_log/{id}          { allow read, create: if isProvisioned(); allow update, delete: if false; }
 
     // Anything not explicitly listed above is denied by default.

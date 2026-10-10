@@ -5,6 +5,7 @@ import { isAccountingInvoice } from '../utils/ledger.js'
 import { addDays } from '../utils/voucherEngine.js'
 import ItemsEditor, { newLine, TotalsBox } from './ItemsEditor.jsx'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
+import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
   Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect,
   vendorOptions, customerOptions, creditDaysFromTerms, companyStateCode, stateCodeFromName,
@@ -32,6 +33,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
   const [items, setItems] = useState(seed?.items?.length ? seed.items.map(lineFrom) : [newLine()])
   const [tds, setTds] = useState(initial?.tds?.applicable ? { applicable: true, section: initial.tds.section, rate: initial.tds.rate, baseOverride: initial.tds.base } : { applicable: false })
   const [warehouseId, setWarehouseId] = useState(seed?.warehouseId || '')
+  const draft = useAttachmentDraft()
   const [costCentreId, setCostCentreId] = useState(seed?.costCentreId || '')
   const [narration, setNarration] = useState(seed?.narration || '')
 
@@ -54,7 +56,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
   }
 
   const { save, saving, error } = useVoucherSave({
-    initial, onSaved,
+    initial, onSaved, draft,
     getPayload: () => {
       need(vendor, 'Select a vendor (add one under Parties → Vendors if it is new).')
       const lines = cleanItems(items)
@@ -104,6 +106,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
         accounts={expenseAccounts} accountLabel="Purchase ledger" defaultAccountCode="5000" applyGst={applyGst} />
       <TdsBlock raw={raw} vendor={vendor} date={date} base={totals.subTotal} tds={tds} setTds={setTds} fy={date ? `${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0)).slice(2)}-${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0) + 1).slice(2)}` : ''}
         partyId={vendor?.id} currentDocId={initial?.id} />
+      <AttachmentPanel entityType="purchase" entityId={initial?.id} company={company} draft={draft} label="Vendor bill / challan" />
       <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} placeholder="Optional note" /></Field>
       <TotalsBox totals={totals} rcm={rcm} tds={tdsFinal}
         extra={applyGst && itcEligible && totals.taxTotal > 0 && <div className="flex justify-between text-green-700 text-xs"><span>ITC claimable</span><span>{fmtAmt(totals.taxTotal)}</span></div>} />
@@ -131,6 +134,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
   const [itcEligible, setItcEligible] = useState(initial?.itcEligible !== false)
   const [narration, setNarration] = useState(initial?.narration || '')
   const [costCentreId, setCostCentreId] = useState(initial?.costCentreId || '')
+  const draft = useAttachmentDraft()
 
   // Parties that actually have documents to refer back to, plus master parties.
   const invoices = useMemo(() => (raw.invoices || []).filter(i => isAccountingInvoice(i) && i.invoiceDate && i.company === company), [raw, company])
@@ -168,7 +172,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
   const totals = useMemo(() => computeVoucherTotals(items, { supplyType, applyGst }), [items, supplyType, applyGst])
 
   const { save, saving, error } = useVoucherSave({
-    initial, onSaved,
+    initial, onSaved, draft,
     getPayload: () => {
       need(party, `Select the ${isCredit ? 'customer' : 'vendor'}.`)
       const lines = cleanItems(items)
@@ -224,6 +228,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
         {!isCredit && <label className="flex items-center gap-2"><input type="checkbox" checked={itcEligible} onChange={e => setItcEligible(e.target.checked)} />ITC was claimed on original</label>}
       </div>
       <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={raw.stockItems || []} hsnCodes={raw.hsnCodes || []} applyGst={applyGst} />
+      <AttachmentPanel entityType={type} entityId={initial?.id} company={company} draft={draft} label="Supporting document" />
       <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
       <TotalsBox totals={totals} />
     </FormShell>

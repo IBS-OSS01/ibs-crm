@@ -7,6 +7,7 @@ import { cancelVoucher, deleteVoucher, getBooksLockDate, VoucherError } from '..
 import { VOUCHER_TYPES, fmtAmt, num } from '../utils/financeConstants.js'
 import { amountInWords } from '../utils/indiaConstants.js'
 import { Badge, btnGhost, btnPrimary, useFinancePerms } from './FinanceUI.jsx'
+import AttachmentPanel from './AttachmentPanel.jsx'
 
 const LEGACY_PAGES = {
   finance_invoices: ['/finance/invoices', 'Invoices'],
@@ -139,6 +140,7 @@ export default function VoucherDetail({ entry, voucher, lines, seller, stockItem
             </table>
           </div>
 
+          {isNewVoucher && voucher && <AttachmentPanel entityType={voucher.voucherType} entityId={voucher.id} company={voucher.company} editable={canWrite && !cancelled} />}
           {entry.narration && <p className="text-sm text-slate-600"><b>Narration:</b> {entry.narration}</p>}
           {cancelled && <p className="text-sm text-red-600"><b>Cancelled:</b> {voucher.cancelReason} — {voucher.cancelledByName}, {voucher.cancelledAt?.slice(0, 10)}</p>}
           {voucher && <p className="text-xs text-slate-400">Created by {voucher.createdByName || '—'} on {voucher.createdAt?.slice(0, 10)}{voucher.revision > 1 ? ` · revision ${voucher.revision}, last edited by ${voucher.updatedByName || '—'} on ${voucher.updatedAt?.slice(0, 10)}` : ''}</p>}

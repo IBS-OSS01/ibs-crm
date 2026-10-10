@@ -120,26 +120,30 @@ export default function UserManagement() {
     const dupName = users.find(u => u.id !== editing && (u.name || '').trim().toLowerCase() === form.name.trim().toLowerCase())
     if (dupName) { setError(`A user named "${dupName.name}" already exists. Use a unique full name.`); return }
     // Email duplicate check in Firestore (Auth will also catch it)
-    if (!editing) {
-      const dupEmail = users.find(u => (u.email || '').toLowerCase() === form.email.trim().toLowerCase())
-      if (dupEmail) { setError(`Email "${form.email}" is already used by ${dupEmail.name || 'another user'}.`); return }
-    }
+    const dupEmail = users.find(u => u.id !== editing && (u.email || '').toLowerCase() === form.email.trim().toLowerCase())
+    if (dupEmail) { setError(`Email "${form.email}" is already used by ${dupEmail.name || 'another user'}.`); return }
 
     setSaving(true)
     try {
       // Derive departments from moduleRights for backward compat with rest of app
       const departments = MODULES.filter(m => form.moduleRights[m] && form.moduleRights[m] !== 'none')
       if (editing) {
+        const before = users.find(u => u.id === editing) || {}
+        const newEmail = form.email.trim()
+        const emailChanged = newEmail.toLowerCase() !== (before.email || '').toLowerCase()
         await updateDoc(doc(db, 'users', editing), {
           name: form.name,
+          // The Firebase *login* email can't be changed from the browser. We keep the original in loginEmail so
+          // "Send reset link" still reaches the account that actually exists.
+          ...(emailChanged ? { email: newEmail, loginEmail: before.loginEmail || before.email || '' } : {}),
           role: form.role,
           departments,
           moduleRights: form.moduleRights,
           companies: form.companies,
           updatedAt: new Date().toISOString(),
         })
-        setUsers(prev => prev.map(u => u.id === editing ? { ...u, name: form.name, role: form.role, departments, moduleRights: form.moduleRights, companies: form.companies } : u))
-        setSuccess('User updated.')
+        setUsers(prev => prev.map(u => u.id === editing ? { ...u, name: form.name, ...(emailChanged ? { email: newEmail, loginEmail: before.loginEmail || before.email || '' } : {}), role: form.role, departments, moduleRights: form.moduleRights, companies: form.companies } : u))
+        setSuccess(emailChanged ? `User updated. Contact email is now ${newEmail}. Their LOGIN is still ${before.loginEmail || before.email} — to change the login itself, edit it in Firebase Console → Authentication → Users (free).` : 'User updated.')
       } else {
         const secondaryAuth = getSecondaryAuth()
         const cred = await createUserWithEmailAndPassword(secondaryAuth, form.email, form.password)
@@ -179,14 +183,15 @@ export default function UserManagement() {
   }
 
   const handleResetPassword = async (u) => {
-    if (!u.email) { setError('This user has no email on file.'); return }
-    if (!window.confirm(`Send a password reset link to ${u.email}?`)) return
+    const loginEmail = u.loginEmail || u.email
+    if (!loginEmail) { setError('This user has no email on file.'); return }
+    if (!window.confirm(`Send a password reset link to ${loginEmail}?${u.loginEmail ? ' (their login email — the contact email was changed)' : ''}`)) return
     setError(''); setSuccess('')
     try {
       // Sent from Firebase's own no-reply address — doesn't touch the
       // admin's current session, just triggers an email to the user.
-      await sendPasswordResetEmail(auth, u.email)
-      setSuccess(`Reset link sent to ${u.email}.`)
+      await sendPasswordResetEmail(auth, loginEmail)
+      setSuccess(`Reset link sent to ${loginEmail}.`)
     } catch (err) { setError('Error: ' + err.message) }
   }
 
@@ -268,8 +273,8 @@ export default function UserManagement() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
               <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} autoComplete="off"
-                disabled={!!editing}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100" required />
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+              {editing && <p className="text-xs text-slate-400 mt-1">Changes the contact email shown in the app. The sign-in email stays {users.find(u => u.id === editing)?.loginEmail || users.find(u => u.id === editing)?.email || 'as it was'} until changed in Firebase Console.</p>}
             </div>
             {!editing && (
               <div className="col-span-2">

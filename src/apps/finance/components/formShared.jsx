@@ -2,6 +2,7 @@
 import React, { useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { createVoucher, updateVoucher, getBooksLockDate, VoucherError } from '../utils/voucherService.js'
+import { uploadAttachments } from '../utils/attachments.js'
 import { COMPANIES, todayStr, fmtAmt, num, normName } from '../utils/financeConstants.js'
 import { INDIA_STATES, gstinToStateCode } from '../utils/indiaConstants.js'
 import { DEFAULT_TDS_SECTIONS, tdsRateFor, thresholdCrossed, ldcFor } from '../utils/tdsMaster.js'
@@ -41,7 +42,7 @@ export const creditDaysFromTerms = (terms) => {
 export const tdsSectionList = (raw) => (raw?.tdsSections?.length ? raw.tdsSections : DEFAULT_TDS_SECTIONS)
 
 // ── save wrapper ────────────────────────────────────────────────────────────
-export function useVoucherSave({ initial, onSaved, getPayload }) {
+export function useVoucherSave({ initial, onSaved, getPayload, draft }) {
   const { user, userProfile } = useAuth()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -53,8 +54,13 @@ export function useVoucherSave({ initial, onSaved, getPayload }) {
     setSaving(true)
     try {
       const lockedUpTo = await getBooksLockDate(payload.company)
-      if (initial?.id) await updateVoucher(initial.id, initial, payload, { user, profile: userProfile, lockedUpTo })
-      else await createVoucher(payload, { user, profile: userProfile, lockedUpTo })
+      let id = initial?.id
+      if (id) await updateVoucher(id, initial, payload, { user, profile: userProfile, lockedUpTo })
+      else id = (await createVoucher(payload, { user, profile: userProfile, lockedUpTo })).id
+      if (draft?.pending?.length) {
+        try { await uploadAttachments(draft.pending, { entityType: payload.voucherType, entityId: id, company: payload.company, user, profile: userProfile }) }
+        catch (e) { setError('Voucher saved, but the attachments could not be saved: ' + e.message); return }
+      }
       onSaved?.()
     } catch (err) { setError(err instanceof VoucherError ? err.message : 'Could not save: ' + err.message) }
     finally { setSaving(false) }

@@ -1,6 +1,6 @@
 // Bank reconciliation: import the bank's statement, match it to the bank book, see what is
 // uncleared and whether the books agree with the statement balance.
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { collection, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore'
 import * as XLSX from 'xlsx'
 import { useNavigate } from 'react-router-dom'
@@ -32,6 +32,21 @@ export default function BankRecon() {
   const statement = useMemo(() => (raw?.bankStatements || []).filter(s => s.company === company && (s.bankAccountId || '') === bankId).sort((a, b) => a.date.localeCompare(b.date)), [raw, company, bankId])
   const rec = useMemo(() => reconciliation(statement, entries, asOf), [statement, entries, asOf])
   const entryByKey = Object.fromEntries(entries.map(e => [e.key, e]))
+  // with several banks and nothing unassigned, start on the first bank instead of an empty bucket
+  useEffect(() => { if (bankId === '' && !hasUnassigned && banks[0]) setBankId(banks[0].id) }, [banks, hasUnassigned]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // One row per bank account (plus the unassigned bucket) so several banks can be worked through in turn.
+  const overview = useMemo(() => {
+    const list = banks.map(b => ({ id: b.id, name: `${b.name}${b.accountNumber ? ` ••${String(b.accountNumber).slice(-4)}` : ''}` }))
+    if (hasUnassigned) list.unshift({ id: '', name: 'Bank (default / unassigned)' })
+    return list.map(b => {
+      const ents = bookEntries(allLines, { company, bankAccountId: b.id })
+      const st = (raw?.bankStatements || []).filter(x => x.company === company && (x.bankAccountId || '') === b.id)
+      const r = reconciliation(st, ents, asOf)
+      const matched = new Set(st.map(x => x.matchedKey).filter(Boolean))
+      return { ...b, book: r.bookBalance, unclearedBook: ents.filter(e => !e.opening && !matched.has(e.key)).length, unmatchedBank: st.filter(x => !x.matchedKey).length, lines: st.length, diff: r.difference }
+    })
+  }, [banks, hasUnassigned, allLines, raw, company, asOf])
   const matchedKeys = new Set(statement.map(s => s.matchedKey).filter(Boolean))
   const freeEntries = entries.filter(e => !e.opening && !matchedKeys.has(e.key))
 
@@ -92,6 +107,24 @@ export default function BankRecon() {
         </select>
         <label className="text-sm text-slate-500 flex items-center gap-2">As of <input type="date" value={asOf} onChange={e => setAsOf(e.target.value)} className={inputCls} /></label>
       </>}>
+      <div className={`${cardCls} overflow-x-auto`}>
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
+          <p className="font-semibold text-slate-800 text-sm">All bank accounts <span className="text-slate-400 font-normal">· click one to reconcile it</span></p>
+          {canWrite && <button className="text-sm text-blue-600 hover:underline" onClick={() => navigate('/finance/banking')}>+ Add another bank account</button>}
+        </div>
+        <table className="w-full text-sm"><thead className="bg-slate-50/80"><tr><Th>Bank account</Th><Th right>Balance per books</Th><Th right>Statement lines</Th><Th right>Unmatched (bank)</Th><Th right>Unmatched (books)</Th><Th right>Difference</Th></tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {overview.map(o => (
+              <tr key={o.id || 'none'} onClick={() => setBankId(o.id)} className={`cursor-pointer hover:bg-blue-50/40 ${o.id === bankId ? 'bg-blue-50/60' : ''}`}>
+                <td className="px-3 py-2 font-medium">{o.name}</td><td className="px-3 py-2 text-right">{fmtAmt(o.book)}</td><td className="px-3 py-2 text-right">{o.lines || <span className="text-slate-300">none yet</span>}</td>
+                <td className={`px-3 py-2 text-right ${o.unmatchedBank ? 'text-amber-600 font-medium' : ''}`}>{o.unmatchedBank}</td><td className={`px-3 py-2 text-right ${o.unclearedBook ? 'text-amber-600 font-medium' : ''}`}>{o.unclearedBook}</td>
+                <td className={`px-3 py-2 text-right font-medium ${o.diff === null ? 'text-slate-300' : Math.abs(o.diff) < 0.5 ? 'text-green-700' : 'text-red-600'}`}>{o.diff === null ? '—' : Math.abs(o.diff) < 0.5 ? '✓ reconciled' : fmtAmt(o.diff)}</td>
+              </tr>
+            ))}
+            {overview.length === 0 && <tr><td colSpan={6}><Empty>No bank accounts yet. Add one, then import its statement here.</Empty></td></tr>}
+          </tbody>
+        </table>
+      </div>
       {msg && <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-sm flex justify-between"><span>{msg}</span><button onClick={() => setMsg('')}>✕</button></div>}
       {canWrite && (
         <div className={`${cardCls} p-3 flex gap-3 items-center flex-wrap text-sm`}>

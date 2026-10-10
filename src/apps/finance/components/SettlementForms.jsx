@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react'
 import { pendingBillsForParty } from '../utils/outstanding.js'
 import { fyOf } from '../utils/financeConstants.js'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
+import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
   Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect,
   cashBankOptions, customerOptions, vendorOptions, tdsSectionList,
@@ -10,6 +11,8 @@ import {
 } from './formShared.jsx'
 import { r2 } from '../utils/financeConstants.js'
 
+// Fixed deposits, trust funds, investments: listed first wherever a ledger has to be picked.
+export const isInvestmentName = (n) => (/deposit|\bfd\b|trust|invest|bond|mutual/i.test(n || '') ? 1 : 0)
 const bankKeyOf = (code, id) => (code === '1110' ? (id ? `cash:${id}` : 'cash') : (id ? `bank:${id}` : 'bank-default'))
 
 // ─── allocation table: tick bills and set how much of this payment goes to each ──
@@ -94,6 +97,7 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
   const [refNumber, setRefNumber] = useState(initial?.refNumber || '')
   const [narration, setNarration] = useState(initial?.narration || '')
   const [costCentreId, setCostCentreId] = useState(initial?.costCentreId || '')
+  const draft = useAttachmentDraft()
   const bills = useBills({ allLines, kind: 'payable', company, party: mode === 'vendor' ? vendor : null, date, initial })
   const [alloc, setAlloc] = useState(initAlloc(initial))
   const [onAccount, setOnAccount] = useState(() => {
@@ -112,7 +116,7 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
   const payAccounts = useMemo(() => accounts.filter(a => ['expense', 'asset', 'liability'].includes(a.type) && !['1100', '1110', '1200', '2100', '2500'].includes(a.code)), [accounts])
 
   const { save, saving, error } = useVoucherSave({
-    initial, onSaved,
+    initial, onSaved, draft,
     getPayload: () => {
       need(bank, 'Select the bank / cash account paying.')
       const lines = accLines.filter(l => num(l.amount) > 0)
@@ -159,6 +163,7 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
       <TdsBlock raw={raw} vendor={vendor} date={date} base={partyAmount + (mode === 'expense' ? accSum : 0)} tds={tds} setTds={setTds} fy={fyOf(date)}
         partyId={vendor?.id} currentDocId={initial?.id} />
       <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
+      <AttachmentPanel entityType="payment" entityId={initial?.id} company={company} draft={draft} label="Bill / receipt for this payment or expense" />
       <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
       <div className="ml-auto w-full max-w-sm space-y-1 text-sm">
         {mode === 'vendor' && <SumRow label="To vendor (gross)" value={partyAmount} />}
@@ -185,13 +190,15 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
     })
     return list.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   }, [raw, company])
+  const [mode, setMode] = useState(initial ? (initial.partyName ? 'customer' : 'other') : 'customer')   // 'other' = no customer: FD maturity, interest, refunds...
   const [customerId, setCustomerId] = useState(initial ? (initial.partyId || 'n:' + normName(initial.partyName)) : '')
-  const customer = customers.find(c => c.key === customerId) || (initial?.partyName ? { id: initial.partyId || '', name: initial.partyName } : null)
+  const customer = mode !== 'customer' ? null : (customers.find(c => c.key === customerId) || (initial?.partyName ? { id: initial.partyId || '', name: initial.partyName } : null))
   const banks = useMemo(() => cashBankOptions(raw, company), [raw, company])
   const [bankKey, setBankKey] = useState(initial ? bankKeyOf(initial.bankAccountCode, initial.bankAccountId) : banks[0]?.key)
   const bank = banks.find(b => b.key === bankKey) || banks[0]
   const [refNumber, setRefNumber] = useState(initial?.refNumber || '')
   const [narration, setNarration] = useState(initial?.narration || '')
+  const draft = useAttachmentDraft()
   const bills = useBills({ allLines, kind: 'receivable', company, party: customer, date, initial })
   const [alloc, setAlloc] = useState(initAlloc(initial))
   const [onAccount, setOnAccount] = useState(() => {
@@ -204,29 +211,30 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
   const [tdsSection, setTdsSection] = useState(initial?.tdsReceivable?.section || '')
   const [tdsAmount, setTdsAmount] = useState(initial?.tdsReceivable?.amount || '')
   const sections = tdsSectionList(raw)
-  const incomeAccounts = useMemo(() => accounts.filter(a => ['income', 'liability', 'equity'].includes(a.type) && !['1100', '1110', '1200', '2100'].includes(a.code)), [accounts])
+  // everything a receipt can credit: income, liabilities, equity and assets such as Fixed Deposits or Trust funds (principal coming back)
+  const incomeAccounts = useMemo(() => accounts.filter(a => ['income', 'liability', 'equity', 'asset'].includes(a.type) && !['1100', '1110', '1200', '2100', '1310', '2500'].includes(a.code)).sort((x, y) => (isInvestmentName(y.name) - isInvestmentName(x.name)) || x.code.localeCompare(y.code)), [accounts])
 
   const allocTotal = r2(Object.values(alloc).reduce((s, v) => s + num(v), 0))
-  const partyAmount = r2(allocTotal + num(onAccount))
+  const partyAmount = mode === 'customer' ? r2(allocTotal + num(onAccount)) : 0
   const accSum = r2(accLines.reduce((s, l) => s + num(l.amount), 0))
   const tdsAmt = tdsOn ? r2(num(tdsAmount)) : 0
   const bankAmt = r2(partyAmount - tdsAmt + accSum)
 
   const { save, saving, error } = useVoucherSave({
-    initial, onSaved,
+    initial, onSaved, draft,
     getPayload: () => {
       need(bank, 'Select the bank / cash account receiving.')
-      need(customer, 'Select a customer.')
+      if (mode === 'customer') need(customer, 'Select a customer.')
       const lines = accLines.filter(l => num(l.amount) > 0)
-      lines.forEach(l => need(l.accountCode, 'Pick a ledger for every extra line that has an amount.'))
-      need(partyAmount > 0, 'Enter the amount received.')
+      lines.forEach(l => need(l.accountCode, 'Pick a ledger for every line that has an amount.'))
+      need(partyAmount + accSum > 0, mode === 'customer' ? 'Enter the amount received.' : 'Add the ledger(s) this money is for and the amount.')
       const allocations = bills.filter(b => num(alloc[b.billKey]) > 0).map(b => {
         need(num(alloc[b.billKey]) <= b.pending + 0.005, `${b.docNo}: settling more than the pending ${fmtAmt(b.pending)}.`)
         return { billKey: b.billKey, docNumber: b.docNo, amount: r2(num(alloc[b.billKey])) }
       })
-      if (tdsOn) { need(tdsSection, 'Choose the TDS section the customer deducted under.'); need(tdsAmt > 0, 'Enter the TDS amount deducted by the customer.'); need(tdsAmt < partyAmount, 'TDS cannot exceed the settled amount.') }
+      if (tdsOn) { need(tdsSection, 'Choose the TDS section the customer deducted under.'); need(tdsAmt > 0, 'Enter the TDS amount deducted by the customer.'); need(tdsAmt < partyAmount + accSum, 'TDS cannot exceed the amount received.') }
       return {
-        voucherType: 'receipt', company, date, partyType: 'customer', partyId: customer.id, partyName: customer.name,
+        voucherType: 'receipt', company, date, ...(customer ? { partyType: 'customer', partyId: customer.id, partyName: customer.name } : {}),
         partyAmount, allocations, accountLines: lines,
         tdsReceivable: tdsOn ? { applicable: true, section: tdsSection, amount: tdsAmt } : { applicable: false },
         bankAccountCode: bank.code, bankAccountId: bank.id, refNumber: refNumber.trim(), narration: narration.trim(), amount: bankAmt,
@@ -241,25 +249,30 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
           <Field label="Received in *"><select value={bank?.key || ''} onChange={e => setBankKey(e.target.value)} className={formInputCls}>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>
           <Field label="Cheque / UTR no."><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
         </>} />
-      <Field label="Customer *"><select value={customerId} onChange={e => { setCustomerId(e.target.value); setAlloc({}) }} className={formInputCls}><option value="">— select customer —</option>{customers.map(c => <option key={c.key} value={c.key}>{c.name}</option>)}</select></Field>
+      <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm w-fit">
+        {[['customer', 'From a customer'], ['other', 'Other (FD maturity, interest, refund)']].map(([k, l]) => <button type="button" key={k} onClick={() => setMode(k)} className={`px-3 py-1.5 font-medium ${mode === k ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{l}</button>)}
+      </div>
+      {mode === 'customer' && <Field label="Customer *"><select value={customerId} onChange={e => { setCustomerId(e.target.value); setAlloc({}) }} className={formInputCls}><option value="">— select customer —</option>{customers.map(c => <option key={c.key} value={c.key}>{c.name}</option>)}</select></Field>}
+      {mode === 'other' && <p className="text-xs text-slate-500 -mt-2">Pick the ledgers below: for example credit the Fixed Deposit account for the principal that came back and Interest Income for the interest. If the bank deducted TDS, tick the TDS box and enter the amount.</p>}
       {customer && <>
         <label className={labelCls}>Against pending invoices</label>
         <AllocationTable bills={bills} alloc={alloc} setAlloc={setAlloc} />
         <Field label="Advance / on account (₹)" className="max-w-xs"><input type="number" min="0" step="any" value={onAccount} onChange={e => setOnAccount(e.target.value)} className={formInputCls} /></Field>
       </>}
       <div className="rounded-xl border border-slate-200 p-3 space-y-2 bg-slate-50/50">
-        <label className="flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={tdsOn} onChange={e => setTdsOn(e.target.checked)} />Customer deducted TDS (credited to my Form 26AS — TDS receivable)</label>
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={tdsOn} onChange={e => setTdsOn(e.target.checked)} />{mode === 'customer' ? 'Customer deducted TDS' : 'TDS deducted before paying me (e.g. bank on FD interest)'} (credited to my Form 26AS — TDS receivable)</label>
         {tdsOn && <div className="grid grid-cols-2 gap-3 max-w-lg">
           <Field label="Section"><select value={tdsSection} onChange={e => setTdsSection(e.target.value)} className={formInputCls}><option value="">— select —</option>{sections.map(s => <option key={s.code} value={s.code}>{s.code}</option>)}</select></Field>
           <Field label="TDS amount (₹)"><input type="number" min="0" step="any" value={tdsAmount} onChange={e => setTdsAmount(e.target.value)} className={formInputCls} /></Field>
         </div>}
       </div>
-      <AccountLines lines={accLines} setLines={setAccLines} accounts={incomeAccounts} label="Other income / ledgers received in the same receipt (optional)" />
+      <AccountLines lines={accLines} setLines={setAccLines} accounts={incomeAccounts} label={mode === 'customer' ? 'Other income / ledgers received in the same receipt (optional)' : 'Ledgers this money belongs to (principal, interest...)'} />
+      <AttachmentPanel entityType="receipt" entityId={initial?.id} company={company} draft={draft} label="Proof of receipt (bank advice, cheque photo)" />
       <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
       <div className="ml-auto w-full max-w-sm space-y-1 text-sm">
-        <SumRow label="Settled (customer account)" value={partyAmount} />
+        {mode === 'customer' && <SumRow label="Settled (customer account)" value={partyAmount} />}
         {accSum > 0 && <SumRow label="Other ledgers" value={accSum} />}
-        {tdsAmt > 0 && <SumRow label="Less: TDS deducted by customer" value={-tdsAmt} tone="text-red-600" />}
+        {tdsAmt > 0 && <SumRow label="Less: TDS deducted at source" value={-tdsAmt} tone="text-red-600" />}
         <SumRow label="Received in bank / cash" value={bankAmt} strong />
       </div>
     </FormShell>
@@ -271,9 +284,18 @@ export function ContraForm({ data, initial, onSaved, onCancel }) {
   const { raw } = data
   const [company, setCompany] = useState(initial?.company || 'UIPL')
   const [date, setDate] = useState(initial?.date || todayStr())
-  const banks = useMemo(() => cashBankOptions(raw, company), [raw, company])
-  const [fromKey, setFromKey] = useState(initial ? bankKeyOf(initial.fromAccountCode, initial.fromBankAccountId) : '')
-  const [toKey, setToKey] = useState(initial ? bankKeyOf(initial.toAccountCode, initial.toBankAccountId) : '')
+  // cash / bank accounts first, then any other balance-sheet ledger (Fixed Deposit, Trust fund, loan...) so money can move to and from them
+  const banks = useMemo(() => {
+    const cb = cashBankOptions(raw, company)
+    const skip = new Set(['1100', '1110', '1200', '2100', '1310', '1400', '2500', '3200'])
+    const others = (data.accounts || []).filter(a => ['asset', 'liability', 'equity'].includes(a.type) && !skip.has(a.code) && !/^13/.test(a.code) && !/^24/.test(a.code))
+      .sort((x, y) => (isInvestmentName(y.name) - isInvestmentName(x.name)) || x.code.localeCompare(y.code))
+      .map(a => ({ key: 'acct:' + a.code, label: `${a.code} ${a.name}${isInvestmentName(a.name) ? ' *' : ''}`, code: a.code, id: '', other: true }))
+    return [...cb, ...others]
+  }, [raw, company, data.accounts])
+  const keyOf2 = (code, id) => (['1100', '1110'].includes(code) ? bankKeyOf(code, id) : 'acct:' + code)
+  const [fromKey, setFromKey] = useState(initial ? keyOf2(initial.fromAccountCode, initial.fromBankAccountId) : '')
+  const [toKey, setToKey] = useState(initial ? keyOf2(initial.toAccountCode, initial.toBankAccountId) : '')
   const [amount, setAmount] = useState(initial?.amount || '')
   const [refNumber, setRefNumber] = useState(initial?.refNumber || '')
   const [narration, setNarration] = useState(initial?.narration || '')
@@ -294,7 +316,7 @@ export function ContraForm({ data, initial, onSaved, onCancel }) {
   })
 
   return (
-    <FormShell title={initial ? `Edit Contra — ${initial.voucherNumber}` : 'Contra Voucher'} subtitle="Cash deposited / withdrawn, or a transfer between your own bank accounts. No P&L effect." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
+    <FormShell title={initial ? `Edit Contra — ${initial.voucherNumber}` : 'Contra Voucher'} subtitle="Cash deposited / withdrawn, a transfer between your own bank accounts, or money moved to / from a Fixed Deposit or Trust account (marked *). No profit effect; record interest separately as a Receipt (Other)." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
       <HeaderFields company={company} setCompany={c => { setCompany(c); setFromKey(''); setToKey('') }} date={date} setDate={setDate} locked={!!initial} />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Field label="From (credit) *"><select value={fromKey} onChange={e => setFromKey(e.target.value)} className={formInputCls}><option value="">— select —</option>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>
