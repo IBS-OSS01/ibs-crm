@@ -152,7 +152,7 @@ export default function BankRecon() {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-400">Older Payments In / Expenses / Payables pages feed the bank book without a bank-account link, so they appear only under “Bank (default / unassigned)”. Assign bank accounts when you enter new vouchers for exact per-account reconciliation.</p>
+      <p className="text-xs text-slate-400">Entries from before the new voucher screens have no bank-account link, so they appear only under “Bank (default / unassigned)”. Pick the bank account on every new voucher for exact per-account reconciliation.</p>
     </ReportShell>
   )
 }

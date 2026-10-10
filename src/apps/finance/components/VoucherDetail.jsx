@@ -9,8 +9,7 @@ import { amountInWords } from '../utils/indiaConstants.js'
 import { Badge, btnGhost, btnPrimary, useFinancePerms } from './FinanceUI.jsx'
 
 const LEGACY_PAGES = {
-  finance_invoices: ['/finance/invoices', 'Invoices'], finance_payments: ['/finance/payments', 'Payments In'],
-  finance_expenses: ['/finance/expenses', 'Expenses'], finance_payables: ['/finance/payables', 'Payables'],
+  finance_invoices: ['/finance/invoices', 'Invoices'],
   finance_journal_entries: ['/finance/journal', 'Journal Entries'],
 }
 

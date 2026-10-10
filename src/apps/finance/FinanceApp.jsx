@@ -2,11 +2,6 @@ import React, { useLayoutEffect, useRef, useState } from 'react'
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import FinanceDashboard from './pages/FinanceDashboard.jsx'
-import Receivables from './pages/Receivables.jsx'
-import Payments from './pages/Payments.jsx'
-import Expenses from './pages/Expenses.jsx'
-import Payables from './pages/Payables.jsx'
-import PLReport from './pages/PLReport.jsx'
 import ProjectCosts from './pages/ProjectCosts.jsx'
 import CompanySettings from './pages/CompanySettings.jsx'
 import Vendors from './pages/Vendors.jsx'
@@ -125,18 +120,11 @@ const NAV_GROUPS = [
     { label: 'Cost Centres',  icon: '🎯', path: '/finance/cost-centres' },
     { label: 'Budgets',       icon: '📐', path: '/finance/budgets' },
     { label: 'Project Costs', icon: '📋', path: '/finance/projectcosts' },
-    { label: 'P&L (older)',   icon: '📉', path: '/finance/pl' },
   ]},
   { label: 'Controls', items: [
     { label: 'Bank Reconciliation', icon: '🏦', path: '/finance/bank-recon' },
     { label: 'Audit Trail & Lock',  icon: '🔒', path: '/finance/audit' },
     { label: 'Export & Backup',     icon: '📤', path: '/finance/export' },
-  ]},
-  { label: 'Older pages', items: [
-    { label: 'Payments In (old)', icon: '💳', path: '/finance/payments' },
-    { label: 'Expenses (old)',    icon: '📤', path: '/finance/expenses' },
-    { label: 'Payables (old)',    icon: '🧾', path: '/finance/payables' },
-    { label: 'Receivables (old)', icon: '📥', path: '/finance/receivables' },
   ]},
 ]
 
@@ -152,7 +140,7 @@ export default function FinanceApp() {
   const prevPath = useRef(location.pathname)
   // layout effect: must run before the new page's own data-loading effect, or it would read the stale cache first
   useLayoutEffect(() => {
-    if (/^\/finance\/(invoices|payments|expenses|payables|journal|vendors|banking|settings|hsn|accounts|receivables|projectcosts)/.test(prevPath.current)) invalidateFinanceCache()
+    if (/^\/finance\/(invoices|journal|vendors|banking|settings|hsn|accounts|projectcosts)/.test(prevPath.current)) invalidateFinanceCache()
     prevPath.current = location.pathname
   }, [location.pathname])
 
@@ -227,11 +215,6 @@ export default function FinanceApp() {
         <Routes>
           <Route path="/"             element={<FinanceDashboard />} />
           <Route path="/invoices"     element={<Invoices />} />
-          <Route path="/receivables"  element={<Receivables />} />
-          <Route path="/payments"     element={<Payments />} />
-          <Route path="/expenses"     element={<Expenses />} />
-          <Route path="/payables"     element={<Payables />} />
-          <Route path="/pl"           element={<PLReport />} />
           <Route path="/projectcosts" element={<ProjectCosts />} />
           <Route path="/vendors"      element={<Vendors />} />
           <Route path="/hsn"          element={<HsnCodes />} />

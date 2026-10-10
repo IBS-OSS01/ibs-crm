@@ -292,10 +292,10 @@ export default function CompanySettings() {
         <div className="flex items-center h-40 text-slate-400">Loading…</div>
       ) : editing ? (
         <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-6">
-          <EditForm />
+          {EditForm()}
         </div>
       ) : (
-        <ReadView d={data} />
+          ReadView({ d: data })
       )}
     </div>
   )

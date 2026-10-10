@@ -57,7 +57,7 @@ export default function AuditTrail() {
         {!isAdmin && <p className="text-xs text-slate-400">Only an admin can change the lock date.</p>}
         {msg && <p className="text-sm text-blue-700 w-full">{msg}</p>}
       </div>
-      <p className="text-xs text-slate-400">Note: only vouchers entered through the new voucher screens are locked and logged. Older pages (Invoices, Payments In, Expenses, Payables, Journal Entries) keep their own behaviour.</p>
+      <p className="text-xs text-slate-400">Note: only vouchers entered through the new voucher screens are locked and logged. Sales invoices and journal entries keep their own behaviour.</p>
       <div className={`${cardCls} overflow-x-auto`}>
         <table className="w-full text-sm">
           <thead className="bg-slate-50/80"><tr><th className={`${thCls} text-left`}>When</th><th className={`${thCls} text-left`}>User</th><th className={`${thCls} text-left`}>Action</th><th className={`${thCls} text-left`}>Voucher</th><th className={`${thCls} text-left`}>Voucher date</th><th className={`${thCls} text-right`}>Amount</th><th className={`${thCls} text-left`}>Reason</th></tr></thead>
