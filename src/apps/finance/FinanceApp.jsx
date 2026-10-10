@@ -32,6 +32,7 @@ import BankRecon from './pages/BankRecon.jsx'
 import AuditTrail from './pages/AuditTrail.jsx'
 import DataExport from './pages/DataExport.jsx'
 import Analysis from './pages/Analysis.jsx'
+import EInvoice from './pages/EInvoice.jsx'
 import ReportsHub from './pages/ReportsHub.jsx'
 import StockReports from './pages/StockReports.jsx'
 import DayBook from './pages/DayBook.jsx'
@@ -101,6 +102,7 @@ const NAV_GROUPS = [
     { label: 'HSN Summary',       icon: '🔢', path: '/finance/gst/hsn' },
     { label: 'ITC Register',      icon: '🧾', path: '/finance/gst/itc' },
     { label: 'GSTR-2B Recon',     icon: '🔍', path: '/finance/gst/recon' },
+    { label: 'E-Invoice & E-Way Bill', icon: '🚚', path: '/finance/einvoice' },
     { label: 'GST Ledger Summary', icon: '📑', path: '/finance/gst-filing' },
   ]},
   { label: 'TDS', items: [
@@ -241,6 +243,7 @@ export default function FinanceApp() {
           <Route path="/balance-sheet"  element={<BalanceSheet />} />
           <Route path="/banking"        element={<BankAccounts />} />
           <Route path="/gst-filing"     element={<GstFiling />} />
+          <Route path="/einvoice"        element={<EInvoice />} />
           <Route path="/reports"         element={<ReportsHub />} />
           <Route path="/statements/:tab" element={<Statements />} />
           <Route path="/analysis/:tab"   element={<Analysis />} />

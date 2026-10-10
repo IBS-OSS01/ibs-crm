@@ -47,6 +47,7 @@ const GROUPS = [
     ['HSN Summary', '/finance/gst/hsn', ''],
     ['ITC Register', '/finance/gst/itc', 'Eligible, blocked and RCM credit'],
     ['GSTR-2B Reconciliation', '/finance/gst/recon', 'Match supplier filings to your purchases'],
+    ['E-Invoice & E-Way Bill', '/finance/einvoice', 'Portal bulk-upload JSON; record IRN and e-way bill numbers'],
     ['HSN / SAC master', '/finance/hsn', ''],
   ]],
   ['TDS', 'Tax deducted at source', [

@@ -13,6 +13,7 @@ import { deductionRows, monthlyPosition, depositDueDate, monthsLate, lateFee, re
 import { tradingPL, cashFlow, ratios, costCentreSummary, budgetVsActual, balanceUpTo } from '../src/apps/finance/utils/financialStatements.js'
 import { parseBankStatement, bookEntries, autoMatch, reconciliation } from '../src/apps/finance/utils/bankRecon.js'
 import { tallyVouchers, tallyMasters } from '../src/apps/finance/utils/tallyExport.js'
+import { buildEInvoice, buildEwayBill, invoiceProblems, ewayProblems, gstr3bJson } from '../src/apps/finance/utils/einvoice.js'
 import { buildGstr1, gstr1Json, buildGstr3b, setOff, hsnSummary, itcRegister, reconcile2b, parseGstr2bJson, normInvNo } from '../src/apps/finance/utils/gstReturns.js'
 
 let pass = 0, fail = 0
@@ -307,6 +308,20 @@ const vblocks = tv2.xml.split('<VOUCHER ').slice(1)
 ok(vblocks.every(b => Math.abs([...b.matchAll(/<AMOUNT>(-?[\d.]+)<\/AMOUNT>/g)].reduce((t, m) => t + Number(m[1]), 0)) < 0.01), 'every exported voucher nets to zero')
 ok(tv2.xml.includes('Test &amp; Co'), 'XML special characters escaped')
 ok(tallyMasters({ accounts, lines: all, customers: [{ shopName: 'Beta Ltd' }], vendors: [], bankAccounts: [], company: 'Test' }).includes('<PARENT>Sundry Debtors</PARENT>'), 'party ledgers go under Sundry Debtors')
+
+section('e-invoice / e-way bill files')
+const sellerCo = { gstin: '27AADCU8036C1ZF', legalName: 'UIPL', address: 'D 102 Pittie', city: 'Pune', pincode: '411014', stateCode: '27' }
+const einv = { ...invoices[0], billToAddress: '1 MG Road', billToCity: 'Pune', billToPincode: '411001', billToGstin: '27AAACC5678B1Z3', total: 11800, roundOff: 0 }
+ok(invoiceProblems(einv, sellerCo).length === 0, 'complete invoice passes the readiness check')
+ok(invoiceProblems({ ...einv, billToPincode: '' }, sellerCo).some(p => /pincode/.test(p)), 'missing pincode is flagged')
+const irn = buildEInvoice(einv, sellerCo)
+ok(irn.DocDtls.Dt === '10/04/2026' && irn.Version === '1.1' && irn.BuyerDtls.Pin === 411001, 'e-invoice header (dd/mm/yyyy date, numeric pin)')
+eq(irn.ValDtls.AssVal, 10000, 'e-invoice assessable value'); eq(irn.ValDtls.CgstVal, 900, 'e-invoice CGST'); eq(irn.ValDtls.TotInvVal, 11800, 'e-invoice total'); eq(irn.ItemList[0].TotItemVal, 11800, 'item total')
+const ewb = buildEwayBill(einv, sellerCo, { mode: 1, distance: '120', vehicleNo: 'mh 12-ab 1234' })
+ok(ewb.vehicleNo === 'MH12AB1234' && ewb.transDistance === '120' && ewb.fromStateCode === 27 && ewb.itemList[0].cgstRate === 9, 'e-way bill transport and tax rates')
+ok(ewayProblems({ mode: 1, distance: '' }, einv).length >= 2, 'e-way bill needs distance and vehicle / transporter')
+const j3 = gstr3bJson(g3, { gstin: sellerCo.gstin, to: '2026-06-30' })
+ok(j3.ret_period === '062026' && j3.sup_details.osup_det.camt === 2970 && j3.itc_elg.itc_avl.find(x => x.ty === 'OTH').camt === 900, 'GSTR-3B JSON mapping')
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

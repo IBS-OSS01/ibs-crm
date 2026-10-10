@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { useFinanceData } from '../hooks/useFinanceData.js'
 import { normalizeTaxDocs } from '../utils/taxDocs.js'
+import { gstr3bJson } from '../utils/einvoice.js'
 import { buildGstr1, gstr1Json, buildGstr3b, hsnSummary, itcRegister, reconcile2b, parseGstr2bJson, parseGstr2bRows } from '../utils/gstReturns.js'
 import { fmtAmt, fyRange, currentFY } from '../utils/financeConstants.js'
 import { downloadXlsx, downloadJson, printReport } from '../utils/exportUtils.js'
@@ -65,7 +66,7 @@ export default function GstReturns() {
     if (tab === 'gstr1') return <div className="flex gap-2 flex-wrap">
       <ExportBar onXlsx={() => downloadXlsx(`GSTR-1 ${company} ${period.from} to ${period.to}`, gstr1Sheets(g1))} />
       <button className={btnGhost} disabled={noGst} onClick={() => downloadJson(`GSTR1_${cs.gstin}_${period.to.slice(5, 7)}${period.to.slice(0, 4)}`, gstr1Json(g1, { gstin: cs.gstin, to: period.to }))}>⬇ Portal JSON</button></div>
-    if (tab === 'gstr3b') return <ExportBar onXlsx={() => downloadXlsx(`GSTR-3B ${company} ${period.from} to ${period.to}`, [{ name: 'GSTR-3B', rows: gstr3bRows(g3) }])} onPrint={() => printReport({ title: 'GSTR-3B working', subtitle: `${company} · ${period.from} to ${period.to}`, rows: gstr3bRows(g3) })} />
+    if (tab === 'gstr3b') return <div className="flex gap-2 flex-wrap"><button className={btnGhost} disabled={noGst} onClick={() => downloadJson(`GSTR3B_${cs.gstin}_${period.to.slice(5, 7)}${period.to.slice(0, 4)}`, gstr3bJson(g3, { gstin: cs.gstin, to: period.to }))}>⬇ Portal JSON</button><ExportBar onXlsx={() => downloadXlsx(`GSTR-3B ${company} ${period.from} to ${period.to}`, [{ name: 'GSTR-3B', rows: gstr3bRows(g3) }])} onPrint={() => printReport({ title: 'GSTR-3B working', subtitle: `${company} · ${period.from} to ${period.to}`, rows: gstr3bRows(g3) })} /></div>
     if (tab === 'hsn') return <ExportBar onXlsx={() => downloadXlsx(`HSN Summary ${company} ${period.from} to ${period.to}`, [{ name: 'HSN', rows: hsnRows(hsn.rows, split) }])} onPrint={() => printReport({ title: 'HSN Summary', subtitle: `${company} · ${period.from} to ${period.to}`, rows: hsnRows(hsn.rows, split) })} />
     if (tab === 'itc') return <ExportBar onXlsx={() => downloadXlsx(`ITC Register ${company} ${period.from} to ${period.to}`, [{ name: 'ITC', rows: itcRows(itc.rows) }])} onPrint={() => printReport({ title: 'ITC Register', subtitle: `${company} · ${period.from} to ${period.to}`, rows: itcRows(itc.rows) })} />
     if (tab === 'recon' && recon) return <ExportBar onXlsx={() => downloadXlsx(`GSTR-2B Reconciliation ${company}`, reconSheets(recon))} />
