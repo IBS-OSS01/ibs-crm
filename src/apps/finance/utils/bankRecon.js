@@ -79,7 +79,7 @@ export function reconciliation(statement, entries, asOf) {
   const bankOnly = statement.filter(s => !s.matchedKey && s.date <= asOf)
   const bankOnlyNet = r2(bankOnly.reduce((s, l) => s + l.credit - l.debit, 0))
   const expected = r2(bookBalance - depositsInTransit + chequesOutstanding + bankOnlyNet)
-  const withBal = statement.filter(s => s.date <= asOf && s.balance !== null && s.balance !== undefined).sort((a, b) => a.date.localeCompare(b.date))
+  const withBal = statement.filter(s => s.date <= asOf && s.balance !== null && s.balance !== undefined).sort((a, b) => a.date.localeCompare(b.date) || (a.importedAt || '').localeCompare(b.importedAt || '') || (a.seq || 0) - (b.seq || 0))
   const stmtBalance = withBal.length ? withBal[withBal.length - 1].balance : null
   return { bookBalance, depositsInTransit, chequesOutstanding, bankOnly, bankOnlyNet, expected, stmtBalance, difference: stmtBalance === null ? null : r2(stmtBalance - expected), uncleared }
 }

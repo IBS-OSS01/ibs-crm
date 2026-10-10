@@ -309,7 +309,7 @@ export function ContraForm({ data, initial, onSaved, onCancel }) {
       need(num(amount) > 0, 'Enter the amount transferred.')
       return {
         voucherType: 'contra', company, date, amount: r2(num(amount)),
-        fromAccountCode: from.code, fromBankAccountId: from.id, toAccountCode: to.code, toBankAccountId: to.id,
+        fromAccountCode: from.code, fromBankAccountId: from.id, toAccountCode: to.code, toBankAccountId: to.id, fromAccountName: from.label.replace(/ \*$/, ''), toAccountName: to.label.replace(/ \*$/, ''),
         refNumber: refNumber.trim(), narration: narration.trim(),
       }
     },

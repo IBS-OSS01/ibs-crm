@@ -29,7 +29,7 @@ export default function BankRecon() {
   const banks = (raw?.bankAccounts || []).filter(b => b.company === company && b.type !== 'cash' && b.active !== false)
   const hasUnassigned = useMemo(() => allLines.some(l => l.accountCode === '1100' && l.company === company && !l.bankAccountId && l.sourceType !== 'opening'), [allLines, company])
   const entries = useMemo(() => bookEntries(allLines, { company, bankAccountId: bankId }), [allLines, company, bankId])
-  const statement = useMemo(() => (raw?.bankStatements || []).filter(s => s.company === company && (s.bankAccountId || '') === bankId).sort((a, b) => a.date.localeCompare(b.date)), [raw, company, bankId])
+  const statement = useMemo(() => (raw?.bankStatements || []).filter(s => s.company === company && (s.bankAccountId || '') === bankId).sort((a, b) => a.date.localeCompare(b.date) || (a.importedAt || '').localeCompare(b.importedAt || '') || (a.seq || 0) - (b.seq || 0)), [raw, company, bankId])
   const rec = useMemo(() => reconciliation(statement, entries, asOf), [statement, entries, asOf])
   const entryByKey = Object.fromEntries(entries.map(e => [e.key, e]))
   // with several banks and nothing unassigned, start on the first bank instead of an empty bucket
@@ -61,8 +61,8 @@ export default function BankRecon() {
       const have = new Set(statement.map(stmtSig))
       const fresh = lines.filter(l => !have.has(stmtSig(l)))
       let batch = writeBatch(db), n = 0
-      for (const l of fresh) {
-        batch.set(doc(collection(db, 'finance_bank_statement_lines')), { ...l, company, bankAccountId: bankId, matchedKey: '', importedAt: new Date().toISOString(), importedBy: user?.uid || '' })
+      for (const [seq, l] of fresh.entries()) {
+        batch.set(doc(collection(db, 'finance_bank_statement_lines')), { ...l, seq, company, bankAccountId: bankId, matchedKey: '', importedAt: new Date().toISOString(), importedBy: user?.uid || '' })
         if (++n % 400 === 0) { await batch.commit(); batch = writeBatch(db) }
       }
       if (n % 400) await batch.commit()

@@ -13,6 +13,11 @@
 // parsing below reads defensively across the small naming differences
 // seen between providers rather than assuming one exact shape.
 
+import { gstinToState } from './indiaConstants.js'
+
+// Optional: URL of your own small proxy in front of gstinapi.in (browsers can't call that API directly —
+// it sends no CORS headers). See infrastructure/gst-proxy/README.md. When set it is used instead of Appyflow.
+const GST_PROXY_URL = import.meta.env.VITE_GST_PROXY_URL || ''
 const GST_API_KEY  = import.meta.env.VITE_APPYFLOW_GST_KEY || ''
 const GST_API_BASE = 'https://appyflow.in/api/verifyGST'
 
@@ -23,13 +28,42 @@ const GST_API_BASE = 'https://appyflow.in/api/verifyGST'
  */
 export async function fetchGstinDetails(gstin) {
   const cleanGstin = gstin.toUpperCase().trim()
+  const pan = cleanGstin.length >= 12 ? cleanGstin.substring(2, 12) : ''
+  // The state is encoded in the first two digits of every GSTIN, so that is the authority for state.
+  const stateFromGstin = gstinToState(cleanGstin)
 
-  if (!GST_API_KEY) {
-    throw new Error('GST lookup is not configured — set VITE_APPYFLOW_GST_KEY in .env.local (get a free key at dashboard.gstapi.appyflow.in)')
+  let out
+  if (GST_PROXY_URL) out = await viaProxy(cleanGstin)
+  else out = await viaAppyflow(cleanGstin)
+
+  // Sanity checks: a lookup that disagrees with the number we asked about is wrong data, not a result.
+  if (out.gstin && out.gstin !== cleanGstin) throw new Error(`The lookup service answered for a different GSTIN (${out.gstin}). Nothing was filled in.`)
+  if (out.state && stateFromGstin && out.state !== stateFromGstin) {
+    throw new Error(`The lookup service returned details for ${out.state}, but GSTIN ${cleanGstin} is registered in ${stateFromGstin}. Its data looks wrong, so nothing was filled in — enter the details by hand, or retry later.`)
   }
+  return { ...out, gstin: cleanGstin, pan, state: stateFromGstin || out.state }
+}
 
+async function viaProxy(cleanGstin) {
+  let json
+  try {
+    const res = await fetch(`${GST_PROXY_URL.replace(/\/$/, '')}/${encodeURIComponent(cleanGstin)}`)
+    json = await res.json()
+  } catch (e) { throw new Error('Network error — check internet connection') }
+  if (!json?.success || !json.data) throw new Error(json?.error || json?.message || 'GSTIN not found or invalid')
+  const d = json.data
+  return {
+    legalName: d.legal_name || '', tradeName: d.trade_name || '', gstin: d.gstin || '', status: d.status || 'Unknown',
+    businessType: d.business_constitution || '', regType: d.taxpayer_type || '',
+    state: d.state_code ? gstinToState(d.state_code + 'XXXXXXXXXXXXX') : '', address: d.address || '', city: d.city || '', pincode: d.pincode || '',
+  }
+}
+
+async function viaAppyflow(cleanGstin) {
+  if (!GST_API_KEY) {
+    throw new Error('GST lookup is not configured — set VITE_GST_PROXY_URL (recommended) or VITE_APPYFLOW_GST_KEY in .env.local')
+  }
   const url = `${GST_API_BASE}?gstNo=${encodeURIComponent(cleanGstin)}&key_secret=${encodeURIComponent(GST_API_KEY)}`
-
   let json
   try {
     const res = await fetch(url)
@@ -37,39 +71,13 @@ export async function fetchGstinDetails(gstin) {
   } catch (e) {
     throw new Error('Network error — check internet connection')
   }
-
-  if (json?.error) {
-    throw new Error(json.message || 'GSTIN not found or invalid')
-  }
-
-  // Appyflow nests the result under taxpayerInfo; be tolerant of a flatter
-  // shape too in case that changes.
+  if (json?.error) throw new Error(json.message || 'GSTIN not found or invalid')
   const d = json?.taxpayerInfo || json?.data || json
-  if (!d || !(d.gstin || d.lgnm)) {
-    throw new Error(json?.message || 'GSTIN not found or invalid')
-  }
-
+  if (!d || !(d.gstin || d.lgnm)) throw new Error(json?.message || 'GSTIN not found or invalid')
   const adr = d.pradr?.addr || d.adr || {}
-
-  // Prefer district for city; fall back to locality
-  const city = (adr.dst && adr.dst.trim())
-    ? adr.dst.trim()
-    : (adr.loc && adr.loc.trim() ? adr.loc.trim() : '')
-
-  // PAN is embedded in GSTIN: characters 3–12 (0-indexed 2–11)
-  const pan = cleanGstin.length >= 12 ? cleanGstin.substring(2, 12) : ''
-
+  const city = (adr.dst && adr.dst.trim()) ? adr.dst.trim() : (adr.loc && adr.loc.trim() ? adr.loc.trim() : '')
   return {
-    legalName:    d.lgnm     || '',   // "UDISHTHA INNOVATIONS PRIVATE LIMITED"
-    tradeName:    d.tradeNam || '',   // trade name
-    gstin:        d.gstin    || cleanGstin,
-    pan,                              // extracted from GSTIN
-    status:       d.sts || d.status || 'Unknown',  // "Active" | "Cancelled"
-    businessType: d.ctb      || '',   // "Private Limited Company" | "Proprietorship"
-    regType:      d.dty      || '',   // "Regular" | "Composition"
-    state:        adr.stcd   || '',   // "Maharashtra"
-    address:      d.pradr?.adr || d.adr || '', // full formatted address string
-    city,                             // "Pune"
-    pincode:      adr.pncd   || '',   // "411014"
+    legalName: d.lgnm || '', tradeName: d.tradeNam || '', gstin: d.gstin || '', status: d.sts || d.status || 'Unknown',
+    businessType: d.ctb || '', regType: d.dty || '', state: adr.stcd || '', address: d.pradr?.adr || d.adr || '', city, pincode: adr.pncd || '',
   }
 }
