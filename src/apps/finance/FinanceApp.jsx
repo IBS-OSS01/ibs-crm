@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import FinanceDashboard from './pages/FinanceDashboard.jsx'
@@ -16,6 +16,8 @@ import BankAccounts from './pages/BankAccounts.jsx'
 import GstFiling from './pages/GstFiling.jsx'
 import Vouchers from './pages/Vouchers.jsx'
 import { invalidateFinanceCache } from './hooks/useFinanceData.js'
+import { NAV_GROUPS } from './navConfig.js'
+import { CommandPalette, QuickAddSheet } from './components/NavOverlays.jsx'
 import Parties from './pages/Parties.jsx'
 import GstReturns from './pages/GstReturns.jsx'
 import StockItems from './pages/StockItems.jsx'
@@ -40,93 +42,8 @@ import ModuleTaskTracker from '../../components/tasks/ModuleTaskTracker.jsx'
 
 const MANAGER_ROLES = ['admin','sales_manager','sales_director','project_manager','service_manager','solution_manager']
 
-// Zoho Books-style grouped navigation. Every existing page keeps its exact
-// same route path (nothing elsewhere in the app links to a moved path),
-// just regrouped under sections instead of one long horizontal tab strip.
-const NAV_GROUPS = [
-  { label: 'Dashboard', items: [
-    { label: 'Dashboard', icon: '📊', path: '/finance' },
-    { label: 'All Reports & Functions', icon: '🗂️', path: '/finance/reports' },
-  ]},
-  { label: 'Vouchers', items: [
-    { label: 'Sales Invoices', icon: '🧾', path: '/finance/invoices' },
-    { label: 'Purchase',       icon: '🛒', path: '/finance/vouchers/purchase' },
-    { label: 'Receipt',        icon: '💰', path: '/finance/vouchers/receipt' },
-    { label: 'Payment',        icon: '💸', path: '/finance/vouchers/payment' },
-    { label: 'Contra',         icon: '🔁', path: '/finance/vouchers/contra' },
-    { label: 'Credit Note',    icon: '↩️', path: '/finance/vouchers/credit_note' },
-    { label: 'Debit Note',     icon: '↪️', path: '/finance/vouchers/debit_note' },
-    { label: 'Purchase Order', icon: '📑', path: '/finance/vouchers/purchase_order' },
-    { label: 'Stock Journal',  icon: '🔀', path: '/finance/vouchers/stock_journal' },
-    { label: 'Journal Entries', icon: '📝', path: '/finance/journal' },
-  ]},
-  { label: 'Masters', items: [
-    { label: 'Party Ledgers',     icon: '👥', path: '/finance/parties' },
-    { label: 'Vendors',           icon: '🏪', path: '/finance/vendors' },
-    { label: 'Chart of Accounts', icon: '📚', path: '/finance/accounts' },
-    { label: 'Bank & Cash',       icon: '🏦', path: '/finance/banking' },
-    { label: 'HSN / SAC Codes',   icon: '📋', path: '/finance/hsn' },
-  ]},
-  { label: 'Books', items: [
-    { label: 'Day Book',         icon: '📒', path: '/finance/daybook' },
-    { label: 'Ledger Statement', icon: '📖', path: '/finance/ledger' },
-    { label: 'Cash / Bank Book', icon: '🏧', path: '/finance/cashbank' },
-    { label: 'General Ledger',   icon: '📘', path: '/finance/gl' },
-    { label: 'Sales Register',   icon: '📈', path: '/finance/registers/sales' },
-    { label: 'Purchase Register', icon: '📉', path: '/finance/registers/purchase' },
-    { label: 'Credit Note Reg.', icon: '🗂️', path: '/finance/registers/credit_note' },
-    { label: 'Debit Note Reg.',  icon: '🗃️', path: '/finance/registers/debit_note' },
-    { label: 'Other Registers',  icon: '🗄️', path: '/finance/registers/receipt' },
-  ]},
-  { label: 'Inventory', items: [
-    { label: 'Stock Items',       icon: '📦', path: '/finance/stock-items' },
-    { label: 'Stock Summary',     icon: '🧮', path: '/finance/stock/summary' },
-    { label: 'Item Ledger (In/Out)', icon: '↕️', path: '/finance/stock/ledger' },
-    { label: 'Movement Analysis', icon: '📊', path: '/finance/stock/movement' },
-    { label: 'Godown-wise',       icon: '🏭', path: '/finance/stock/godown' },
-    { label: 'Reorder Status',    icon: '⚠️', path: '/finance/stock/reorder' },
-    { label: 'Pending POs',       icon: '⏳', path: '/finance/stock/orders' },
-  ]},
-  { label: 'Outstanding', items: [
-    { label: 'Receivables (Bill-wise)', icon: '📥', path: '/finance/outstanding/receivables' },
-    { label: 'Payables (Bill-wise)',    icon: '📤', path: '/finance/outstanding/payables' },
-  ]},
-  { label: 'GST', items: [
-    { label: 'GSTR-1',            icon: '📤', path: '/finance/gst/gstr1' },
-    { label: 'GSTR-3B',           icon: '🧮', path: '/finance/gst/gstr3b' },
-    { label: 'HSN Summary',       icon: '🔢', path: '/finance/gst/hsn' },
-    { label: 'ITC Register',      icon: '🧾', path: '/finance/gst/itc' },
-    { label: 'GSTR-2B Recon',     icon: '🔍', path: '/finance/gst/recon' },
-    { label: 'E-Invoice & E-Way Bill', icon: '🚚', path: '/finance/einvoice' },
-    { label: 'GST Ledger Summary', icon: '📑', path: '/finance/gst-filing' },
-  ]},
-  { label: 'TDS', items: [
-    { label: 'TDS Dashboard',     icon: '🏛️', path: '/finance/tds/dashboard' },
-    { label: 'TDS Register',      icon: '📒', path: '/finance/tds/register' },
-    { label: 'TDS Challans',      icon: '🧾', path: '/finance/tds/challans' },
-    { label: 'TDS Statements',    icon: '📤', path: '/finance/tds/returns' },
-    { label: 'Deductee Statements', icon: '📄', path: '/finance/tds/certificates' },
-    { label: 'TDS Receivable',    icon: '📥', path: '/finance/tds/receivable' },
-    { label: 'TDS Sections & Rates', icon: '⚙️', path: '/finance/tds/sections' },
-  ]},
-  { label: 'Statements', items: [
-    { label: 'Trial Balance', icon: '⚖️', path: '/finance/trial-balance' },
-    { label: 'Trading & P&L', icon: '📈', path: '/finance/statements/trading' },
-    { label: 'Balance Sheet', icon: '🏛️', path: '/finance/balance-sheet' },
-    { label: 'Cash Flow',     icon: '💧', path: '/finance/statements/cashflow' },
-    { label: 'Ratio Analysis', icon: '🧪', path: '/finance/statements/ratios' },
-    { label: 'Sales by Party / Item', icon: '🧮', path: '/finance/analysis/sales-party' },
-    { label: 'Purchases by Party / Item', icon: '🛍️', path: '/finance/analysis/purchase-party' },
-    { label: 'Cost Centres',  icon: '🎯', path: '/finance/cost-centres' },
-    { label: 'Budgets',       icon: '📐', path: '/finance/budgets' },
-    { label: 'Project Costs', icon: '📋', path: '/finance/projectcosts' },
-  ]},
-  { label: 'Controls', items: [
-    { label: 'Bank Reconciliation', icon: '🏦', path: '/finance/bank-recon' },
-    { label: 'Audit Trail & Lock',  icon: '🔒', path: '/finance/audit' },
-    { label: 'Export & Backup',     icon: '📤', path: '/finance/export' },
-  ]},
-]
+const OPEN_KEY = 'finance.nav.open'
+const loadOpen = () => { try { return JSON.parse(localStorage.getItem(OPEN_KEY) || 'null') } catch { return null } }
 
 export default function FinanceApp() {
   const location = useLocation()
@@ -134,9 +51,11 @@ export default function FinanceApp() {
   const { userProfile } = useAuth()
   const isManager = MANAGER_ROLES.includes(userProfile?.role || '')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
 
-  // The older pages write straight to Firestore without telling the shared report cache. When you leave
-  // one of them, drop the cache so the next report reads the new invoice / payment / expense.
+  // Some pages write straight to Firestore without telling the shared report cache. When you leave
+  // one of them, drop the cache so the next report reads the new data.
   const prevPath = useRef(location.pathname)
   // layout effect: must run before the new page's own data-loading effect, or it would read the stale cache first
   useLayoutEffect(() => {
@@ -144,74 +63,113 @@ export default function FinanceApp() {
     prevPath.current = location.pathname
   }, [location.pathname])
 
-  const isActive = (path) =>
-    path === '/finance' ? (location.pathname === '/finance' || location.pathname === '/finance/') : location.pathname.startsWith(path)
-
+  const isActive = (path) => {
+    const base = path.split('?')[0]
+    return base === '/finance' ? (location.pathname === '/finance' || location.pathname === '/finance/') : location.pathname.startsWith(base)
+  }
+  const activeGroup = NAV_GROUPS.find(g => g.items.some(it => isActive(it.path)))?.id || 'home'
   const currentLabel = NAV_GROUPS.flatMap(g => g.items).find(it => isActive(it.path))?.label || 'Finance'
+
+  // Sidebar groups: collapsed by default except the one you are in (remembered per browser).
+  const [openGroups, setOpenGroups] = useState(() => loadOpen() || ['home', 'sell', 'buy'])
+  const toggleGroup = (id) => setOpenGroups(o => {
+    const n = o.includes(id) ? o.filter(x => x !== id) : [...o, id]
+    try { localStorage.setItem(OPEN_KEY, JSON.stringify(n)) } catch { /* private mode */ }
+    return n
+  })
+  const isOpen = (id) => openGroups.includes(id) || id === activeGroup
 
   const go = (path) => { navigate(path); setMobileNavOpen(false) }
 
+  // Ctrl/Cmd+K opens search from anywhere in Finance (typing "/" does too, unless you are in a field).
+  useEffect(() => {
+    const onKey = (e) => {
+      const el = document.activeElement
+      const inField = /INPUT|TEXTAREA|SELECT/.test(el?.tagName || '') || el?.isContentEditable
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen(o => !o) }
+      else if (e.key === '/' && !inField && !e.ctrlKey && !e.metaKey) { e.preventDefault(); setPaletteOpen(true) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const navItemCls = (path) =>
-    `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-left transition ${
-      isActive(path) ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100'
+    `w-full flex items-center gap-2.5 pl-4 pr-3 py-1.5 rounded-lg text-[13px] text-left transition ${
+      isActive(path) ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100'
     }`
 
   const navBody = (
     <>
-      {NAV_GROUPS.map(g => (
-        <div key={g.label} className="mb-4">
-          <p className="px-3 mb-1 text-xs font-bold uppercase tracking-wider text-slate-400">{g.label}</p>
-          <div className="space-y-0.5">
-            {g.items.map(it => (
-              <button key={it.path} onClick={() => go(it.path)} className={navItemCls(it.path)}>
-                <span>{it.icon}</span>{it.label}
-              </button>
-            ))}
+      <div className="px-1 pb-3 space-y-2">
+        <button onClick={() => { setAddOpen(true); setMobileNavOpen(false) }} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-sm transition">
+          <span className="text-lg leading-none">＋</span> New
+        </button>
+        <button onClick={() => { setPaletteOpen(true); setMobileNavOpen(false) }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 text-slate-400 text-sm hover:border-slate-300 transition">
+          <span>🔍</span><span className="flex-1 text-left">Search…</span><kbd className="text-[10px] border border-slate-200 rounded px-1">Ctrl K</kbd>
+        </button>
+      </div>
+      {NAV_GROUPS.map(g => {
+        const open = isOpen(g.id)
+        return (
+          <div key={g.id} className="mb-0.5">
+            <button onClick={() => toggleGroup(g.id)} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition ${g.id === activeGroup ? 'text-blue-700' : 'text-slate-700 hover:bg-slate-100'}`}>
+              <span className="w-5 text-center">{g.icon}</span><span className="flex-1 text-left">{g.label}</span>
+              <span className={`text-slate-300 text-xs transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+            </button>
+            {open && (
+              <div className="space-y-0.5 mt-0.5 mb-2 ml-3 border-l border-slate-100">
+                {g.items.map(it => (
+                  <button key={it.path} onClick={() => go(it.path)} className={navItemCls(it.path)}><span className="w-4 text-center text-xs">{it.icon}</span>{it.label}</button>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        )
+      })}
       <div className="pt-3 mt-2 border-t border-slate-200 space-y-0.5">
-        <button onClick={() => go('/finance/settings')} className={navItemCls('/finance/settings')}>
-          <span>⚙️</span>Company Settings
-        </button>
-        <button onClick={() => go('/finance/my-tasks')} className={navItemCls('/finance/my-tasks')}>
-          <span>✅</span>My Tasks
-        </button>
-        {isManager && (
-          <button onClick={() => go('/finance/task-tracker')} className={navItemCls('/finance/task-tracker')}>
-            <span>📊</span>Task Tracker
-          </button>
-        )}
+        <button onClick={() => go('/finance/my-tasks')} className={navItemCls('/finance/my-tasks')}><span>✅</span>My tasks</button>
+        {isManager && <button onClick={() => go('/finance/task-tracker')} className={navItemCls('/finance/task-tracker')}><span>📊</span>Task tracker</button>}
       </div>
     </>
   )
 
   return (
     <div className="h-full flex overflow-hidden">
-      {/* Mobile top bar — toggles the sidebar as a full-screen overlay */}
-      <div className="md:hidden fixed top-0 inset-x-0 z-30 flex items-center gap-2 bg-white border-b border-slate-200 px-3 py-2">
-        <button onClick={() => setMobileNavOpen(o => !o)}
-          className="p-1.5 rounded-lg bg-slate-100 text-slate-600 text-sm">☰</button>
-        <span className="text-sm font-semibold text-slate-700">{currentLabel}</span>
+      {/* Mobile top bar */}
+      <div className="md:hidden fixed top-0 inset-x-0 z-30 flex items-center gap-2 bg-white/95 backdrop-blur border-b border-slate-200 px-3 py-2">
+        <button onClick={() => setMobileNavOpen(o => !o)} className="p-1.5 rounded-lg bg-slate-100 text-slate-600 text-sm" aria-label="Menu">☰</button>
+        <span className="text-sm font-semibold text-slate-700 flex-1 truncate">{currentLabel}</span>
+        <button onClick={() => setPaletteOpen(true)} className="p-1.5 rounded-lg bg-slate-100 text-slate-600 text-sm" aria-label="Search">🔍</button>
       </div>
 
       {/* Sidebar */}
       <aside className={`
         ${mobileNavOpen ? 'flex' : 'hidden'} md:flex
         fixed md:relative inset-0 md:inset-auto z-20 md:z-auto
-        w-full md:w-60 flex-shrink-0 flex-col
+        w-full md:w-64 flex-shrink-0 flex-col
         bg-white border-r border-slate-200
-        pt-14 md:pt-3 px-2 pb-3 overflow-y-auto
+        pt-14 md:pt-3 px-2 pb-20 md:pb-3 overflow-y-auto
       `}>
         {navBody}
       </aside>
 
-      {/* Backdrop for mobile overlay */}
-      {mobileNavOpen && (
-        <div className="md:hidden fixed inset-0 z-10 bg-black/20" onClick={() => setMobileNavOpen(false)} />
-      )}
+      {mobileNavOpen && <div className="md:hidden fixed inset-0 z-10 bg-black/20" onClick={() => setMobileNavOpen(false)} />}
 
-      <main className="flex-1 overflow-auto pt-12 md:pt-0">
+      {/* Mobile bottom bar: the things people do on a phone, with + in the middle */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 grid grid-cols-5 items-end px-1 pb-[env(safe-area-inset-bottom)]">
+        {[['Home', '🏠', '/finance'], ['Sell', '🧾', '/finance/invoices']].map(([l, i, p]) => (
+          <button key={l} onClick={() => go(p)} className={`flex flex-col items-center py-2 text-[11px] ${isActive(p) ? 'text-blue-600 font-semibold' : 'text-slate-500'}`}><span className="text-lg leading-none">{i}</span>{l}</button>
+        ))}
+        <button onClick={() => setAddOpen(true)} className="mb-2 mx-auto w-12 h-12 rounded-full bg-blue-600 text-white text-2xl shadow-lg flex items-center justify-center active:scale-95 transition" aria-label="New">＋</button>
+        {[['Buy', '🛒', '/finance/vouchers/purchase'], ['Reports', '📈', '/finance/reports']].map(([l, i, p]) => (
+          <button key={l} onClick={() => go(p)} className={`flex flex-col items-center py-2 text-[11px] ${isActive(p) ? 'text-blue-600 font-semibold' : 'text-slate-500'}`}><span className="text-lg leading-none">{i}</span>{l}</button>
+        ))}
+      </nav>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onGo={go} />
+      <QuickAddSheet open={addOpen} onClose={() => setAddOpen(false)} onGo={go} />
+
+      <main className="flex-1 overflow-auto pt-12 pb-16 md:pt-0 md:pb-0">
         <Routes>
           <Route path="/"             element={<FinanceDashboard />} />
           <Route path="/invoices"     element={<Invoices />} />

@@ -1,0 +1,99 @@
+// One source of truth for Finance navigation: the sidebar, the Ctrl+K search and the
+// “+ New” sheet all read from here. Labels are plain language first; Tally terms are
+// kept in `keywords` so searching “contra” or “day book” still finds things.
+export const NAV_GROUPS = [
+  { id: 'home', label: 'Home', icon: '🏠', items: [
+    { label: 'Dashboard', icon: '📊', path: '/finance', keywords: 'overview summary home' },
+    { label: 'All reports & functions', icon: '🗂️', path: '/finance/reports', keywords: 'index gateway everything' },
+  ]},
+  { id: 'sell', label: 'Sell', icon: '🧾', items: [
+    { label: 'Sales invoices', icon: '🧾', path: '/finance/invoices', keywords: 'invoice sale tax invoice proforma' },
+    { label: 'Receipts (money in)', icon: '💰', path: '/finance/vouchers/receipt', keywords: 'receipt collect payment received f6' },
+    { label: 'Credit notes (returns)', icon: '↩️', path: '/finance/vouchers/credit_note', keywords: 'credit note sales return discount' },
+    { label: 'Customers & balances', icon: '👥', path: '/finance/parties', keywords: 'party ledger customer opening balance credit days' },
+    { label: 'Who owes me', icon: '📥', path: '/finance/outstanding/receivables', keywords: 'receivables outstanding ageing debtors overdue' },
+    { label: 'E-invoice & e-way bill', icon: '🚚', path: '/finance/einvoice', keywords: 'irn eway e-way einvoice transport' },
+  ]},
+  { id: 'buy', label: 'Buy', icon: '🛒', items: [
+    { label: 'Purchase bills', icon: '🛒', path: '/finance/vouchers/purchase', keywords: 'purchase bill vendor invoice itc f9' },
+    { label: 'Payments (money out)', icon: '💸', path: '/finance/vouchers/payment', keywords: 'payment pay vendor expense tds f5' },
+    { label: 'Purchase orders', icon: '📑', path: '/finance/vouchers/purchase_order', keywords: 'po order' },
+    { label: 'Debit notes (returns)', icon: '↪️', path: '/finance/vouchers/debit_note', keywords: 'debit note purchase return' },
+    { label: 'Vendors', icon: '🏪', path: '/finance/vendors', keywords: 'supplier vendor master' },
+    { label: 'What I owe', icon: '📤', path: '/finance/outstanding/payables', keywords: 'payables outstanding creditors due' },
+  ]},
+  { id: 'money', label: 'Money', icon: '🏦', items: [
+    { label: 'Cash & bank book', icon: '🏧', path: '/finance/cashbank', keywords: 'cash book bank book balance' },
+    { label: 'Bank & cash accounts', icon: '🏦', path: '/finance/banking', keywords: 'bank account opening balance' },
+    { label: 'Transfers (cash ↔ bank)', icon: '🔁', path: '/finance/vouchers/contra', keywords: 'contra deposit withdrawal f4' },
+    { label: 'Bank reconciliation', icon: '🔍', path: '/finance/bank-recon', keywords: 'reconcile statement brs match' },
+    { label: 'Day book', icon: '📒', path: '/finance/daybook', keywords: 'all transactions daybook journal register' },
+  ]},
+  { id: 'stock', label: 'Stock', icon: '📦', items: [
+    { label: 'Stock items', icon: '📦', path: '/finance/stock-items', keywords: 'item master opening stock hsn' },
+    { label: 'Stock summary', icon: '🧮', path: '/finance/stock/summary', keywords: 'inventory quantity value' },
+    { label: 'Item in/out ledger', icon: '↕️', path: '/finance/stock/ledger', keywords: 'stock ledger movements bin card' },
+    { label: 'Movement analysis', icon: '📊', path: '/finance/stock/movement', keywords: 'stock in out period' },
+    { label: 'Stock by godown', icon: '🏭', path: '/finance/stock/godown', keywords: 'warehouse location' },
+    { label: 'Reorder alerts', icon: '⚠️', path: '/finance/stock/reorder', keywords: 'minimum low stock' },
+    { label: 'Pending purchase orders', icon: '⏳', path: '/finance/stock/orders', keywords: 'po pending create bill' },
+    { label: 'Stock journal', icon: '🔀', path: '/finance/vouchers/stock_journal', keywords: 'transfer adjust manufacture physical count' },
+  ]},
+  { id: 'tax', label: 'Taxes', icon: '🧮', items: [
+    { label: 'GSTR-1 (sales return)', icon: '📤', path: '/finance/gst/gstr1', keywords: 'gst gstr1 outward b2b json' },
+    { label: 'GSTR-3B (summary return)', icon: '🧮', path: '/finance/gst/gstr3b', keywords: 'gst gstr3b liability itc cash' },
+    { label: 'HSN summary', icon: '🔢', path: '/finance/gst/hsn', keywords: 'hsn sac' },
+    { label: 'Input credit register', icon: '🧾', path: '/finance/gst/itc', keywords: 'itc input tax credit blocked rcm' },
+    { label: 'GSTR-2B match', icon: '🔍', path: '/finance/gst/recon', keywords: '2b reconciliation supplier' },
+    { label: 'GST ledger summary', icon: '📑', path: '/finance/gst-filing', keywords: 'gst ledger output input' },
+    { label: 'TDS dashboard', icon: '🏛️', path: '/finance/tds/dashboard', keywords: 'tds due deposit interest' },
+    { label: 'TDS register', icon: '📒', path: '/finance/tds/register', keywords: 'tds deductions deductee' },
+    { label: 'TDS challans', icon: '🧾', path: '/finance/tds/challans', keywords: 'tds deposit bsr' },
+    { label: 'TDS quarterly statements', icon: '📤', path: '/finance/tds/returns', keywords: '26q 24q return' },
+    { label: 'TDS deductee statements', icon: '📄', path: '/finance/tds/certificates', keywords: '16a 131 certificate' },
+    { label: 'TDS deducted by customers', icon: '📥', path: '/finance/tds/receivable', keywords: 'tds receivable 26as' },
+    { label: 'TDS sections & rates', icon: '⚙️', path: '/finance/tds/sections', keywords: 'rates threshold master' },
+  ]},
+  { id: 'reports', label: 'Reports', icon: '📈', items: [
+    { label: 'Profit & loss', icon: '📈', path: '/finance/statements/trading', keywords: 'p&l trading gross profit net profit' },
+    { label: 'Balance sheet', icon: '🏛️', path: '/finance/balance-sheet', keywords: 'assets liabilities' },
+    { label: 'Trial balance', icon: '⚖️', path: '/finance/trial-balance', keywords: 'tb' },
+    { label: 'Cash flow', icon: '💧', path: '/finance/statements/cashflow', keywords: 'receipts payments' },
+    { label: 'Ratios', icon: '🧪', path: '/finance/statements/ratios', keywords: 'current ratio margin days' },
+    { label: 'Ledger statement', icon: '📖', path: '/finance/ledger', keywords: 'account party statement' },
+    { label: 'General ledger', icon: '📘', path: '/finance/gl', keywords: 'gl account entries' },
+    { label: 'Sales analysis', icon: '🧮', path: '/finance/analysis/sales-party', keywords: 'sales by party item customer' },
+    { label: 'Purchase analysis', icon: '🛍️', path: '/finance/analysis/purchase-party', keywords: 'purchases by party item vendor' },
+    { label: 'Sales register', icon: '📈', path: '/finance/registers/sales', keywords: 'register month-wise' },
+    { label: 'Purchase register', icon: '📉', path: '/finance/registers/purchase', keywords: 'register month-wise' },
+    { label: 'Credit / debit note registers', icon: '🗂️', path: '/finance/registers/credit_note', keywords: 'register' },
+    { label: 'Other registers', icon: '🗄️', path: '/finance/registers/receipt', keywords: 'receipt payment contra journal register' },
+    { label: 'Cost centres', icon: '🎯', path: '/finance/cost-centres', keywords: 'project site department' },
+    { label: 'Budgets', icon: '📐', path: '/finance/budgets', keywords: 'budget vs actual' },
+    { label: 'Project costs', icon: '📋', path: '/finance/projectcosts', keywords: 'project' },
+  ]},
+  { id: 'settings', label: 'Settings', icon: '⚙️', items: [
+    { label: 'Company settings', icon: '🏢', path: '/finance/settings', keywords: 'gstin tan state address bank details lock' },
+    { label: 'Chart of accounts', icon: '📚', path: '/finance/accounts', keywords: 'ledgers accounts coa' },
+    { label: 'HSN / SAC master', icon: '📋', path: '/finance/hsn', keywords: 'hsn codes gst rate' },
+    { label: 'Journal entries', icon: '📝', path: '/finance/journal', keywords: 'manual adjustment journal' },
+    { label: 'Audit trail & lock period', icon: '🔒', path: '/finance/audit', keywords: 'who changed lock close year' },
+    { label: 'Export & backup', icon: '📤', path: '/finance/export', keywords: 'excel tally xml download' },
+  ]},
+]
+
+// “+ New” — the things people create every day.
+export const QUICK_ACTIONS = [
+  { label: 'Sales invoice', icon: '🧾', path: '/finance/invoices', hint: 'Bill a customer', keywords: 'invoice sale' },
+  { label: 'Receipt', icon: '💰', path: '/finance/vouchers/receipt?new=1', hint: 'Money received', keywords: 'receive collect f6' },
+  { label: 'Purchase bill', icon: '🛒', path: '/finance/vouchers/purchase?new=1', hint: 'Vendor bill + ITC', keywords: 'purchase f9' },
+  { label: 'Payment', icon: '💸', path: '/finance/vouchers/payment?new=1', hint: 'Pay a vendor / expense', keywords: 'pay expense f5' },
+  { label: 'Credit note', icon: '↩️', path: '/finance/vouchers/credit_note?new=1', hint: 'Customer return', keywords: 'return' },
+  { label: 'Debit note', icon: '↪️', path: '/finance/vouchers/debit_note?new=1', hint: 'Vendor return', keywords: 'return' },
+  { label: 'Purchase order', icon: '📑', path: '/finance/vouchers/purchase_order?new=1', hint: 'Order goods', keywords: 'po' },
+  { label: 'Transfer cash ↔ bank', icon: '🔁', path: '/finance/vouchers/contra?new=1', hint: 'Deposit / withdraw', keywords: 'contra f4' },
+  { label: 'Stock journal', icon: '🔀', path: '/finance/vouchers/stock_journal?new=1', hint: 'Move / count stock', keywords: 'adjust' },
+  { label: 'TDS challan', icon: '🏛️', path: '/finance/tds/challans', hint: 'Record a TDS deposit', keywords: 'tds' },
+]
+
+export const allNavItems = () => NAV_GROUPS.flatMap(g => g.items.map(i => ({ ...i, group: g.label })))
