@@ -1,49 +1,16 @@
-import React, { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs } from 'firebase/firestore'
-import { db } from '../../../lib/firebase-config'
-import { deriveAllLines, manualEntryLines, computeAccountBalances, assertBalanced } from '../utils/ledger.js'
+import React, { useState, useMemo } from 'react'
+import { useFinanceData } from '../hooks/useFinanceData.js'
+import { computeAccountBalances } from '../utils/ledger.js'
 
-const today = () => new Date().toISOString().slice(0, 10)
+import { todayStr } from '../utils/financeConstants.js'
+const today = todayStr
 const fmt = n => `₹${Math.round(Math.abs(n)).toLocaleString('en-IN')}`
 
 export default function BalanceSheet() {
-  const [raw, setRaw] = useState(null)
-  const [loading, setLoading] = useState(true)
   const [company, setCompany] = useState('UIPL')
   const [asOfDate, setAsOfDate] = useState(today())
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [invSnap, paySnap, ordSnap, expSnap, payblSnap, acctSnap, jeSnap] = await Promise.all([
-          getDocs(collection(db, 'finance_invoices')),
-          getDocs(collection(db, 'finance_payments')),
-          getDocs(collection(db, 'crm_orders')),
-          getDocs(collection(db, 'finance_expenses')),
-          getDocs(collection(db, 'finance_payables')),
-          getDocs(collection(db, 'finance_accounts')),
-          getDocs(collection(db, 'finance_journal_entries')),
-        ])
-        const toArr = s => { const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a }
-        setRaw({
-          invoices: toArr(invSnap), payments: toArr(paySnap), orders: toArr(ordSnap),
-          expenses: toArr(expSnap), payables: toArr(payblSnap), accounts: toArr(acctSnap),
-          journalEntries: toArr(jeSnap),
-        })
-      } catch (err) { console.error(err) }
-      finally { setLoading(false) }
-    }
-    load()
-  }, [])
-
-  const allLines = useMemo(() => {
-    if (!raw) return []
-    const derived = deriveAllLines(raw)
-    const manual = manualEntryLines(raw.journalEntries)
-    const combined = [...derived, ...manual]
-    if (import.meta.env.DEV) assertBalanced(combined)
-    return combined
-  }, [raw])
+  const { raw, loading, allLines } = useFinanceData()
 
   const balances = useMemo(() => {
     if (!raw) return []

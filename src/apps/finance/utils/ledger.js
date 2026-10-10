@@ -23,6 +23,8 @@
 // 'UIPL' and carry `companyInferred: true` so report UIs can flag them
 // rather than silently misattributing them to a company.
 
+import { billKey, deriveVoucherLines, deriveOpeningLines } from './voucherEngine.js'
+
 // ── Seed Chart of Accounts ───────────────────────────────────────────────────
 // Auto-seeded once (by an admin) if finance_accounts is empty — same pattern
 // as CompanySettings.jsx's UIPL auto-seed. One shared tree for both
@@ -36,6 +38,8 @@ export const SEED_ACCOUNTS = [
   { code: '1301', name: 'Input CGST',                    type: 'asset',     normalBalance: 'debit',  parentCode: '1300' },
   { code: '1302', name: 'Input SGST',                    type: 'asset',     normalBalance: 'debit',  parentCode: '1300' },
   { code: '1303', name: 'Input IGST',                    type: 'asset',     normalBalance: 'debit',  parentCode: '1300' },
+  { code: '1310', name: 'TDS Receivable (deducted by customers)', type: 'asset', normalBalance: 'debit', isSystem: true },
+  { code: '1400', name: 'Stock in Hand',                 type: 'asset',     normalBalance: 'debit',  isSystem: true },
   { code: '1500', name: 'Fixed Assets',                  type: 'asset',     normalBalance: 'debit' },
   { code: '1900', name: 'Prepaid Expenses',               type: 'asset',     normalBalance: 'debit' },
   { code: '2100', name: 'Accounts Payable',               type: 'liability', normalBalance: 'credit', isSystem: true },
@@ -43,15 +47,19 @@ export const SEED_ACCOUNTS = [
   { code: '2401', name: 'Output CGST Payable',            type: 'liability', normalBalance: 'credit', parentCode: '2400', isSystem: true },
   { code: '2402', name: 'Output SGST Payable',            type: 'liability', normalBalance: 'credit', parentCode: '2400', isSystem: true },
   { code: '2403', name: 'Output IGST Payable',            type: 'liability', normalBalance: 'credit', parentCode: '2400', isSystem: true },
-  { code: '2500', name: 'TDS Payable',                    type: 'liability', normalBalance: 'credit' },
+  { code: '2404', name: 'GST Payable under Reverse Charge', type: 'liability', normalBalance: 'credit', parentCode: '2400', isSystem: true },
+  { code: '2500', name: 'TDS Payable',                    type: 'liability', normalBalance: 'credit', isSystem: true },
   { code: '2900', name: 'Other Current Liabilities',      type: 'liability', normalBalance: 'credit' },
   { code: '3000', name: "Owner's Equity / Share Capital", type: 'equity',    normalBalance: 'credit' },
   { code: '3100', name: 'Retained Earnings',              type: 'equity',    normalBalance: 'credit' },
   { code: '3200', name: 'Opening Balance Equity',          type: 'equity',    normalBalance: 'credit', isSystem: true },
   { code: '4000', name: 'Sales Revenue',                   type: 'income',    normalBalance: 'credit', isSystem: true },
   { code: '4900', name: 'Other Income',                    type: 'income',    normalBalance: 'credit' },
+  { code: '4910', name: 'Interest Income',                 type: 'income',    normalBalance: 'credit' },
+  { code: '4920', name: 'Discount Received',               type: 'income',    normalBalance: 'credit' },
   { code: '4950', name: 'Rounding Off Income',             type: 'income',    normalBalance: 'credit', isSystem: true },
   { code: '5000', name: 'Purchases & Subcontractor Costs', type: 'expense',   normalBalance: 'debit',  isSystem: true, isDefaultPurchase: true },
+  { code: '5010', name: 'Stock Adjustment (Opening / Closing Stock)', type: 'expense', normalBalance: 'debit', isSystem: true },
   { code: '5100', name: 'Rent',                            type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Rent'] },
   { code: '5110', name: 'Salaries & Wages',                 type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Salaries'] },
   { code: '5120', name: 'Transport / Delivery',             type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Transport / Delivery'] },
@@ -59,9 +67,32 @@ export const SEED_ACCOUNTS = [
   { code: '5140', name: 'Supplies / Packaging',             type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Supplies / Packaging'] },
   { code: '5150', name: 'Marketing',                        type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Marketing'] },
   { code: '5160', name: 'Repairs & Maintenance',            type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Repairs'] },
+  { code: '5170', name: 'Bank Charges',                     type: 'expense',   normalBalance: 'debit' },
+  { code: '5180', name: 'Interest Paid',                    type: 'expense',   normalBalance: 'debit' },
+  { code: '5190', name: 'Professional & Legal Fees',        type: 'expense',   normalBalance: 'debit' },
+  { code: '5195', name: 'Freight & Cartage Inward',         type: 'expense',   normalBalance: 'debit' },
   { code: '5900', name: 'Miscellaneous Expenses',           type: 'expense',   normalBalance: 'debit',  isSystem: true, isDefaultExpense: true, mapsFromCategories: ['Miscellaneous'] },
   { code: '5950', name: 'Rounding Off Expense',             type: 'expense',   normalBalance: 'debit',  isSystem: true },
 ]
+
+// Accounts the derivation logic posts to. Older companies seeded their Chart of
+// Accounts before some of these existed, and computeAccountBalances() silently
+// drops lines for codes missing from the accounts list (which would unbalance
+// every report). So readers merge any missing ones in-memory (flagged
+// `virtual:true`) instead of depending on someone having re-seeded the CoA.
+export const REQUIRED_ACCOUNT_CODES = [
+  '1100', '1110', '1200', '1301', '1302', '1303', '1310', '1400',
+  '2100', '2401', '2402', '2403', '2404', '2500',
+  '3200', '4000', '4950', '5000', '5010', '5900', '5950',
+]
+export const mergeRequiredAccounts = (dbAccounts = []) => {
+  if (dbAccounts.length === 0) return dbAccounts // not seeded yet — keep the "seed the Chart of Accounts first" prompts working
+  const have = new Set(dbAccounts.map(a => a.code))
+  const missing = SEED_ACCOUNTS
+    .filter(a => REQUIRED_ACCOUNT_CODES.includes(a.code) && !have.has(a.code))
+    .map(a => ({ ...a, id: a.code, isActive: true, virtual: true }))
+  return [...dbAccounts, ...missing]
+}
 
 // ── Account lookup helpers ───────────────────────────────────────────────────
 export const findAccount = (accounts, code) => accounts.find(a => a.code === code)
@@ -87,12 +118,23 @@ const acct = (accounts, code) => {
 //   sourceType, sourceId, sourceDocNumber, description }
 // Debits and credits within one document's lines always net to zero.
 
+// Pro-forma invoices and sales orders are quotations / commitments, not
+// accounting events (Tally books neither). Only Tax Invoices ('TI', or legacy
+// docs with no type) hit the ledger.
+export const isAccountingInvoice = (invoice) => !['PI', 'SO'].includes(invoice.invoiceType)
+
 export function deriveInvoiceLines(invoice, accounts) {
   if (!invoice.invoiceDate) return []
+  if (!isAccountingInvoice(invoice)) return []
   const lines = []
   const ar = acct(accounts, '1200')
   const total = Number(invoice.total) || 0
-  lines.push({ ...ar, debit: total, credit: 0 })
+  lines.push({
+    ...ar, debit: total, credit: 0,
+    partyType: 'customer', partyId: invoice.customerId || '', partyName: invoice.billToName || '',
+    billKey: billKey('invoice', invoice.id), billRef: invoice.invoiceNumber || invoice.id,
+    dueDate: invoice.dueDate || invoice.invoiceDate,
+  })
 
   const rev = acct(accounts, '4000')
   const subTotal = Number(invoice.subTotal) || 0
@@ -132,12 +174,18 @@ export function derivePaymentLines(payment, orders, accounts) {
 
   return [
     { accountCode: bankAcct.code, accountName: bankAcct.name, debit: amount, credit: 0 },
-    { ...acct(accounts, '1200'), debit: 0, credit: amount },
+    {
+      ...acct(accounts, '1200'), debit: 0, credit: amount,
+      // Legacy receipts carry the customer *name* (not an id) and are order-linked,
+      // never invoice-linked, so they settle bills FIFO rather than by allocation.
+      partyType: 'customer', partyId: '', partyName: payment.customerName || payment.customerId || '',
+      billRef: payment.orderRef || '', onAccount: true,
+    },
   ].map(l => ({
     ...l,
     date: payment.date,
     company, companyInferred,
-    sourceType: 'payment',
+    sourceType: 'receipt',
     sourceId: payment.id,
     sourceDocNumber: payment.orderRef || payment.id,
     description: payment.customerName || payment.customerId || '',
@@ -173,15 +221,20 @@ export function derivePayableLines(payable, accounts) {
   const apAcct = findAccount(accounts, '2100')
   const bankAcct = findAccount(accounts, '1100')
 
+  const partyTag = { partyType: 'vendor', partyId: '', partyName: payable.vendor || '' }
+  const key = billKey('payable', payable.id)
   if (payable.invoiceDate) {
     lines.push(
       { accountCode: purchaseAcct.code, accountName: purchaseAcct.name, debit: amount, credit: 0, date: payable.invoiceDate },
-      { accountCode: apAcct.code, accountName: apAcct.name, debit: 0, credit: amount, date: payable.invoiceDate },
+      {
+        accountCode: apAcct.code, accountName: apAcct.name, debit: 0, credit: amount, date: payable.invoiceDate,
+        ...partyTag, billKey: key, billRef: payable.invoiceRef || payable.id, dueDate: payable.dueDate || payable.invoiceDate,
+      },
     )
   }
   if (payable.status === 'paid' && payable.paidOn) {
     lines.push(
-      { accountCode: apAcct.code, accountName: apAcct.name, debit: amount, credit: 0, date: payable.paidOn },
+      { accountCode: apAcct.code, accountName: apAcct.name, debit: amount, credit: 0, date: payable.paidOn, ...partyTag, billRef: payable.invoiceRef || payable.id, allocatesTo: key },
       { accountCode: bankAcct.code, accountName: bankAcct.name, debit: 0, credit: amount, date: payable.paidOn },
     )
   }
@@ -201,12 +254,17 @@ export function derivePayableLines(payable, accounts) {
 // job-costing tracker, not a record of real cash movement, and posting it
 // would double-count against the same transaction already captured in
 // finance_expenses/finance_payables.
-export function deriveAllLines({ invoices = [], payments = [], orders = [], expenses = [], payables = [], accounts = [] }) {
+export function deriveAllLines({
+  invoices = [], payments = [], orders = [], expenses = [], payables = [], accounts = [],
+  vouchers = [], customers = [], vendors = [], bankAccounts = [],
+}) {
   return [
     ...invoices.flatMap(d => deriveInvoiceLines(d, accounts)),
     ...payments.flatMap(d => derivePaymentLines(d, orders, accounts)),
     ...expenses.flatMap(d => deriveExpenseLines(d, accounts)),
     ...payables.flatMap(d => derivePayableLines(d, accounts)),
+    ...vouchers.flatMap(d => deriveVoucherLines(d, accounts)),
+    ...deriveOpeningLines({ customers, vendors, bankAccounts, accounts }),
   ]
 }
 

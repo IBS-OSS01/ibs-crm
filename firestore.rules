@@ -135,6 +135,24 @@ service cloud.firestore {
     // read/write pattern as finance_vendors/finance_hsn_codes.
     match /finance_bank_accounts/{id}    { allow read, write: if isProvisioned(); }
 
+    // Tally-style accounting layer — unified vouchers (purchase, credit/debit note,
+    // payment, receipt, contra), voucher-number counters, purchase orders, stock
+    // journals, TDS/GST masters & challans, bank reconciliation, cost centres, budgets.
+    // Same access level as the older finance collections above. The audit log is
+    // append-only: entries can be created and read but never edited or deleted.
+    match /finance_vouchers/{id}           { allow read, write: if isProvisioned(); }
+    match /finance_counters/{id}           { allow read, write: if isProvisioned(); }
+    match /finance_purchase_orders/{id}    { allow read, write: if isProvisioned(); }
+    match /finance_stock_journals/{id}     { allow read, write: if isProvisioned(); }
+    match /finance_tds_sections/{id}       { allow read, write: if isProvisioned(); }
+    match /finance_tds_challans/{id}       { allow read, write: if isProvisioned(); }
+    match /finance_gst_challans/{id}       { allow read, write: if isProvisioned(); }
+    match /finance_gstr2b_imports/{id}     { allow read, write: if isProvisioned(); }
+    match /finance_bank_statement_lines/{id} { allow read, write: if isProvisioned(); }
+    match /finance_cost_centres/{id}       { allow read, write: if isProvisioned(); }
+    match /finance_budgets/{id}            { allow read, write: if isProvisioned(); }
+    match /finance_audit_log/{id}          { allow read, create: if isProvisioned(); allow update, delete: if false; }
+
     // Anything not explicitly listed above is denied by default.
     match /{document=**} {
       allow read, write: if false;

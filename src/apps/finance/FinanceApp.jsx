@@ -19,6 +19,13 @@ import GeneralLedger from './pages/GeneralLedger.jsx'
 import BalanceSheet from './pages/BalanceSheet.jsx'
 import BankAccounts from './pages/BankAccounts.jsx'
 import GstFiling from './pages/GstFiling.jsx'
+import Vouchers from './pages/Vouchers.jsx'
+import Parties from './pages/Parties.jsx'
+import DayBook from './pages/DayBook.jsx'
+import LedgerStatement from './pages/LedgerStatement.jsx'
+import Outstanding from './pages/Outstanding.jsx'
+import CashBankBook from './pages/CashBankBook.jsx'
+import Registers from './pages/Registers.jsx'
 import ModuleMyTasks from '../../components/tasks/ModuleMyTasks.jsx'
 import ModuleTaskTracker from '../../components/tasks/ModuleTaskTracker.jsx'
 
@@ -31,33 +38,52 @@ const NAV_GROUPS = [
   { label: 'Dashboard', items: [
     { label: 'Dashboard', icon: '📊', path: '/finance' },
   ]},
-  { label: 'Sales', items: [
-    { label: 'Invoices',     icon: '🧾', path: '/finance/invoices' },
-    { label: 'Payments In',  icon: '💳', path: '/finance/payments' },
+  { label: 'Vouchers', items: [
+    { label: 'Sales Invoices', icon: '🧾', path: '/finance/invoices' },
+    { label: 'Purchase',       icon: '🛒', path: '/finance/vouchers/purchase' },
+    { label: 'Receipt',        icon: '💰', path: '/finance/vouchers/receipt' },
+    { label: 'Payment',        icon: '💸', path: '/finance/vouchers/payment' },
+    { label: 'Contra',         icon: '🔁', path: '/finance/vouchers/contra' },
+    { label: 'Credit Note',    icon: '↩️', path: '/finance/vouchers/credit_note' },
+    { label: 'Debit Note',     icon: '↪️', path: '/finance/vouchers/debit_note' },
+    { label: 'Journal Entries', icon: '📝', path: '/finance/journal' },
   ]},
-  { label: 'Purchases', items: [
-    { label: 'Vendors',   icon: '🏪', path: '/finance/vendors' },
-    { label: 'Expenses',  icon: '📤', path: '/finance/expenses' },
-    { label: 'Payables',  icon: '🧾', path: '/finance/payables' },
-  ]},
-  { label: 'Accounting', items: [
+  { label: 'Masters', items: [
+    { label: 'Party Ledgers',     icon: '👥', path: '/finance/parties' },
+    { label: 'Vendors',           icon: '🏪', path: '/finance/vendors' },
     { label: 'Chart of Accounts', icon: '📚', path: '/finance/accounts' },
-    { label: 'Journal Entries',   icon: '📝', path: '/finance/journal' },
+    { label: 'Bank & Cash',       icon: '🏦', path: '/finance/banking' },
+    { label: 'HSN / SAC Codes',   icon: '📋', path: '/finance/hsn' },
   ]},
-  { label: 'Banking', items: [
-    { label: 'Bank & Cash Accounts', icon: '🏦', path: '/finance/banking' },
+  { label: 'Books', items: [
+    { label: 'Day Book',         icon: '📒', path: '/finance/daybook' },
+    { label: 'Ledger Statement', icon: '📖', path: '/finance/ledger' },
+    { label: 'Cash / Bank Book', icon: '🏧', path: '/finance/cashbank' },
+    { label: 'General Ledger',   icon: '📘', path: '/finance/gl' },
+    { label: 'Sales Register',   icon: '📈', path: '/finance/registers/sales' },
+    { label: 'Purchase Register', icon: '📉', path: '/finance/registers/purchase' },
+    { label: 'Credit Note Reg.', icon: '🗂️', path: '/finance/registers/credit_note' },
+    { label: 'Debit Note Reg.',  icon: '🗃️', path: '/finance/registers/debit_note' },
+    { label: 'Other Registers',  icon: '🗄️', path: '/finance/registers/receipt' },
+  ]},
+  { label: 'Outstanding', items: [
+    { label: 'Receivables (Bill-wise)', icon: '📥', path: '/finance/outstanding/receivables' },
+    { label: 'Payables (Bill-wise)',    icon: '📤', path: '/finance/outstanding/payables' },
   ]},
   { label: 'Filing & Compliance', items: [
-    { label: 'HSN / SAC Codes', icon: '📋', path: '/finance/hsn' },
-    { label: 'GST Filing',      icon: '🧮', path: '/finance/gst-filing' },
+    { label: 'GST Filing', icon: '🧮', path: '/finance/gst-filing' },
   ]},
-  { label: 'Reports', items: [
-    { label: 'P&L Report',      icon: '📈', path: '/finance/pl' },
-    { label: 'Receivables',     icon: '📥', path: '/finance/receivables' },
-    { label: 'Trial Balance',   icon: '⚖️', path: '/finance/trial-balance' },
-    { label: 'General Ledger',  icon: '📖', path: '/finance/gl' },
-    { label: 'Balance Sheet',   icon: '🏛️', path: '/finance/balance-sheet' },
-    { label: 'Project Costs',   icon: '📋', path: '/finance/projectcosts' },
+  { label: 'Statements', items: [
+    { label: 'Trial Balance', icon: '⚖️', path: '/finance/trial-balance' },
+    { label: 'P&L Report',    icon: '📈', path: '/finance/pl' },
+    { label: 'Balance Sheet', icon: '🏛️', path: '/finance/balance-sheet' },
+    { label: 'Project Costs', icon: '📋', path: '/finance/projectcosts' },
+  ]},
+  { label: 'Older pages', items: [
+    { label: 'Payments In (old)', icon: '💳', path: '/finance/payments' },
+    { label: 'Expenses (old)',    icon: '📤', path: '/finance/expenses' },
+    { label: 'Payables (old)',    icon: '🧾', path: '/finance/payables' },
+    { label: 'Receivables (old)', icon: '📥', path: '/finance/receivables' },
   ]},
 ]
 
@@ -155,6 +181,13 @@ export default function FinanceApp() {
           <Route path="/balance-sheet"  element={<BalanceSheet />} />
           <Route path="/banking"        element={<BankAccounts />} />
           <Route path="/gst-filing"     element={<GstFiling />} />
+          <Route path="/vouchers/:type"  element={<Vouchers />} />
+          <Route path="/parties"         element={<Parties />} />
+          <Route path="/daybook"         element={<DayBook />} />
+          <Route path="/ledger"          element={<LedgerStatement />} />
+          <Route path="/cashbank"        element={<CashBankBook />} />
+          <Route path="/outstanding/:kind" element={<Outstanding />} />
+          <Route path="/registers/:type" element={<Registers />} />
           <Route path="/my-tasks"     element={<ModuleMyTasks />} />
           <Route path="/task-tracker" element={<ModuleTaskTracker />} />
         </Routes>

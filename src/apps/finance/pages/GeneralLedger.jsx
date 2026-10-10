@@ -1,53 +1,18 @@
-import React, { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs } from 'firebase/firestore'
-import { db } from '../../../lib/firebase-config'
-import { deriveAllLines, manualEntryLines, assertBalanced } from '../utils/ledger.js'
+import React, { useState, useMemo } from 'react'
+import { useFinanceData } from '../hooks/useFinanceData.js'
 
-const SOURCE_LABELS = { invoice: '🧾 Invoice', payment: '💳 Payment', expense: '📤 Expense', payable: '🧾 Payable', manual: '📝 Manual JE' }
+const SOURCE_LABELS = {
+  invoice: '🧾 Sales Invoice', receipt: '💰 Receipt', payment: '💸 Payment', expense: '📤 Expense', payable: '🧾 Payable', manual: '📝 Journal',
+  purchase: '🛒 Purchase', credit_note: '↩️ Credit Note', debit_note: '↪️ Debit Note', contra: '🔁 Contra', opening: '🏁 Opening Balance',
+}
 
 export default function GeneralLedger() {
-  const [raw, setRaw] = useState(null)
-  const [loading, setLoading] = useState(true)
   const [company, setCompany] = useState('UIPL')
   const [accountCode, setAccountCode] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [invSnap, paySnap, ordSnap, expSnap, payblSnap, acctSnap, jeSnap] = await Promise.all([
-          getDocs(collection(db, 'finance_invoices')),
-          getDocs(collection(db, 'finance_payments')),
-          getDocs(collection(db, 'crm_orders')),
-          getDocs(collection(db, 'finance_expenses')),
-          getDocs(collection(db, 'finance_payables')),
-          getDocs(collection(db, 'finance_accounts')),
-          getDocs(collection(db, 'finance_journal_entries')),
-        ])
-        const toArr = s => { const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a }
-        const accounts = toArr(acctSnap).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
-        setRaw({
-          invoices: toArr(invSnap), payments: toArr(paySnap), orders: toArr(ordSnap),
-          expenses: toArr(expSnap), payables: toArr(payblSnap), accounts,
-          journalEntries: toArr(jeSnap),
-        })
-        if (accounts.length && !accountCode) setAccountCode(accounts[0].code)
-      } catch (err) { console.error(err) }
-      finally { setLoading(false) }
-    }
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const allLines = useMemo(() => {
-    if (!raw) return []
-    const derived = deriveAllLines(raw)
-    const manual = manualEntryLines(raw.journalEntries)
-    const combined = [...derived, ...manual]
-    if (import.meta.env.DEV) assertBalanced(combined)
-    return combined
-  }, [raw])
+  const { raw, loading, allLines } = useFinanceData()
 
   const account = raw?.accounts.find(a => a.code === accountCode)
 

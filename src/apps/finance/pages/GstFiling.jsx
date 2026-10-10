@@ -1,7 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs } from 'firebase/firestore'
-import { db } from '../../../lib/firebase-config'
-import { deriveAllLines, manualEntryLines, assertBalanced } from '../utils/ledger.js'
+import React, { useState, useMemo } from 'react'
+import { useFinanceData } from '../hooks/useFinanceData.js'
 
 // Read-only GST summary for a filing period, built entirely from the General
 // Ledger (finance/utils/ledger.js) — no new data model. Output GST comes from
@@ -10,49 +8,19 @@ import { deriveAllLines, manualEntryLines, assertBalanced } from '../utils/ledge
 // paid on purchases yet (Payables has no per-line GST breakdown), so this is
 // an honest reflection of what's actually tracked today, not a bug.
 const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01` }
-const today = () => new Date().toISOString().slice(0, 10)
+import { todayStr } from '../utils/financeConstants.js'
+const today = todayStr
 const COMPANIES = ['UIPL', 'Wayzim']
 
 const OUTPUT_CODES = { '2401': 'CGST Payable', '2402': 'SGST Payable', '2403': 'IGST Payable' }
 const INPUT_CODES  = { '1301': 'Input CGST',    '1302': 'Input SGST',    '1303': 'Input IGST' }
 
 export default function GstFiling() {
-  const [raw, setRaw] = useState(null)
-  const [loading, setLoading] = useState(true)
   const [company, setCompany] = useState('UIPL')
   const [from, setFrom] = useState(monthStart())
   const [to, setTo] = useState(today())
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [invSnap, paySnap, ordSnap, expSnap, payblSnap, acctSnap, jeSnap] = await Promise.all([
-          getDocs(collection(db, 'finance_invoices')),
-          getDocs(collection(db, 'finance_payments')),
-          getDocs(collection(db, 'crm_orders')),
-          getDocs(collection(db, 'finance_expenses')),
-          getDocs(collection(db, 'finance_payables')),
-          getDocs(collection(db, 'finance_accounts')),
-          getDocs(collection(db, 'finance_journal_entries')),
-        ])
-        const toArr = s => { const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a }
-        setRaw({
-          invoices: toArr(invSnap), payments: toArr(paySnap), orders: toArr(ordSnap),
-          expenses: toArr(expSnap), payables: toArr(payblSnap), accounts: toArr(acctSnap),
-          journalEntries: toArr(jeSnap),
-        })
-      } catch (err) { console.error(err) }
-      finally { setLoading(false) }
-    }
-    load()
-  }, [])
-
-  const allLines = useMemo(() => {
-    if (!raw) return []
-    const combined = [...deriveAllLines(raw), ...manualEntryLines(raw.journalEntries)]
-    if (import.meta.env.DEV) assertBalanced(combined)
-    return combined
-  }, [raw])
+  const { raw, loading, allLines } = useFinanceData()
 
   // Sum credit-side (output tax collected) and debit-side (input tax paid)
   // per account code, for lines dated within [from, to] for this company —
