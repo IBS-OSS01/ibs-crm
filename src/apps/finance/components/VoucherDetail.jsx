@@ -42,7 +42,8 @@ function printVoucher(entry, voucher, lines, seller) {
   w.document.write(html); w.document.close(); setTimeout(() => w.print(), 400)
 }
 
-export default function VoucherDetail({ entry, voucher, lines, seller, onClose, onChanged }) {
+export default function VoucherDetail({ entry, voucher, lines, seller, stockItems = [], onClose, onChanged }) {
+  const itemName = (id) => stockItems.find(i => i.id === id)?.name || id
   const navigate = useNavigate()
   const { user, userProfile } = useAuth()
   const { canWrite, isAdmin } = useFinancePerms()
@@ -92,7 +93,7 @@ export default function VoucherDetail({ entry, voucher, lines, seller, onClose, 
 
         <div className="p-5 space-y-4">
           {err && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{err}</div>}
-          {entry.memo && <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">{entry.memoLabel || 'This document'} is a memorandum — it doesn't hit the books until it's converted to a Tax Invoice.</p>}
+          {entry.memo && <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">{entry.memoLabel === 'Purchase Order' ? 'A purchase order is an order-tracking document — it has no accounting entry. Stock and the payable are created when you enter the vendor’s bill (Pending POs → Create bill).' : `${entry.memoLabel || 'This document'} is a memorandum — it doesn’t hit the books until it’s converted to a Tax Invoice.`}</p>}
 
           {voucher?.items?.length > 0 && (
             <div>
@@ -113,6 +114,15 @@ export default function VoucherDetail({ entry, voucher, lines, seller, onClose, 
             </div>
           )}
 
+          {voucher?.voucherType === 'stock_journal' && (
+            <div className="text-sm text-slate-700 space-y-1">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{voucher.type === 'transfer' ? 'Godown transfer' : voucher.type === 'manufacture' ? 'Manufacturing' : 'Stock adjustment'}</p>
+              {(voucher.lines || []).map((l, i) => <p key={i}>{itemName(l.itemId)} · qty {l.qty}{l.mode === 'set' ? ' (counted)' : ''}</p>)}
+              {(voucher.consume || []).map((l, i) => <p key={'c' + i}>Used: {itemName(l.itemId)} · {l.qty}</p>)}
+              {(voucher.produce || []).map((l, i) => <p key={'p' + i}>Made: {itemName(l.itemId)} · {l.qty}</p>)}
+              <p className="text-xs text-slate-400">Stock journals change quantities (and, via the stock valuation, Stock in Hand) — see the Item Ledger for the effect.</p>
+            </div>
+          )}
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Ledger entries</p>
             <table className="w-full text-sm">

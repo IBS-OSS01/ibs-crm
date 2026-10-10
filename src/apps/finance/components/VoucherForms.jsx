@@ -12,25 +12,27 @@ import {
 } from './formShared.jsx'
 
 const cleanItems = (items) => items.filter(i => (i.description || '').trim() || num(i.rate) > 0)
-const lineFrom = (i) => ({ description: i.description || '', hsnCode: i.hsnCode || '', qty: i.qty ?? 1, unit: i.unit || 'pcs', rate: i.rate ?? '', discountPct: i.discountPct ?? 0, gstRate: i.gstRate ?? 18, stockItemId: i.stockItemId || '', sku: i.sku || '', accountCode: i.accountCode || '' })
+const lineFrom = (i) => ({ description: i.description || '', hsnCode: i.hsnCode || '', qty: i.qty ?? 1, unit: i.unit || 'pcs', rate: i.rate ?? '', discountPct: i.discountPct ?? 0, gstRate: i.gstRate ?? 18, stockItemId: i.stockItemId || '', sku: i.sku || '', accountCode: i.accountCode || '', poLine: i.poLine })
 
 // ═══ PURCHASE ═══════════════════════════════════════════════════════════════
-export function PurchaseForm({ data, initial, onSaved, onCancel }) {
+export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
   const { raw, accounts } = data
-  const [company, setCompany] = useState(initial?.company || 'UIPL')
-  const [date, setDate] = useState(initial?.date || todayStr())
+  const seed = initial || prefill   // prefill = pending lines of a purchase order
+  const [company, setCompany] = useState(seed?.company || 'UIPL')
+  const [date, setDate] = useState(seed?.date || todayStr())
   const vendors = useMemo(() => vendorOptions(raw), [raw])
-  const [vendorId, setVendorId] = useState(initial?.partyId || '')
+  const [vendorId, setVendorId] = useState(seed?.partyId || '')
   const vendor = vendors.find(v => v.id === vendorId)
-  const [refNumber, setRefNumber] = useState(initial?.refNumber || '')
-  const [refDate, setRefDate] = useState(initial?.refDate || '')
-  const [creditDays, setCreditDays] = useState(initial?.creditDays ?? 0)
-  const [applyGst, setApplyGst] = useState(initial ? (initial.gstLines || []).length > 0 || initial.applyGst !== false : true)
-  const [rcm, setRcm] = useState(!!initial?.rcm)
-  const [itcEligible, setItcEligible] = useState(initial?.itcEligible !== false)
-  const [items, setItems] = useState(initial?.items?.length ? initial.items.map(lineFrom) : [newLine()])
+  const [refNumber, setRefNumber] = useState(seed?.refNumber || '')
+  const [refDate, setRefDate] = useState(seed?.refDate || '')
+  const [creditDays, setCreditDays] = useState(seed?.creditDays ?? 0)
+  const [applyGst, setApplyGst] = useState(seed ? (seed.gstLines || []).length > 0 || seed.applyGst !== false : true)
+  const [rcm, setRcm] = useState(!!seed?.rcm)
+  const [itcEligible, setItcEligible] = useState(seed?.itcEligible !== false)
+  const [items, setItems] = useState(seed?.items?.length ? seed.items.map(lineFrom) : [newLine()])
   const [tds, setTds] = useState(initial?.tds?.applicable ? { applicable: true, section: initial.tds.section, rate: initial.tds.rate, baseOverride: initial.tds.base } : { applicable: false })
-  const [narration, setNarration] = useState(initial?.narration || '')
+  const [warehouseId, setWarehouseId] = useState(seed?.warehouseId || '')
+  const [narration, setNarration] = useState(seed?.narration || '')
 
   const compState = companyStateCode(raw, company)
   const vendorState = gstinToStateCode(vendor?.gstin) || stateCodeFromName(vendor?.state)
@@ -63,7 +65,7 @@ export function PurchaseForm({ data, initial, onSaved, onCancel }) {
         voucherType: 'purchase', company, date, partyType: 'vendor', partyId: vendor.id, partyName: vendor.name, partyGstin: vendor.gstin,
         partyState: vendor.state, partyStateCode: vendorState, placeOfSupplyCode: compState, companyStateCode: compState, supplyType,
         refNumber: refNumber.trim(), refDate, creditDays: num(creditDays), dueDate: addDays(date, creditDays),
-        applyGst, rcm, itcEligible, purchaseAccountCode: '5000',
+        applyGst, rcm, itcEligible, purchaseAccountCode: '5000', warehouseId, ...(seed?.purchaseOrderId ? { purchaseOrderId: seed.purchaseOrderId, purchaseOrderNumber: seed.purchaseOrderNumber || '' } : {}),
         items: t.items.map(i => ({ ...i, accountCode: i.accountCode || '5000' })), gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal,
         roundOff: t.roundOff, total: t.total, tds: finalTds(tds, t.subTotal), narration: narration.trim(),
       }
@@ -88,6 +90,9 @@ export function PurchaseForm({ data, initial, onSaved, onCancel }) {
         <Field label="Supply"><div className={`${formInputCls} bg-slate-100`}>{vendor ? (supplyType === 'intra' ? 'Intra-state → CGST + SGST' : 'Inter-state → IGST') : '—'}</div></Field>
       </div>
       {vendor && <p className="text-xs text-slate-500 -mt-2">GSTIN {vendor.gstin || <span className="text-amber-600">not on file (unregistered supplier — usually no GST, unless reverse charge applies)</span>} · {vendor.state || 'state not set'}{!compState && <span className="text-amber-600"> · set your own state in Company Settings so CGST/SGST vs IGST is right</span>}</p>}
+      {(raw.warehouses || []).length > 0 && (raw.stockItems || []).length > 0 && (
+        <Field label="Receive stock into godown" className="max-w-xs"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={formInputCls}><option value="">Default godown</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></Field>
+      )}
       <div className="flex gap-5 flex-wrap text-sm">
         <label className="flex items-center gap-2"><input type="checkbox" checked={applyGst} onChange={e => { setApplyGst(e.target.checked); if (!e.target.checked) setRcm(false) }} />GST applicable</label>
         <label className="flex items-center gap-2" title="Buyer pays the GST directly to the government (unregistered supplier / notified services)"><input type="checkbox" checked={rcm} disabled={!applyGst} onChange={e => setRcm(e.target.checked)} />Reverse charge (RCM)</label>

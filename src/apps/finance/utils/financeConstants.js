@@ -98,14 +98,16 @@ export const VOUCHER_TYPES = {
   credit_note: { label: 'Credit Note',  prefix: 'CRN', fkey: 'Ctrl+F8', color: 'bg-teal-100 text-teal-700' },
   debit_note:  { label: 'Debit Note',   prefix: 'DBN', fkey: 'Ctrl+F9', color: 'bg-amber-100 text-amber-700' },
   expense:     { label: 'Expense',      prefix: 'EXP', fkey: '',        color: 'bg-rose-100 text-rose-700' },
+  purchase_order: { label: 'Purchase Order', prefix: 'PO', fkey: 'Ctrl+F5', color: 'bg-indigo-100 text-indigo-700' },
+  stock_journal:  { label: 'Stock Journal',  prefix: 'STJ', fkey: 'Ctrl+F7', color: 'bg-cyan-100 text-cyan-700' },
 }
-export const NEW_VOUCHER_TYPES = ['purchase', 'credit_note', 'debit_note', 'payment', 'receipt', 'contra']
+export const NEW_VOUCHER_TYPES = ['purchase', 'credit_note', 'debit_note', 'payment', 'receipt', 'contra', 'purchase_order', 'stock_journal']
 
 // GL lines carry a `sourceType` (which collection/derivation made them); reports
 // show the human voucher kind instead.
 export const SOURCE_TO_KIND = {
   invoice: 'sales', receipt: 'receipt', payment: 'payment', payable: 'purchase', manual: 'journal',
   expense: 'expense', purchase: 'purchase', credit_note: 'credit_note', debit_note: 'debit_note', contra: 'contra',
-  opening: 'opening',
+  opening: 'opening', stock: 'stock',
 }
 export const kindOfSource = (sourceType) => SOURCE_TO_KIND[sourceType] || sourceType

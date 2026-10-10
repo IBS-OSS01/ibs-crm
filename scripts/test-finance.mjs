@@ -8,6 +8,8 @@ import { computeOutstanding } from '../src/apps/finance/utils/outstanding.js'
 import { ledgerStatement } from '../src/apps/finance/utils/statements.js'
 import { normalizeTaxDocs, rateWiseFromGstLines } from '../src/apps/finance/utils/taxDocs.js'
 import { buildVoucherIndex } from '../src/apps/finance/utils/voucherIndex.js'
+import { collectMovements, valueMovements, deriveStockLines, computeStock } from '../src/apps/finance/utils/stockEngine.js'
+import { buildGstr1, gstr1Json, buildGstr3b, setOff, hsnSummary, itcRegister, reconcile2b, parseGstr2bJson, normInvNo } from '../src/apps/finance/utils/gstReturns.js'
 
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) pass++; else { fail++; console.error('  ✗ FAIL:', msg) } }
@@ -158,6 +160,70 @@ ok(rw.length === 1 && rw[0].rate === 18 && rw[0].taxable === 10000 && rw[0].cgst
 const idx = buildVoucherIndex(raw)
 ok(idx.filter(e => e.kind === 'sales').length === 3 && idx.filter(e => e.kind === 'memo').length === 2, 'day book separates memos')
 ok(idx.some(e => e.kind === 'credit_note') && idx.some(e => e.kind === 'receipt'), 'day book lists new vouchers')
+
+section('GST returns')
+const cnR = { ...cn, partyGstin: '29AADCU8036C1ZD', refInvoiceNumber: 'UIPL/TI/26-27/001', date: '2026-06-15' }
+const purA = { ...mkVoucher('purchase', [{ qty: 10, rate: 1000, gstRate: 18, hsnCode: '8517', unit: 'nos' }], { extra: { id: 'pa', voucherNumber: 'PUR/1', refNumber: 'INV-001', partyGstin: '27AAACV1234A1Z5', date: '2026-06-05' } }) }
+const purRcm = { ...mkVoucher('purchase', [{ qty: 1, rate: 10000, gstRate: 18 }], { supplyType: 'inter', rcm: true, extra: { id: 'pr', voucherNumber: 'PUR/2', rcm: true, supplyType: 'inter', date: '2026-06-06' } }) }
+const purBlocked = { ...mkVoucher('purchase', [{ qty: 1, rate: 1000, gstRate: 18 }], { extra: { id: 'pb', voucherNumber: 'PUR/3', itcEligible: false, date: '2026-06-07' } }) }
+const gdocs = normalizeTaxDocs({ invoices, vouchers: [cnR, purA, purRcm, purBlocked], payables: [], vendors: [] })
+const g1 = buildGstr1(gdocs, { company: 'UIPL', from: '2026-04-01', to: '2026-06-30', companyStateCode: '27', gstin: '27AADCU8036C1ZF' })
+ok(g1.b2b.length === 1 && g1.b2b[0].invoices.length === 1, 'GSTR-1: one registered buyer invoice in B2B')
+eq(g1.b2cs.reduce((s, x) => s + x.taxable, 0), 25000, 'GSTR-1: unregistered intra-state sales go to B2CS')
+ok(g1.cdnr.length === 1 && g1.cdnr[0].notes[0].refNumber === 'UIPL/TI/26-27/001', 'GSTR-1: credit note to registered buyer goes to CDNR')
+eq(g1.hsn.rows.reduce((s, r) => s + r.taxable, 0), 35000 - 2000, 'HSN summary nets credit notes')
+const gj = gstr1Json(g1, { gstin: '27AADCU8036C1ZF', to: '2026-06-30' })
+ok(gj.fp === '062026' && gj.b2b[0].inv[0].idt === '10-04-2026' && gj.b2b[0].inv[0].itms[0].itm_det.camt === 900, 'GSTR-1 JSON: period, dd-mm-yyyy dates, item tax')
+const g3 = buildGstr3b(gdocs, { company: 'UIPL', from: '2026-04-01', to: '2026-06-30', companyStateCode: '27' })
+eq(g3.t31a.taxable, 33000, '3B 3.1(a) net of credit notes'); eq(g3.t31a.cgst, 2970, '3B output CGST'); eq(g3.t31d.igst, 1800, '3B 3.1(d) RCM IGST')
+eq(g3.itcOther.cgst, 900, '3B ITC other CGST'); eq(g3.itcBlocked.cgst, 90, 'blocked credit tracked separately'); eq(g3.itcRcm.igst, 1800, 'RCM ITC')
+eq(g3.setOff.cash.cgst, 2970 - 900, 'cash CGST after set-off'); eq(g3.rcmCash.igst, 1800, 'RCM paid in cash')
+const so = setOff({ igst: 100, cgst: 50, sgst: 50 }, { igst: 120, cgst: 10, sgst: 0 })
+eq(so.cash.igst, 0, 'IGST credit clears IGST first'); eq(so.cash.cgst, 20, 'then CGST (and CGST credit)'); eq(so.cash.sgst, 50, 'SGST liability untouched by CGST credit')
+const itc = itcRegister(gdocs, { company: 'UIPL', from: '2026-04-01', to: '2026-06-30' })
+eq(itc.totals.blocked, 180, 'ITC register: blocked credit'); ok(itc.rows.some(r => r.status === 'Eligible (RCM)'), 'ITC register flags RCM')
+ok(normInvNo('inv/0001') === 'INV0001' && normInvNo('INV-001') === normInvNo('inv001'), 'invoice number normalisation')
+const books = gdocs.filter(d => d.kind === 'purchase')
+const rec = reconcile2b(books, [
+  { gstin: '27AAACV1234A1Z5', number: 'inv001', date: '2026-06-04', taxable: 10000, igst: 0, cgst: 900, sgst: 900 },
+  { gstin: '27ZZZZZ9999Z1Z1', number: 'X-9', taxable: 500, igst: 0, cgst: 45, sgst: 45 }])
+ok(rec.matched.length === 1 && rec.onlyTwoB.length === 1, '2B recon: match + only-in-2B')
+const pj = parseGstr2bJson({ data: { rtnprd: '062026', docdata: { b2b: [{ ctin: '27AAACV1234A1Z5', trdnm: 'V', inv: [{ inum: 'INV-001', dt: '04-06-2026', val: 11800, itcavl: 'Y', items: [{ txval: 10000, cgst: 900, sgst: 900, igst: 0 }] }] }] } } })
+ok(pj.rows.length === 1 && pj.rows[0].date === '2026-06-04' && pj.rows[0].cgst === 900, 'parse GSTR-2B portal JSON')
+
+section('stock ledger')
+const sItems = [
+  { id: 'it1', name: 'Router', sku: 'RT-1', unit: 'nos', openingStock: { w1: { qty: 10, rate: 100 } }, openingDate: '2026-04-01', purchaseRate: 100 },
+  { id: 'it2', name: 'Cable', sku: 'CB-1', unit: 'mtr', valuationMethod: 'fifo' },
+]
+const sWh = [{ id: 'w1', name: 'Main' }, { id: 'w2', name: 'Site' }]
+const pur1 = { id: 'sp1', voucherType: 'purchase', voucherNumber: 'PUR/10', company: 'UIPL', date: '2026-05-01', partyName: 'V', status: 'active', itcEligible: true, items: [{ stockItemId: 'it1', qty: 10, rate: 120, taxable: 1200, cgst: 108, sgst: 108, igst: 0 }, { stockItemId: 'it2', qty: 100, rate: 10, taxable: 1000 }] }
+const pur2 = { id: 'sp2', voucherType: 'purchase', voucherNumber: 'PUR/11', company: 'UIPL', date: '2026-05-02', partyName: 'V', status: 'active', items: [{ stockItemId: 'it2', qty: 100, rate: 20, taxable: 2000 }] }
+const sale = { id: 'si1', invoiceType: 'TI', invoiceNumber: 'INV/9', invoiceDate: '2026-05-10', company: 'UIPL', billToName: 'Beta', items: [{ sku: 'RT-1', qty: 5, rate: 300 }, { sku: 'CB-1', qty: 150, rate: 30 }, { description: 'Router', qty: 99, rate: 1 }] }
+const dnote = { id: 'sd1', voucherType: 'debit_note', voucherNumber: 'DBN/1', company: 'UIPL', date: '2026-05-12', partyName: 'V', status: 'active', items: [{ stockItemId: 'it1', qty: 2, rate: 120, taxable: 240 }] }
+const xfer = { id: 'tr1', itemName: 'Router', sku: 'RT-1', qty: 3, fromLocationId: 'w1', toLocationId: 'w2', status: 'completed', createdAt: '2026-05-15T10:00:00' }
+const mv = collectMovements({ stockItems: sItems, warehouses: sWh, vouchers: [pur1, pur2, dnote], invoices: [sale], transfers: [xfer] })
+const vm = valueMovements(mv, sItems)
+const sumOf = (id) => vm.summary.find(x => x.itemId === id)
+// Router: 10 @100 open, +10 @120 → avg 110 (20 qty, 2200); sale 5 → out 550; return 2 at 120 → value 240 out; qty 13
+eq(sumOf('it1').qty, 10 + 10 - 5 - 2, 'router qty'); eq(sumOf('it1').value, 2200 - 550 - 240, 'router value (moving average, return at stated cost)')
+// Cable FIFO: 100@10 + 100@20, sell 150 → 100*10 + 50*20 = 2000 out; left 50 @20 = 1000
+eq(sumOf('it2').qty, 50, 'cable qty'); eq(sumOf('it2').value, 1000, 'FIFO value of remaining layer')
+ok(!mv.some(m => m.qty === 99), 'free-text description never moves stock')
+eq(sumOf('it1').warehouses.w2, 3, 'transfer lands in destination godown'); eq(sumOf('it1').warehouses.w1, 20 - 5 - 2 - 3 + 0, 'source godown reduced')
+const sLines = deriveStockLines(vm.movements, accounts)
+ok(balanced(sLines), 'stock valuation lines balance')
+eq(sumBy(sLines, '3200', 'credit'), 1000, 'opening stock funded by opening equity')
+const net1400 = sumBy(sLines, '1400', 'debit') - sumBy(sLines, '1400', 'credit')
+eq(net1400, sumOf('it1').value + sumOf('it2').value, 'books stock in hand equals the stock ledger value')
+// cost folded in when ITC blocked
+const mvB = valueMovements(collectMovements({ stockItems: sItems, warehouses: sWh, vouchers: [{ ...pur1, itcEligible: false }] }), sItems)
+eq(mvB.summary.find(x => x.itemId === 'it1').value, 1000 + 1200 + 216, 'blocked ITC becomes part of stock cost')
+// physical count
+const cnt = collectMovements({ stockItems: sItems, warehouses: sWh, adjustments: [{ id: 'a1', itemName: 'Router', sku: 'RT-1', type: 'adjustment', adjustmentType: 'set', qty: 4, locationId: 'w1', createdAt: '2026-06-01T09:00:00' }] })
+eq(valueMovements(cnt, sItems).summary.find(x => x.itemId === 'it1').qty, 4, "'set exact quantity' adjusts to the counted figure")
+const mfg = valueMovements(collectMovements({ stockItems: sItems, warehouses: sWh, stockJournals: [{ id: 'j1', type: 'manufacture', date: '2026-06-02', company: 'UIPL', consume: [{ itemId: 'it1', qty: 4, warehouseId: 'w1' }], produce: [{ itemId: 'it2', qty: 10, warehouseId: 'w1' }] }] }), sItems)
+eq(mfg.summary.find(x => x.itemId === 'it2').value, 400, 'manufactured goods carry the cost of the materials consumed')
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

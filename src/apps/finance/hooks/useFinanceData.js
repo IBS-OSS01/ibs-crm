@@ -8,7 +8,8 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
-import { deriveAllLines, manualEntryLines, assertBalanced, mergeRequiredAccounts } from '../utils/ledger.js'
+import { deriveAllLines, manualEntryLines, assertBalanced, mergeRequiredAccounts, isAccountingInvoice } from '../utils/ledger.js'
+import { computeStock } from '../utils/stockEngine.js'
 
 export const COLLECTIONS = {
   invoices: 'finance_invoices',
@@ -45,6 +46,8 @@ export const COLLECTIONS = {
 export const CORE_KEYS = [
   'invoices', 'payments', 'orders', 'expenses', 'payables', 'accounts', 'journalEntries',
   'vouchers', 'vendors', 'customers', 'bankAccounts',
+  // inventory — needed by every report because stock value feeds Stock in Hand / cost of goods
+  'stockItems', 'warehouses', 'stockAdjustments', 'stockTransfers', 'consumptionRequests',
 ]
 
 const TTL_MS = 60_000
@@ -97,14 +100,16 @@ export function useFinanceData(extraKeys = []) {
     return () => { alive = false }
   }, [keys, nonce])
 
+  const stock = useMemo(() => raw ? computeStock(raw, raw.accounts, isAccountingInvoice, raw.companySettings?.UIPL?.stockOptions || {}) : { movements: [], summary: [], lines: [] }, [raw])
+
   const allLines = useMemo(() => {
     if (!raw) return []
-    const lines = [...deriveAllLines(raw), ...manualEntryLines(raw.journalEntries || [])]
+    const lines = [...deriveAllLines(raw), ...manualEntryLines(raw.journalEntries || []), ...stock.lines]
     if (import.meta.env.DEV) assertBalanced(lines)
     return lines
-  }, [raw])
+  }, [raw, stock])
 
   const reload = useCallback(() => { invalidateFinanceCache(); setNonce(n => n + 1) }, [])
 
-  return { raw, accounts: raw?.accounts || [], allLines, loading, reload, failures }
+  return { raw, accounts: raw?.accounts || [], allLines, stock, loading, reload, failures }
 }

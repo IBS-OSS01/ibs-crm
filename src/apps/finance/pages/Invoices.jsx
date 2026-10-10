@@ -13,7 +13,7 @@ const TERMS_OPTS = ['Due on Receipt', 'Net 15', 'Net 30', 'Net 45', 'Net 60']
 const UNITS = ['pcs', 'nos', 'set', 'kg', 'ltr', 'mtr', 'sqft', 'hours', 'days', 'lot']
 const today = () => new Date().toISOString().slice(0, 10)
 const getFY = () => { const d = new Date(); const y = d.getFullYear(); const m = d.getMonth() + 1; const s = m >= 4 ? y : y - 1; return `${String(s).slice(2)}-${String(s+1).slice(2)}` }
-const newItem = () => ({ description: '', hsnCode: '', qty: 1, unit: 'pcs', rate: '', gstRate: 18 })
+const newItem = () => ({ description: '', hsnCode: '', qty: 1, unit: 'pcs', rate: '', gstRate: 18, stockItemId: '', sku: '' })
 
 const emptyForm = {
   company: 'UIPL', invoiceType: 'TI', invoiceDate: today(), dueDate: today(),
@@ -150,6 +150,7 @@ export default function Invoices() {
   const [sellers, setSellers] = useState({})
   const [customers, setCustomers] = useState([])
   const [hsnCodes, setHsnCodes] = useState([])
+  const [stockItems, setStockItems] = useState([])   // optional link: picking a stock item makes the sale reduce inventory and book cost of goods
   const [form, setForm] = useState(emptyForm)
   const [items, setItems] = useState([newItem()])
   const [saving, setSaving] = useState(false)
@@ -159,13 +160,17 @@ export default function Invoices() {
 
   const loadAll = async () => {
     try {
-      const [invSnap, custSnap, hsnSnap, uiplSnap, wayzimSnap] = await Promise.all([
+      const [invSnap, custSnap, hsnSnap, uiplSnap, wayzimSnap, stockSnap] = await Promise.all([
         getDocs(collection(db, 'finance_invoices')),
         getDocs(collection(db, 'crm_customers')),
         getDocs(collection(db, 'finance_hsn_codes')),
         getDoc(doc(db, 'company_settings', 'UIPL')),
         getDoc(doc(db, 'company_settings', 'Wayzim')),
+        getDocs(collection(db, 'inventory_items')).catch(() => null),
       ])
+      const stk = []; stockSnap?.forEach(d => stk.push({ id: d.id, ...d.data() }))
+      stk.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      setStockItems(stk)
       const invData = []; invSnap.forEach(d => invData.push({ id: d.id, ...d.data() }))
       invData.sort((a, b) => (b.invoiceDate || '').localeCompare(a.invoiceDate || ''))
       setInvoices(invData)
@@ -224,6 +229,15 @@ export default function Invoices() {
   const handleHsnLookup = (idx, code) => {
     const found = hsnCodes.find(h => h.code === code)
     if (found) updateItem(idx, 'gstRate', found.gstRate)
+  }
+
+  const pickStockItem = (idx, id) => {
+    const st = stockItems.find(x => x.id === id)
+    if (!st) { setItems(prev => prev.map((it, i) => i === idx ? { ...it, stockItemId: '', sku: '' } : it)); return }
+    setItems(prev => prev.map((it, i) => i === idx ? {
+      ...it, stockItemId: st.id, sku: st.sku || '', description: st.name || it.description, unit: st.unit || it.unit,
+      hsnCode: st.hsnCode || it.hsnCode, gstRate: st.gstRate !== undefined && st.gstRate !== '' ? st.gstRate : it.gstRate, rate: it.rate || st.saleRate || '',
+    } : it))
   }
 
   const updateItem = (idx, field, val) =>
@@ -409,7 +423,15 @@ export default function Invoices() {
                 const amt = (Number(it.qty) || 0) * (Number(it.rate) || 0)
                 return (
                   <tr key={idx} className="border-t border-slate-100">
-                    <td className="px-2 py-1"><input className={inp} value={it.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Item description" /></td>
+                    <td className="px-2 py-1">
+                      {stockItems.length > 0 && (
+                        <select className={`${inp} mb-1 text-xs text-slate-500`} value={it.stockItemId || ''} onChange={e => pickStockItem(idx, e.target.value)}>
+                          <option value="">Not a stock item (service / free text)</option>
+                          {stockItems.map(x => <option key={x.id} value={x.id}>{x.sku ? `${x.sku} · ` : ''}{x.name}</option>)}
+                        </select>
+                      )}
+                      <input className={inp} value={it.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Item description" />
+                    </td>
                     <td className="px-2 py-1"><input className={inp} value={it.hsnCode} onChange={e => { updateItem(idx, 'hsnCode', e.target.value); handleHsnLookup(idx, e.target.value) }} placeholder="85444929" /></td>
                     <td className="px-2 py-1"><input type="number" className={inp} value={it.qty} min={0} onChange={e => updateItem(idx, 'qty', e.target.value)} /></td>
                     <td className="px-2 py-1">
@@ -418,7 +440,7 @@ export default function Invoices() {
                       </select>
                     </td>
                     <td className="px-2 py-1"><input type="number" className={inp} value={it.rate} min={0} onChange={e => updateItem(idx, 'rate', e.target.value)} /></td>
-                    <td className="px-2 py-1"><input type="number" className={inp} value={it.gstRate} min={0} max={28} onChange={e => updateItem(idx, 'gstRate', e.target.value)} /></td>
+                    <td className="px-2 py-1"><input type="number" className={inp} value={it.gstRate} min={0} max={40} onChange={e => updateItem(idx, 'gstRate', e.target.value)} /></td>
                     <td className="px-2 py-1 text-right font-medium">₹{amt.toLocaleString('en-IN')}</td>
                     <td className="px-2 py-1 text-center">
                       {items.length > 1 && <button type="button" onClick={() => setItems(p => p.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 text-lg">×</button>}

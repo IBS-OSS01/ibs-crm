@@ -21,6 +21,9 @@ import BankAccounts from './pages/BankAccounts.jsx'
 import GstFiling from './pages/GstFiling.jsx'
 import Vouchers from './pages/Vouchers.jsx'
 import Parties from './pages/Parties.jsx'
+import GstReturns from './pages/GstReturns.jsx'
+import StockItems from './pages/StockItems.jsx'
+import StockReports from './pages/StockReports.jsx'
 import DayBook from './pages/DayBook.jsx'
 import LedgerStatement from './pages/LedgerStatement.jsx'
 import Outstanding from './pages/Outstanding.jsx'
@@ -46,6 +49,8 @@ const NAV_GROUPS = [
     { label: 'Contra',         icon: '🔁', path: '/finance/vouchers/contra' },
     { label: 'Credit Note',    icon: '↩️', path: '/finance/vouchers/credit_note' },
     { label: 'Debit Note',     icon: '↪️', path: '/finance/vouchers/debit_note' },
+    { label: 'Purchase Order', icon: '📑', path: '/finance/vouchers/purchase_order' },
+    { label: 'Stock Journal',  icon: '🔀', path: '/finance/vouchers/stock_journal' },
     { label: 'Journal Entries', icon: '📝', path: '/finance/journal' },
   ]},
   { label: 'Masters', items: [
@@ -66,12 +71,26 @@ const NAV_GROUPS = [
     { label: 'Debit Note Reg.',  icon: '🗃️', path: '/finance/registers/debit_note' },
     { label: 'Other Registers',  icon: '🗄️', path: '/finance/registers/receipt' },
   ]},
+  { label: 'Inventory', items: [
+    { label: 'Stock Items',       icon: '📦', path: '/finance/stock-items' },
+    { label: 'Stock Summary',     icon: '🧮', path: '/finance/stock/summary' },
+    { label: 'Item Ledger (In/Out)', icon: '↕️', path: '/finance/stock/ledger' },
+    { label: 'Movement Analysis', icon: '📊', path: '/finance/stock/movement' },
+    { label: 'Godown-wise',       icon: '🏭', path: '/finance/stock/godown' },
+    { label: 'Reorder Status',    icon: '⚠️', path: '/finance/stock/reorder' },
+    { label: 'Pending POs',       icon: '⏳', path: '/finance/stock/orders' },
+  ]},
   { label: 'Outstanding', items: [
     { label: 'Receivables (Bill-wise)', icon: '📥', path: '/finance/outstanding/receivables' },
     { label: 'Payables (Bill-wise)',    icon: '📤', path: '/finance/outstanding/payables' },
   ]},
   { label: 'Filing & Compliance', items: [
-    { label: 'GST Filing', icon: '🧮', path: '/finance/gst-filing' },
+    { label: 'GSTR-1',            icon: '📤', path: '/finance/gst/gstr1' },
+    { label: 'GSTR-3B',           icon: '🧮', path: '/finance/gst/gstr3b' },
+    { label: 'HSN Summary',       icon: '🔢', path: '/finance/gst/hsn' },
+    { label: 'ITC Register',      icon: '🧾', path: '/finance/gst/itc' },
+    { label: 'GSTR-2B Recon',     icon: '🔍', path: '/finance/gst/recon' },
+    { label: 'GST Ledger Summary', icon: '📑', path: '/finance/gst-filing' },
   ]},
   { label: 'Statements', items: [
     { label: 'Trial Balance', icon: '⚖️', path: '/finance/trial-balance' },
@@ -181,6 +200,9 @@ export default function FinanceApp() {
           <Route path="/balance-sheet"  element={<BalanceSheet />} />
           <Route path="/banking"        element={<BankAccounts />} />
           <Route path="/gst-filing"     element={<GstFiling />} />
+          <Route path="/stock-items"     element={<StockItems />} />
+          <Route path="/stock/:tab"      element={<StockReports />} />
+          <Route path="/gst/:tab"        element={<GstReturns />} />
           <Route path="/vouchers/:type"  element={<Vouchers />} />
           <Route path="/parties"         element={<Parties />} />
           <Route path="/daybook"         element={<DayBook />} />

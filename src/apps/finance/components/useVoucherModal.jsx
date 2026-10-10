@@ -14,7 +14,7 @@ export function useVoucherModal({ raw, allLines, reload }) {
     if (entry.collection === 'finance_payables') lines = lines.filter(l => l.date === entry.date)
     const voucher = entry.collection === 'finance_vouchers' ? raw.vouchers.find(v => v.id === entry.id) : null
     modal = (
-      <VoucherDetail entry={entry} voucher={voucher} lines={lines} seller={raw.companySettings?.[entry.company]}
+      <VoucherDetail entry={entry} voucher={voucher} lines={lines} seller={raw.companySettings?.[entry.company]} stockItems={raw.stockItems}
         onClose={() => setEntry(null)} onChanged={reload} />
     )
   }

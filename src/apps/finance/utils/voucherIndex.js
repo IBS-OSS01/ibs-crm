@@ -82,6 +82,7 @@ export function buildVoucherIndex({ invoices = [], payments = [], orders = [], e
       amount, company: v.company || 'UIPL', narration: v.narration || '',
       collection: 'finance_vouchers', id: v.id, status: v.status === 'cancelled' ? 'cancelled' : '', cancelled: v.status === 'cancelled',
       taxable: r2(num(v.subTotal)), refNumber: v.refNumber || '', voucherType: v.voucherType,
+      ...(v.voucherType === 'purchase_order' ? { memo: true, memoLabel: 'Purchase Order' } : {}),
     })
   })
 

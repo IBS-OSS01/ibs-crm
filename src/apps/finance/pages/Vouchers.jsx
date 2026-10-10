@@ -8,11 +8,15 @@ import { buildVoucherIndex } from '../utils/voucherIndex.js'
 import { VOUCHER_TYPES, NEW_VOUCHER_TYPES, fmtAmt } from '../utils/financeConstants.js'
 import { PurchaseForm, NoteForm } from '../components/VoucherForms.jsx'
 import { PaymentForm, ReceiptForm, ContraForm } from '../components/SettlementForms.jsx'
+import { PurchaseOrderForm, StockJournalForm } from '../components/InventoryForms.jsx'
+import { pendingPoLines } from '../utils/purchaseOrders.js'
+import { creditDaysFromTerms } from '../components/formShared.jsx'
 import { useVoucherModal } from '../components/useVoucherModal.jsx'
 import { ReportShell, CompanyToggle, Badge, Empty, cardCls, btnPrimary, btnGhost, inputCls, useFinancePerms } from '../components/FinanceUI.jsx'
 
 const EXTERNAL = { sales: '/finance/invoices', journal: '/finance/journal' }
 const FKEYS = { F4: 'contra', F5: 'payment', F6: 'receipt', F9: 'purchase' }
+const CTRL_FKEYS = { F5: 'purchase_order', F7: 'stock_journal', F8: 'credit_note', F9: 'debit_note' }
 
 export default function Vouchers() {
   const { type = 'purchase' } = useParams()
@@ -28,6 +32,15 @@ export default function Vouchers() {
   const editId = params.get('edit')
   const creating = params.get('new') === '1'
   const showForm = canWrite && (creating || !!editId)
+  const poId = params.get('po')
+  const prefill = useMemo(() => {
+    if (!poId || !raw) return null
+    const po = raw.vouchers.find(v => v.id === poId); if (!po) return null
+    const vend = (raw.vendors || []).find(v => v.id === po.partyId)
+    const lines = pendingPoLines(po, raw.vouchers)
+    return { company: po.company, partyId: po.partyId, warehouseId: po.warehouseId, purchaseOrderId: po.id, purchaseOrderNumber: po.voucherNumber, applyGst: po.applyGst, creditDays: creditDaysFromTerms(vend?.paymentTerms),
+      items: lines.map(l => ({ ...l.item, qty: l.pending, poLine: l.index })), narration: `Against ${po.voucherNumber}` }
+  }, [poId, raw])
   const editing = useMemo(() => editId && raw ? raw.vouchers.find(v => v.id === editId) : null, [editId, raw])
 
   const closeForm = () => setParams({}, { replace: true })
@@ -38,8 +51,7 @@ export default function Vouchers() {
     const onKey = (e) => {
       if (e.key === 'Escape' && showForm) { closeForm(); return }
       let t = null
-      if (e.ctrlKey && e.key === 'F8') t = 'credit_note'
-      else if (e.ctrlKey && e.key === 'F9') t = 'debit_note'
+      if (e.ctrlKey && CTRL_FKEYS[e.key]) t = CTRL_FKEYS[e.key]
       else if (!e.ctrlKey && !e.altKey && FKEYS[e.key]) t = FKEYS[e.key]
       if (t) { e.preventDefault(); navigate(`/finance/vouchers/${t}?new=1`) }
     }
@@ -66,7 +78,9 @@ export default function Vouchers() {
     if (editId && !editing) return <div className={`${cardCls} p-5 text-sm text-slate-500`}>Voucher not found (it may live in an older module — open it from its original page).</div>
     const props = { data, initial: editing || undefined, onSaved: saved, onCancel: closeForm }
     switch (type) {
-      case 'purchase': return <PurchaseForm {...props} />
+      case 'purchase': return <PurchaseForm {...props} prefill={prefill} />
+      case 'purchase_order': return <PurchaseOrderForm {...props} />
+      case 'stock_journal': return <StockJournalForm {...props} />
       case 'credit_note': case 'debit_note': return <NoteForm type={type} {...props} />
       case 'payment': return <PaymentForm {...props} />
       case 'receipt': return <ReceiptForm {...props} />

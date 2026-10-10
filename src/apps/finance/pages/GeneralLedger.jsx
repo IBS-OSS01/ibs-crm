@@ -3,7 +3,7 @@ import { useFinanceData } from '../hooks/useFinanceData.js'
 
 const SOURCE_LABELS = {
   invoice: '🧾 Sales Invoice', receipt: '💰 Receipt', payment: '💸 Payment', expense: '📤 Expense', payable: '🧾 Payable', manual: '📝 Journal',
-  purchase: '🛒 Purchase', credit_note: '↩️ Credit Note', debit_note: '↪️ Debit Note', contra: '🔁 Contra', opening: '🏁 Opening Balance',
+  purchase: '🛒 Purchase', credit_note: '↩️ Credit Note', debit_note: '↪️ Debit Note', contra: '🔁 Contra', opening: '🏁 Opening Balance', stock: '📦 Stock valuation',
 }
 
 export default function GeneralLedger() {
