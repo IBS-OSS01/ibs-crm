@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
-import { deriveAllLines, manualEntryLines, computeAccountBalances } from '../utils/ledger.js'
+import { computeAccountBalances } from '../utils/ledger.js'
+import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
 
 // Individual bank/cash accounts are tracked here as master data (name, account
 // number, IFSC, opening balance). They are NOT individually mapped in the
@@ -32,8 +33,7 @@ export default function BankAccounts() {
   const { user, userProfile } = useAuth()
   const isAdmin = userProfile?.role === 'admin'
   const [accounts, setAccounts] = useState([])
-  const [glAccounts, setGlAccounts] = useState([])
-  const [glLines, setGlLines] = useState([])
+  const { allLines: glLines, accounts: glAccounts, reload: reloadGl } = useFinanceData()
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -45,26 +45,10 @@ export default function BankAccounts() {
 
   const load = async () => {
     try {
-      const [baSnap, invSnap, paySnap, ordSnap, expSnap, payblSnap, acctSnap, jeSnap] = await Promise.all([
-        getDocs(collection(db, 'finance_bank_accounts')),
-        getDocs(collection(db, 'finance_invoices')),
-        getDocs(collection(db, 'finance_payments')),
-        getDocs(collection(db, 'crm_orders')),
-        getDocs(collection(db, 'finance_expenses')),
-        getDocs(collection(db, 'finance_payables')),
-        getDocs(collection(db, 'finance_accounts')),
-        getDocs(collection(db, 'finance_journal_entries')),
-      ])
-      const toArr = s => { const a = []; s.forEach(d => a.push({ id: d.id, ...d.data() })); return a }
-      const data = toArr(baSnap)
+      const snap = await getDocs(collection(db, 'finance_bank_accounts'))
+      const data = []; snap.forEach(d => data.push({ id: d.id, ...d.data() }))
       data.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       setAccounts(data)
-      setGlAccounts(toArr(acctSnap))
-      const derived = deriveAllLines({
-        invoices: toArr(invSnap), payments: toArr(paySnap), orders: toArr(ordSnap),
-        expenses: toArr(expSnap), payables: toArr(payblSnap), accounts: toArr(acctSnap),
-      })
-      setGlLines([...derived, ...manualEntryLines(toArr(jeSnap))])
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
@@ -104,7 +88,7 @@ export default function BankAccounts() {
         })
         setAccounts(prev => [...prev, { id: ref.id, ...payload }])
       }
-      setShowForm(false); reset()
+      invalidateFinanceCache(); reloadGl(); setShowForm(false); reset()
     } catch (err) { setError('Error: ' + err.message) }
     finally { setSaving(false) }
   }
@@ -112,7 +96,7 @@ export default function BankAccounts() {
   const handleDelete = async (a) => {
     if (!window.confirm(`Delete "${a.name}"? This only removes the account record, not any transactions.`)) return
     await deleteDoc(doc(db, 'finance_bank_accounts', a.id))
-    setAccounts(prev => prev.filter(x => x.id !== a.id))
+    setAccounts(prev => prev.filter(x => x.id !== a.id)); invalidateFinanceCache(); reloadGl()
   }
 
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>

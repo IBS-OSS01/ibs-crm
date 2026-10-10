@@ -86,7 +86,9 @@ export const REQUIRED_ACCOUNT_CODES = [
   '3200', '4000', '4950', '5000', '5010', '5900', '5950',
 ]
 export const mergeRequiredAccounts = (dbAccounts = []) => {
-  if (dbAccounts.length === 0) return dbAccounts // not seeded yet — keep the "seed the Chart of Accounts first" prompts working
+  // Not seeded yet: use the standard chart virtually so vouchers and reports work straight away
+  // (the Chart of Accounts page can still persist it for editing).
+  if (dbAccounts.length === 0) return SEED_ACCOUNTS.map(a => ({ ...a, id: a.code, isActive: true, virtual: true }))
   const have = new Set(dbAccounts.map(a => a.code))
   const missing = SEED_ACCOUNTS
     .filter(a => REQUIRED_ACCOUNT_CODES.includes(a.code) && !have.has(a.code))

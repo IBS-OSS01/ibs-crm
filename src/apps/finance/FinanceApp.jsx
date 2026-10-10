@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useLayoutEffect, useRef, useState } from 'react'
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import FinanceDashboard from './pages/FinanceDashboard.jsx'
@@ -20,6 +20,7 @@ import BalanceSheet from './pages/BalanceSheet.jsx'
 import BankAccounts from './pages/BankAccounts.jsx'
 import GstFiling from './pages/GstFiling.jsx'
 import Vouchers from './pages/Vouchers.jsx'
+import { invalidateFinanceCache } from './hooks/useFinanceData.js'
 import Parties from './pages/Parties.jsx'
 import GstReturns from './pages/GstReturns.jsx'
 import StockItems from './pages/StockItems.jsx'
@@ -143,6 +144,15 @@ export default function FinanceApp() {
   const { userProfile } = useAuth()
   const isManager = MANAGER_ROLES.includes(userProfile?.role || '')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+
+  // The older pages write straight to Firestore without telling the shared report cache. When you leave
+  // one of them, drop the cache so the next report reads the new invoice / payment / expense.
+  const prevPath = useRef(location.pathname)
+  // layout effect: must run before the new page's own data-loading effect, or it would read the stale cache first
+  useLayoutEffect(() => {
+    if (/^\/finance\/(invoices|payments|expenses|payables|journal|vendors|banking|settings|hsn|accounts|receivables|projectcosts)/.test(prevPath.current)) invalidateFinanceCache()
+    prevPath.current = location.pathname
+  }, [location.pathname])
 
   const isActive = (path) =>
     path === '/finance' ? (location.pathname === '/finance' || location.pathname === '/finance/') : location.pathname.startsWith(path)

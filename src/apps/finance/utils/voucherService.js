@@ -13,6 +13,9 @@ import { invalidateFinanceCache } from '../hooks/useFinanceData.js'
 
 export class VoucherError extends Error {}
 
+// Firestore rejects `undefined` anywhere in a document; a round-trip through JSON drops those keys.
+const clean = (o) => JSON.parse(JSON.stringify(o))
+
 export function assertNotLocked(date, lockedUpTo) {
   if (lockedUpTo && date && date <= lockedUpTo) {
     throw new VoucherError(`Books are locked up to ${lockedUpTo}. A voucher dated ${date} can't be created, edited or cancelled — ask an admin to move the lock date if this is intentional.`)
@@ -22,7 +25,7 @@ export function assertNotLocked(date, lockedUpTo) {
 const actor = (user, profile) => ({ by: user?.uid || '', byName: profile?.name || profile?.email || user?.email || '' })
 
 async function audit(entry) {
-  try { await addDoc(collection(db, 'finance_audit_log'), { at: new Date().toISOString(), ...entry }) }
+  try { await addDoc(collection(db, 'finance_audit_log'), clean({ at: new Date().toISOString(), ...entry })) }
   catch (e) { console.warn('[finance] audit log write failed', e) }   // never block the real operation on the log
 }
 
@@ -43,14 +46,14 @@ export async function createVoucher(data, { user, profile, lockedUpTo } = {}) {
     const next = snap.exists() ? (snap.data().next || 1) : 1
     const voucherNumber = `${data.company}/${meta.prefix}/${fy}/${String(next).padStart(3, '0')}`
     tx.set(counterRef, { next: next + 1, company: data.company, type: data.voucherType, fy })
-    tx.set(voucherRef, {
+    tx.set(voucherRef, clean({
       ...data, voucherNumber, fy, status: 'active', revision: 1,
       createdAt: new Date().toISOString(), createdBy: actor(user, profile).by, createdByName: actor(user, profile).byName,
-    })
+    }))
     return voucherNumber
   })
   invalidateFinanceCache()
-  await audit({ ...actor(user, profile), action: 'create', voucherId: voucherRef.id, voucherNumber: number, voucherType: data.voucherType, company: data.company, date: data.date, amount: data.total ?? data.partyAmount ?? data.amount ?? 0 })
+  await audit({ ...actor(user, profile), action: 'create', voucherId: voucherRef.id, voucherNumber: number, voucherType: data.voucherType, company: data.company, date: data.date, amount: data.total || data.amount || data.partyAmount || 0 })
   return { id: voucherRef.id, voucherNumber: number }
 }
 
@@ -59,10 +62,10 @@ export async function updateVoucher(id, before, data, { user, profile, lockedUpT
   assertNotLocked(data.date, lockedUpTo)
   if (before.status === 'cancelled') throw new VoucherError('A cancelled voucher cannot be edited.')
   const { id: _i, voucherNumber: _n, voucherType: _t, company: _c, createdAt: _ca, createdBy: _cb, createdByName: _cbn, status: _s, revision: _r, history: _h, ...editable } = data
-  await updateDoc(doc(db, 'finance_vouchers', id), {
+  await updateDoc(doc(db, 'finance_vouchers', id), clean({
     ...editable, revision: (before.revision || 1) + 1,
     updatedAt: new Date().toISOString(), updatedBy: user?.uid || '', updatedByName: actor(user, profile).byName,
-  })
+  }))
   invalidateFinanceCache()
   await audit({
     ...actor(user, profile), action: 'edit', voucherId: id, voucherNumber: before.voucherNumber, voucherType: before.voucherType,

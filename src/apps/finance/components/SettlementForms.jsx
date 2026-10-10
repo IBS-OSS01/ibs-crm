@@ -48,7 +48,8 @@ function useBills({ allLines, kind, company, party, date, initial }) {
     const bills = pendingBillsForParty(allLines, { kind, company, partyName: party.name, partyId: party.id, asOf: '9999-12-31' })
     const own = {}
     ;(initial?.allocations || []).forEach(a => { own[a.billKey] = (own[a.billKey] || 0) + num(a.amount) })
-    return bills.map(b => ({ ...b, pending: r2(b.pending + (own[b.billKey] || 0)) }))
+    const today = new Date(todayStr() + 'T00:00:00')
+    return bills.map(b => ({ ...b, pending: r2(b.pending + (own[b.billKey] || 0)), daysOverdue: Math.round((today - new Date(b.dueDate + 'T00:00:00')) / 86400000) }))
   }, [allLines, kind, company, party, initial])
 }
 
@@ -174,9 +175,18 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
   const { raw, accounts, allLines } = data
   const [company, setCompany] = useState(initial?.company || 'UIPL')
   const [date, setDate] = useState(initial?.date || todayStr())
-  const customers = useMemo(() => customerOptions(raw, company), [raw, company])
-  const [customerId, setCustomerId] = useState(initial?.partyId || '')
-  const customer = customers.find(c => c.id === customerId) || (initial?.partyName && !initial.partyId ? { id: '', name: initial.partyName } : null)
+  // CRM customers plus anyone who only exists as the bill-to name on an invoice (free-typed customers) — keyed by id, or 'n:name' when there is no master record.
+  const customers = useMemo(() => {
+    const list = customerOptions(raw, company).map(c => ({ ...c, key: c.id }))
+    const have = new Set(list.map(c => normName(c.name)))
+    ;(raw.invoices || []).filter(i => i.company === company && i.invoiceType !== 'PI' && i.invoiceType !== 'SO' && i.billToName).forEach(i => {
+      const k = normName(i.billToName); if (have.has(k)) return; have.add(k)
+      list.push({ id: '', key: 'n:' + k, name: i.billToName, gstin: i.billToGstin || '' })
+    })
+    return list.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }, [raw, company])
+  const [customerId, setCustomerId] = useState(initial ? (initial.partyId || 'n:' + normName(initial.partyName)) : '')
+  const customer = customers.find(c => c.key === customerId) || (initial?.partyName ? { id: initial.partyId || '', name: initial.partyName } : null)
   const banks = useMemo(() => cashBankOptions(raw, company), [raw, company])
   const [bankKey, setBankKey] = useState(initial ? bankKeyOf(initial.bankAccountCode, initial.bankAccountId) : banks[0]?.key)
   const bank = banks.find(b => b.key === bankKey) || banks[0]
@@ -231,7 +241,7 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
           <Field label="Received in *"><select value={bank?.key || ''} onChange={e => setBankKey(e.target.value)} className={formInputCls}>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>
           <Field label="Cheque / UTR no."><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
         </>} />
-      <Field label="Customer *"><select value={customerId} onChange={e => { setCustomerId(e.target.value); setAlloc({}) }} className={formInputCls}><option value="">— select customer —</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+      <Field label="Customer *"><select value={customerId} onChange={e => { setCustomerId(e.target.value); setAlloc({}) }} className={formInputCls}><option value="">— select customer —</option>{customers.map(c => <option key={c.key} value={c.key}>{c.name}</option>)}</select></Field>
       {customer && <>
         <label className={labelCls}>Against pending invoices</label>
         <AllocationTable bills={bills} alloc={alloc} setAlloc={setAlloc} />

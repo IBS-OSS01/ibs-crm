@@ -12,7 +12,7 @@ import {
 } from './formShared.jsx'
 
 const cleanItems = (items) => items.filter(i => (i.description || '').trim() || num(i.rate) > 0)
-const lineFrom = (i) => ({ description: i.description || '', hsnCode: i.hsnCode || '', qty: i.qty ?? 1, unit: i.unit || 'pcs', rate: i.rate ?? '', discountPct: i.discountPct ?? 0, gstRate: i.gstRate ?? 18, stockItemId: i.stockItemId || '', sku: i.sku || '', accountCode: i.accountCode || '', poLine: i.poLine })
+const lineFrom = (i) => ({ description: i.description || '', hsnCode: i.hsnCode || '', qty: i.qty ?? 1, unit: i.unit || 'pcs', rate: i.rate ?? '', discountPct: i.discountPct ?? 0, gstRate: i.gstRate ?? 18, stockItemId: i.stockItemId || '', sku: i.sku || '', accountCode: i.accountCode || '', ...(i.poLine !== undefined ? { poLine: i.poLine } : {}) })
 
 // ═══ PURCHASE ═══════════════════════════════════════════════════════════════
 export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {

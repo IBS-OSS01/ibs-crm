@@ -12,6 +12,7 @@ import { collectMovements, valueMovements, deriveStockLines, computeStock } from
 import { deductionRows, monthlyPosition, depositDueDate, monthsLate, lateFee, returnDueDate, quarterData, receivableRows, deducteeSummary } from '../src/apps/finance/utils/tdsReports.js'
 import { tradingPL, cashFlow, ratios, costCentreSummary, budgetVsActual, balanceUpTo } from '../src/apps/finance/utils/financialStatements.js'
 import { parseBankStatement, bookEntries, autoMatch, reconciliation } from '../src/apps/finance/utils/bankRecon.js'
+import { tallyVouchers, tallyMasters } from '../src/apps/finance/utils/tallyExport.js'
 import { buildGstr1, gstr1Json, buildGstr3b, setOff, hsnSummary, itcRegister, reconcile2b, parseGstr2bJson, normInvNo } from '../src/apps/finance/utils/gstReturns.js'
 
 let pass = 0, fail = 0
@@ -298,6 +299,14 @@ props.forEach(p => { stm.find(s => s.id === p.statementId).matchedKey = p.key })
 const rec2 = reconciliation(stm, ents, '2026-06-30')
 eq(rec2.bookBalance, 50000 + 10000 - 5000 - 700, 'book balance'); eq(rec2.chequesOutstanding, 700, 'cheque issued but not cleared'); eq(rec2.bankOnlyNet, 100, 'bank credit not in books')
 eq(rec2.expected, 54300 + 700 + 100, 'expected bank balance'); eq(rec2.difference, 55100 - 55100, 'reconciles to the statement balance')
+
+section('Tally export')
+const tv2 = tallyVouchers({ lines: all, company: 'UIPL', from: '2026-04-01', to: '2026-12-31', companyName: 'Test & Co' })
+ok(tv2.count > 5 && tv2.xml.includes('<VOUCHER VCHTYPE="Sales"') && tv2.xml.includes('<VCHTYPE') === false, 'Tally vouchers XML generated')
+const vblocks = tv2.xml.split('<VOUCHER ').slice(1)
+ok(vblocks.every(b => Math.abs([...b.matchAll(/<AMOUNT>(-?[\d.]+)<\/AMOUNT>/g)].reduce((t, m) => t + Number(m[1]), 0)) < 0.01), 'every exported voucher nets to zero')
+ok(tv2.xml.includes('Test &amp; Co'), 'XML special characters escaped')
+ok(tallyMasters({ accounts, lines: all, customers: [{ shopName: 'Beta Ltd' }], vendors: [], bankAccounts: [], company: 'Test' }).includes('<PARENT>Sundry Debtors</PARENT>'), 'party ledgers go under Sundry Debtors')
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

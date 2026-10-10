@@ -73,7 +73,9 @@ export function cashFlow(lines, accounts, { company, from, to }) {
     const cashNet = r2(cash.reduce((s, l) => s + num(l.debit) - num(l.credit), 0))
     if (!cash.length || Math.abs(cashNet) < 0.005) return
     if (!other.length) { transfers += cashNet; return }              // contra between own accounts nets to zero
-    const w = other.map(l => Math.abs(num(l.debit) - num(l.credit)))
+    // TDS lines never move cash themselves — the cash effect belongs to the party / expense they were deducted from.
+    const nonTds = other.some(l => !['1310', '2500'].includes(l.accountCode))
+    const w = other.map(l => (nonTds && ['1310', '2500'].includes(l.accountCode)) ? 0 : Math.abs(num(l.debit) - num(l.credit)))
     const tw = w.reduce((a, b) => a + b, 0) || 1
     other.forEach((l, i) => {
       const [section, label] = classOf(accounts.find(a => a.code === l.accountCode))
