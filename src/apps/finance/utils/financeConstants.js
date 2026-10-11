@@ -98,6 +98,7 @@ export const VOUCHER_TYPES = {
   credit_note: { label: 'Credit Note',  prefix: 'CRN', fkey: 'Ctrl+F8', color: 'bg-teal-100 text-teal-700' },
   debit_note:  { label: 'Debit Note',   prefix: 'DBN', fkey: 'Ctrl+F9', color: 'bg-amber-100 text-amber-700' },
   expense:     { label: 'Expense',      prefix: 'EXP', fkey: '',        color: 'bg-rose-100 text-rose-700' },
+  payroll:     { label: 'Payroll',      prefix: 'PRL', fkey: '',        color: 'bg-pink-100 text-pink-700' },
   purchase_order: { label: 'Purchase Order', prefix: 'PO', fkey: 'Ctrl+F5', color: 'bg-indigo-100 text-indigo-700' },
   stock_journal:  { label: 'Stock Journal',  prefix: 'STJ', fkey: 'Ctrl+F7', color: 'bg-cyan-100 text-cyan-700' },
 }
@@ -108,6 +109,6 @@ export const NEW_VOUCHER_TYPES = ['purchase', 'credit_note', 'debit_note', 'paym
 export const SOURCE_TO_KIND = {
   invoice: 'sales', receipt: 'receipt', payment: 'payment', payable: 'purchase', manual: 'journal',
   expense: 'expense', purchase: 'purchase', credit_note: 'credit_note', debit_note: 'debit_note', contra: 'contra',
-  opening: 'opening', stock: 'stock',
+  opening: 'opening', stock: 'stock', payroll: 'payroll',
 }
 export const kindOfSource = (sourceType) => SOURCE_TO_KIND[sourceType] || sourceType

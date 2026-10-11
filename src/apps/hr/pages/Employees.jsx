@@ -9,6 +9,7 @@ const DEPARTMENTS = ['Sales', 'Delivery', 'Warehouse', 'Admin', 'Accounts', 'Man
 const emptyForm = {
   name: '', designation: '', department: 'Sales', phone: '', email: '',
   address: '', emergencyContact: '', joinDate: '', salary: '', active: true,
+  basicSalary: '', payrollCompany: 'UIPL', pfApplicable: false, pfOnActual: false, uan: '', pfMemberId: '', esicApplicable: false, esicIpNumber: '',
 }
 
 export default function Employees() {
@@ -54,6 +55,8 @@ export default function Employees() {
       phone: e.phone || '', email: e.email || '', address: e.address || '',
       emergencyContact: e.emergencyContact || '', joinDate: e.joinDate || '',
       salary: e.salary ?? '', active: e.active !== false,
+      basicSalary: e.basicSalary ?? '', payrollCompany: e.payrollCompany || 'UIPL', pfApplicable: e.pfApplicable === true, pfOnActual: e.pfOnActual === true, uan: e.uan || '', pfMemberId: e.pfMemberId || '',
+      esicApplicable: e.esicApplicable === true, esicIpNumber: e.esicIpNumber || '',
     })
     setShowForm(true)
   }
@@ -64,7 +67,8 @@ export default function Employees() {
     if (!form.name.trim()) { setError('Employee name is required.'); return }
     setSaving(true)
     try {
-      const payload = { ...form, salary: Number(form.salary) || 0 }
+      if (form.uan && !/^\d{12}$/.test(form.uan.trim())) { setError('UAN must be 12 digits.'); setSaving(false); return }
+      const payload = { ...form, salary: Number(form.salary) || 0, basicSalary: Number(form.basicSalary) || 0, uan: form.uan.trim(), esicIpNumber: form.esicIpNumber.trim(), pfMemberId: form.pfMemberId.trim() }
       if (editing) {
         await updateDoc(doc(db, 'hr_employees', editing), { ...payload, updatedAt: new Date().toISOString() })
         setEmployees(prev => prev.map(e => e.id === editing ? { ...e, ...payload } : e))
@@ -179,6 +183,28 @@ export default function Employees() {
               <label className="block text-sm font-medium text-slate-700 mb-1">Monthly Salary (₹)</label>
               <input type="number" value={form.salary} onChange={e => set('salary', e.target.value)} autoComplete="off" min="0"
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div className="col-span-2 rounded-xl border border-slate-200 p-4 space-y-3 bg-slate-50/50">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Payroll &amp; statutory (PF / ESIC)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Basic salary (₹ / month)</label>
+                  <input type="number" min="0" value={form.basicSalary} onChange={e => set('basicSalary', e.target.value)} placeholder="blank = 50% of gross"
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Salary is booked in</label>
+                  <select value={form.payrollCompany} onChange={e => set('payrollCompany', e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm"><option>UIPL</option><option>Wayzim</option></select></div>
+                <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={form.pfApplicable} onChange={e => set('pfApplicable', e.target.checked)} />Provident Fund (PF) applies</label>
+                <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={form.esicApplicable} onChange={e => set('esicApplicable', e.target.checked)} />ESIC applies <span className="text-xs text-slate-400">(only while gross ≤ ₹21,000)</span></label>
+                {form.pfApplicable && <>
+                  <div><label className="block text-sm font-medium text-slate-700 mb-1">UAN (12 digits)</label>
+                    <input type="text" value={form.uan} onChange={e => set('uan', e.target.value)} maxLength={12} className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm" /></div>
+                  <div><label className="block text-sm font-medium text-slate-700 mb-1">PF member ID</label>
+                    <input type="text" value={form.pfMemberId} onChange={e => set('pfMemberId', e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm" /></div>
+                  <label className="col-span-2 flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={form.pfOnActual} onChange={e => set('pfOnActual', e.target.checked)} />Contribute on actual basic, not capped at the ₹15,000 wage ceiling</label>
+                </>}
+                {form.esicApplicable && <div><label className="block text-sm font-medium text-slate-700 mb-1">ESIC IP number</label>
+                  <input type="text" value={form.esicIpNumber} onChange={e => set('esicIpNumber', e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm" /></div>}
+              </div>
+              <p className="text-xs text-slate-400">Nothing is deducted unless you tick PF or ESIC here. Rates are in Finance → Payroll → Statutory rates.</p>
             </div>
             <div className="flex items-center gap-2 mt-2">
               <input type="checkbox" checked={form.active} onChange={e => set('active', e.target.checked)} id="emp-active" />

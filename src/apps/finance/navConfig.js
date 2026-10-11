@@ -45,6 +45,8 @@ export const NAV_GROUPS = [
     { label: 'HSN summary', icon: '🔢', path: '/finance/gst/hsn', keywords: 'hsn sac' },
     { label: 'Input credit register', icon: '🧾', path: '/finance/gst/itc', keywords: 'itc input tax credit blocked rcm' },
     { label: 'GSTR-2B match', icon: '🔍', path: '/finance/gst/recon', keywords: '2b reconciliation supplier' },
+    { label: 'Payroll — post to books', icon: '👷', path: '/finance/payroll/post', keywords: 'salary payroll pf esic employer contribution' },
+    { label: 'PF & ESIC dues', icon: '🧑‍💼', path: '/finance/payroll/dues', keywords: 'provident fund esic payment challan trrn due' },
     { label: 'GST ledger summary', icon: '📑', path: '/finance/gst-filing', keywords: 'gst ledger output input' },
     { label: 'TDS dashboard', icon: '🏛️', path: '/finance/tds/dashboard', keywords: 'tds due deposit interest' },
     { label: 'TDS register', icon: '📒', path: '/finance/tds/register', keywords: 'tds deductions deductee' },
@@ -76,6 +78,7 @@ export const NAV_GROUPS = [
   { id: 'settings', label: 'Settings', icon: '⚙️', items: [
     { label: 'Company settings', icon: '🏢', path: '/finance/settings', keywords: 'gstin tan state address bank details lock' },
     { label: 'Chart of accounts', icon: '📚', path: '/finance/accounts', keywords: 'ledgers accounts coa' },
+    { label: 'PF / ESIC rates', icon: '⚙️', path: '/finance/payroll/rates', keywords: 'statutory pf esic rates ceiling edli' },
     { label: 'Exchange rates', icon: '💱', path: '/finance/fx/rates', keywords: 'currency usd eur rate multi currency forex' },
     { label: 'HSN / SAC master', icon: '📋', path: '/finance/hsn', keywords: 'hsn codes gst rate' },
     { label: 'Journal entries', icon: '📝', path: '/finance/journal', keywords: 'manual adjustment journal' },

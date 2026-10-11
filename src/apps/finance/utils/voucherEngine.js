@@ -211,6 +211,22 @@ export function deriveVoucherLines(v, accounts) {
     else if (fxDiff < -0.004) lines.push(line(accounts, '5925', -fxDiff, 0, { description: 'Exchange loss on settlement' }))
   }
 
+  else if (t === 'payroll') {
+    // One month's salary, PF and ESIC accrued. Gross pay and the employer's own contributions are expenses; what the staff
+    // are owed, and what must be paid to EPFO / ESIC, are liabilities (settled later through Payment vouchers).
+    const p = v.payroll || {}
+    const gross = r2(num(p.gross)), employerPf = r2(num(p.employerPf)), employerEsic = r2(num(p.employerEsic)), pfCharges = r2(num(p.pfCharges))
+    lines.push(line(accounts, '5110', gross, 0, { description: `Salaries for ${v.month}` }))
+    lines.push(line(accounts, '5115', employerPf, 0, { description: 'Employer PF + EPS' }))
+    lines.push(line(accounts, '5116', employerEsic, 0, { description: 'Employer ESIC' }))
+    lines.push(line(accounts, '5117', pfCharges, 0, { description: 'EDLI + PF admin charges' }))
+    lines.push(line(accounts, '2150', 0, r2(num(p.net)), { description: 'Net salary payable' }))
+    lines.push(line(accounts, '2610', 0, r2(num(p.pfPayable)), { description: 'PF payable' }))
+    lines.push(line(accounts, '2620', 0, r2(num(p.esicPayable)), { description: 'ESIC payable' }))
+    lines.push(line(accounts, '1950', 0, r2(num(p.advances)), { description: 'Staff advances recovered' }))
+    lines.push(line(accounts, '2630', 0, r2(num(p.otherDeductions)), { description: 'Other salary deductions' }))
+  }
+
   else if (t === 'contra') {
     const amt = r2(num(v.amount))
     const to = v.toAccountCode || '1100', from = v.fromAccountCode || '1110'

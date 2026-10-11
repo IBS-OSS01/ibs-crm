@@ -52,6 +52,8 @@ const GROUPS = [
     ['HSN / SAC master', '/finance/hsn', ''],
   ]],
   ['TDS', 'Tax deducted at source', [
+    ['Payroll — post to books', '/finance/payroll/post', 'Salary slips from HR → salary, PF and ESIC liabilities'],
+    ['PF & ESIC dues', '/finance/payroll/dues', 'Payable vs paid by month, record payments'],
     ['TDS Dashboard', '/finance/tds/dashboard', 'Deducted vs deposited, due dates, interest estimate'],
     ['Deduction Register', '/finance/tds/register', 'By voucher and by deductee'],
     ['Challans', '/finance/tds/challans', 'Record deposits (and the bank payment)'],

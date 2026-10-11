@@ -15,6 +15,7 @@ import { parseBankStatement, bookEntries, autoMatch, reconciliation } from '../s
 import { tallyVouchers, tallyMasters } from '../src/apps/finance/utils/tallyExport.js'
 import { buildEInvoice, buildEwayBill, invoiceProblems, ewayProblems, gstr3bJson } from '../src/apps/finance/utils/einvoice.js'
 import { convertTotals, rateOn, revaluation, fmtFc } from '../src/apps/finance/utils/fx.js'
+import { computeStatutory, mergeStatutory, payrollTotals, pfAdminCharge, buildEcr, esicRows, contributionDue } from '../src/apps/hr/utils/statutory.js'
 import { buildGstr1, gstr1Json, buildGstr3b, setOff, hsnSummary, itcRegister, reconcile2b, parseGstr2bJson, normInvNo } from '../src/apps/finance/utils/gstReturns.js'
 
 let pass = 0, fail = 0
@@ -384,6 +385,36 @@ const g3x = buildGstr3b(exDocs, { company: 'UIPL', from: '2026-04-01', to: '2026
 eq(g3x.t31b.taxable, 41000, '3B 3.1(b) zero-rated supplies include the export'); eq(g3x.t31c.taxable, 0, 'export not in nil-rated')
 const hs = hsnSummary(normalizeTaxDocs({ invoices: [expInv], vouchers: [], payables: [], vendors: [] }), { company: 'UIPL', from: '2026-04-01', to: '2026-12-31', split: false })
 eq(hs.rows.find(r => r.hsn === '9983' && r.rate === 18 && r.taxable === 41000) ? 1 : 0, 1, 'HSN summary uses rupee value of foreign items')
+
+section('PF / ESIC and payroll')
+const SS = mergeStatutory()
+let st1 = computeStatutory({ emp: { pfApplicable: true, basicSalary: 20000 }, gross: 40000, s: SS })
+eq(st1.pfEmployee, 1800, 'PF employee 12% of the ₹15,000 ceiling'); eq(st1.pfEmployerEps, 1250, 'EPS 8.33% of ceiling'); eq(st1.pfEmployerEpf, 550, 'employer EPF = 12% − EPS'); eq(st1.pfEdli, 75, 'EDLI 0.5% of ceiling')
+st1 = computeStatutory({ emp: { pfApplicable: true, pfOnActual: true, basicSalary: 20000 }, gross: 40000, s: SS })
+eq(st1.pfEmployee, 2400, 'PF on actual basic when opted'); eq(st1.pfEmployerEps, 1250, 'EPS still capped'); eq(st1.pfEmployerEpf, 1150, 'rest of employer 12% goes to EPF')
+st1 = computeStatutory({ emp: { pfApplicable: true }, gross: 12000, s: SS })
+eq(st1.pfWage, 6000, 'no basic recorded → 50% of gross'); eq(st1.pfEmployee, 720, 'PF on that wage')
+eq(computeStatutory({ emp: { pfApplicable: false, esicApplicable: false }, gross: 20000, s: SS }).pfEmployee, 0, 'nothing deducted unless switched on')
+let es = computeStatutory({ emp: { esicApplicable: true }, gross: 18000, s: SS })
+eq(es.esicEmployee, 135, 'ESIC employee 0.75%'); eq(es.esicEmployer, 585, 'ESIC employer 3.25%')
+eq(computeStatutory({ emp: { esicApplicable: true }, gross: 25000, s: SS }).esicEmployer, 0, 'ESIC stops above ₹21,000')
+es = computeStatutory({ emp: { esicApplicable: true }, gross: 5000, s: SS })
+eq(es.esicEmployee, 0, 'no employee ESIC at ₹176 a day or less'); eq(es.esicEmployer, 163, 'employer share rounded up')
+const slipsP = [
+  { employeeId: 'e1', employeeName: 'Asha Rao', baseSalary: 40000, advancesDeducted: 1000, deductions: 200, ...computeStatutory({ emp: { pfApplicable: true, basicSalary: 20000, uan: '123456789012' }, gross: 40000, s: SS }) },
+  { employeeId: 'e2', employeeName: 'Ravi K', baseSalary: 18000, advancesDeducted: 0, deductions: 0, ...computeStatutory({ emp: { esicApplicable: true, pfApplicable: true }, gross: 18000, s: SS }) },
+].map(x => ({ ...x, netSalary: x.baseSalary - x.advancesDeducted - x.deductions - x.pfEmployee - x.esicEmployee }))
+eq(pfAdminCharge(slipsP, SS), 500, 'PF admin charge has a monthly minimum')
+const pt = payrollTotals(slipsP, SS)
+eq(pt.gross, 58000, 'payroll gross')
+const payV = { id: 'pr1', voucherType: 'payroll', voucherNumber: 'UIPL/PRL/26-27/001', company: 'UIPL', date: '2026-09-30', month: '2026-09', payroll: { gross: pt.gross, employerPf: pt.employerPf, employerEsic: pt.esicEmployer, pfCharges: pt.pfCharges, net: pt.gross - pt.pfEmployee - pt.esicEmployee - pt.advances - pt.otherDeductions, pfPayable: pt.pfPayable, esicPayable: pt.esicPayable, advances: pt.advances, otherDeductions: pt.otherDeductions } }
+const payL = deriveVoucherLines(payV, accounts)
+ok(balanced(payL), 'payroll journal balances')
+eq(sumBy(payL, '5110', 'debit'), 58000, 'gross salaries expense'); eq(sumBy(payL, '2610', 'credit'), pt.pfPayable, 'PF payable = employee + employer + charges'); eq(sumBy(payL, '2620', 'credit'), pt.esicPayable, 'ESIC payable')
+eq(sumBy(payL, '5115', 'debit') + sumBy(payL, '5116', 'debit') + sumBy(payL, '5117', 'debit'), pt.employerPf + pt.esicEmployer + pt.pfCharges, 'employer cost booked')
+const ecr = buildEcr(slipsP, { e1: { uan: '123456789012' }, e2: { uan: '' } }, SS)
+ok(ecr.text.split('\n')[0].startsWith('123456789012#~#ASHA RAO#~#40000#~#15000#~#15000#~#15000#~#1800#~#1250#~#550#~#0#~#0'), 'ECR line layout'); ok(ecr.problems.some(x => /Ravi/.test(x)), 'ECR flags a missing UAN')
+eq(esicRows(slipsP, {}).length, 1, 'ESIC template lists only ESIC members'); ok(contributionDue('2026-12') === '2027-01-15' && contributionDue('2026-09') === '2026-10-15', 'PF / ESIC due on the 15th of next month')
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

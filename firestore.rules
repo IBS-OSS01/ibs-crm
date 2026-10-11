@@ -146,6 +146,7 @@ service cloud.firestore {
     match /finance_stock_journals/{id}     { allow read, write: if isProvisioned(); }
     match /finance_tds_sections/{id}       { allow read, write: if isProvisioned(); }
     match /finance_tds_challans/{id}       { allow read, write: if isProvisioned(); }
+    match /finance_statutory_challans/{id} { allow read, write: if isProvisioned(); }
     match /finance_fx_rates/{id}           { allow read, write: if isProvisioned(); }
     match /finance_tds_returns/{id}        { allow read, write: if isProvisioned(); }
     match /finance_gst_challans/{id}       { allow read, write: if isProvisioned(); }

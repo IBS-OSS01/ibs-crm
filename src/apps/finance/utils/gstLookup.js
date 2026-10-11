@@ -37,7 +37,7 @@ export async function fetchGstinDetails(gstin) {
   else out = await viaAppyflow(cleanGstin)
 
   // Sanity checks: a lookup that disagrees with the number we asked about is wrong data, not a result.
-  if (out.gstin && out.gstin !== cleanGstin) throw new Error(`The lookup service answered for a different GSTIN (${out.gstin}). Nothing was filled in.`)
+  if (out.gstin && out.gstin !== cleanGstin) throw new Error(`The lookup service answered for a different GSTIN (${out.gstin}), so nothing was filled in. This service is unreliable${GST_PROXY_URL ? '' : ' — see infrastructure/gst-proxy/README.md for the free, accurate gstinapi.in option'}; until then enter the details by hand.`)
   if (out.state && stateFromGstin && out.state !== stateFromGstin) {
     throw new Error(`The lookup service returned details for ${out.state}, but GSTIN ${cleanGstin} is registered in ${stateFromGstin}. Its data looks wrong, so nothing was filled in — enter the details by hand, or retry later.`)
   }

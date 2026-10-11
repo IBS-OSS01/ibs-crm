@@ -9,6 +9,7 @@ import Leaves from './pages/Leaves.jsx'
 import Salary from './pages/Salary.jsx'
 import SalaryRevision from './pages/SalaryRevision.jsx'
 import Advances from './pages/Advances.jsx'
+import Statutory from './pages/Statutory.jsx'
 import HRExpenses from './pages/Expenses.jsx'
 import ModuleMyTasks from '../../components/tasks/ModuleMyTasks.jsx'
 import ModuleTaskTracker from '../../components/tasks/ModuleTaskTracker.jsx'
@@ -29,6 +30,7 @@ export default function HRApp() {
     { label: '🏖️ Leaves',       path: '/hr/leaves',        match: (p) => p.startsWith('/hr/leaves') },
     { label: '💵 Salary',          path: '/hr/salary',           match: (p) => p.startsWith('/hr/salary') && !p.startsWith('/hr/salary-revision') },
     { label: '📈 Salary Revision', path: '/hr/salary-revision',  match: (p) => p.startsWith('/hr/salary-revision') },
+    { label: '🏛️ PF / ESIC',          path: '/hr/statutory',        match: (p) => p.startsWith('/hr/statutory') },
     { label: '💳 Advances',        path: '/hr/advances',         match: (p) => p.startsWith('/hr/advances') },
     { label: '🧾 Expenses',        path: '/hr/expenses',         match: (p) => p.startsWith('/hr/expenses') },
     { label: '✅ My Tasks',      path: '/hr/my-tasks',      match: (p) => p.startsWith('/hr/my-tasks') },
@@ -56,6 +58,7 @@ export default function HRApp() {
           <Route path="/leaves"           element={<Leaves />} />
           <Route path="/salary"           element={<Salary />} />
           <Route path="/salary-revision"  element={<SalaryRevision />} />
+          <Route path="/statutory"        element={<Statutory />} />
           <Route path="/advances"         element={<Advances />} />
           <Route path="/expenses"         element={<HRExpenses />} />
           <Route path="/my-tasks"         element={<ModuleMyTasks />} />

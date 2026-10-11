@@ -40,9 +40,14 @@ export const SEED_ACCOUNTS = [
   { code: '1303', name: 'Input IGST',                    type: 'asset',     normalBalance: 'debit',  parentCode: '1300' },
   { code: '1310', name: 'TDS Receivable (deducted by customers)', type: 'asset', normalBalance: 'debit', isSystem: true },
   { code: '1400', name: 'Stock in Hand',                 type: 'asset',     normalBalance: 'debit',  isSystem: true },
+  { code: '1950', name: 'Employee Advances',               type: 'asset',     normalBalance: 'debit',  isSystem: true },
   { code: '1500', name: 'Fixed Assets',                  type: 'asset',     normalBalance: 'debit' },
   { code: '1900', name: 'Prepaid Expenses',               type: 'asset',     normalBalance: 'debit' },
   { code: '2100', name: 'Accounts Payable',               type: 'liability', normalBalance: 'credit', isSystem: true },
+  { code: '2150', name: 'Salary Payable',                 type: 'liability', normalBalance: 'credit', isSystem: true },
+  { code: '2610', name: 'PF Payable (employee + employer)', type: 'liability', normalBalance: 'credit', isSystem: true },
+  { code: '2620', name: 'ESIC Payable (employee + employer)', type: 'liability', normalBalance: 'credit', isSystem: true },
+  { code: '2630', name: 'Other Salary Deductions Payable', type: 'liability', normalBalance: 'credit', isSystem: true },
   { code: '2400', name: 'GST Payable (Output)',           type: 'liability', normalBalance: 'credit' },
   { code: '2401', name: 'Output CGST Payable',            type: 'liability', normalBalance: 'credit', parentCode: '2400', isSystem: true },
   { code: '2402', name: 'Output SGST Payable',            type: 'liability', normalBalance: 'credit', parentCode: '2400', isSystem: true },
@@ -63,6 +68,9 @@ export const SEED_ACCOUNTS = [
   { code: '5010', name: 'Stock Adjustment (Opening / Closing Stock)', type: 'expense', normalBalance: 'debit', isSystem: true },
   { code: '5100', name: 'Rent',                            type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Rent'] },
   { code: '5110', name: 'Salaries & Wages',                 type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Salaries'] },
+  { code: '5115', name: 'Employer PF Contribution',        type: 'expense',   normalBalance: 'debit',  isSystem: true },
+  { code: '5116', name: 'Employer ESIC Contribution',      type: 'expense',   normalBalance: 'debit',  isSystem: true },
+  { code: '5117', name: 'PF Admin & EDLI Charges',         type: 'expense',   normalBalance: 'debit',  isSystem: true },
   { code: '5120', name: 'Transport / Delivery',             type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Transport / Delivery'] },
   { code: '5130', name: 'Utilities',                        type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Utilities'] },
   { code: '5140', name: 'Supplies / Packaging',             type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Supplies / Packaging'] },
@@ -84,7 +92,7 @@ export const SEED_ACCOUNTS = [
 // `virtual:true`) instead of depending on someone having re-seeded the CoA.
 export const REQUIRED_ACCOUNT_CODES = [
   '1100', '1110', '1200', '1301', '1302', '1303', '1310', '1400',
-  '2100', '2401', '2402', '2403', '2404', '2500',
+  '2100', '2150', '2401', '2402', '2403', '2404', '2500', '2610', '2620', '2630', '1950', '5110', '5115', '5116', '5117',
   '3200', '4000', '4925', '4950', '5000', '5010', '5900', '5925', '5950',
 ]
 export const mergeRequiredAccounts = (dbAccounts = []) => {

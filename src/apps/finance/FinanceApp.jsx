@@ -31,6 +31,7 @@ import DataExport from './pages/DataExport.jsx'
 import Analysis from './pages/Analysis.jsx'
 import EInvoice from './pages/EInvoice.jsx'
 import FxRates from './pages/FxRates.jsx'
+import Payroll from './pages/Payroll.jsx'
 import ReportsHub from './pages/ReportsHub.jsx'
 import StockReports from './pages/StockReports.jsx'
 import DayBook from './pages/DayBook.jsx'
@@ -185,6 +186,7 @@ export default function FinanceApp() {
           <Route path="/balance-sheet"  element={<BalanceSheet />} />
           <Route path="/banking"        element={<BankAccounts />} />
           <Route path="/gst-filing"     element={<GstFiling />} />
+          <Route path="/payroll/:tab"   element={<Payroll />} />
           <Route path="/fx/:tab"        element={<FxRates />} />
           <Route path="/einvoice"        element={<EInvoice />} />
           <Route path="/reports"         element={<ReportsHub />} />

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { collection, getDocs, addDoc, doc, updateDoc, query, where } from 'firebase/firestore'
+import { collection, getDocs, getDoc, addDoc, doc, updateDoc, query, where } from 'firebase/firestore'
+import { computeStatutory, mergeStatutory } from '../utils/statutory.js'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 
@@ -15,6 +16,7 @@ export default function Salary() {
   const [employees, setEmployees] = useState([])
   const [slips, setSlips] = useState([])
   const [advances, setAdvances] = useState([])
+  const [statutory, setStatutory] = useState(mergeStatutory())
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -30,6 +32,7 @@ export default function Salary() {
       const data = []; snap.forEach(d => data.push({ id: d.id, ...d.data() }))
       setEmployees(data.filter(e => e.active !== false))
     })
+    getDoc(doc(db, 'company_settings', 'UIPL')).then(d => setStatutory(mergeStatutory(d.exists() ? d.data().statutory : null))).catch(() => {})
     getDocs(collection(db, 'hr_advances')).then(snap => {
       const data = []; snap.forEach(d => data.push({ id: d.id, ...d.data() }))
       setAdvances(data)
@@ -61,6 +64,7 @@ export default function Salary() {
         // Approved advances scheduled for this month
         const empAdvances = advances.filter(a => a.employeeId === emp.id && a.status === 'approved' && a.deductFromMonth === monthKey)
         const totalAdvanceDeduct = empAdvances.reduce((s, a) => s + (Number(a.amount) || 0), 0)
+        const st = computeStatutory({ emp, gross: emp.salary, s: statutory })
         const payload = {
           employeeId: emp.id,
           employeeName: emp.name || '',
@@ -68,7 +72,10 @@ export default function Salary() {
           baseSalary: Number(emp.salary) || 0,
           deductions: 0,
           advancesDeducted: totalAdvanceDeduct,
-          netSalary: Math.max((Number(emp.salary) || 0) - totalAdvanceDeduct, 0),
+          // PF / ESIC (employee share comes off the pay; employer share is a cost to the company)
+          pfWage: st.pfWage, pfBase: st.pfBase, pfEmployee: st.pfEmployee, pfEmployerEps: st.pfEmployerEps, pfEmployerEpf: st.pfEmployerEpf, pfEdli: st.pfEdli, pfAdminBase: st.pfAdminBase,
+          esicWage: st.esicWage, esicEmployee: st.esicEmployee, esicEmployer: st.esicEmployer, ncpDays: 0,
+          netSalary: Math.max((Number(emp.salary) || 0) - totalAdvanceDeduct - st.pfEmployee - st.esicEmployee, 0),
           status: 'pending',
           createdAt: new Date().toISOString(),
           createdBy: user.uid,
@@ -92,7 +99,7 @@ export default function Salary() {
     try {
       const deductions = Number(editForm.deductions) || 0
       const advancesDeducted = Number(editForm.advancesDeducted) || 0
-      const netSalary = Math.max((slip.baseSalary || 0) - deductions - advancesDeducted, 0)
+      const netSalary = Math.max((slip.baseSalary || 0) - deductions - advancesDeducted - (slip.pfEmployee || 0) - (slip.esicEmployee || 0), 0)
       const update = { deductions, advancesDeducted, netSalary, notes: editForm.notes, updatedAt: new Date().toISOString() }
       await updateDoc(doc(db, 'hr_salary_slips', slip.id), update)
       setSlips(prev => prev.map(s => s.id === slip.id ? { ...s, ...update } : s))
@@ -165,6 +172,8 @@ export default function Salary() {
               <tr>
                 <th className="text-left px-4 py-3">Employee</th>
                 <th className="text-right px-4 py-3">Base</th>
+                <th className="text-right px-4 py-3">PF</th>
+                <th className="text-right px-4 py-3">ESIC</th>
                 <th className="text-right px-4 py-3">Deductions</th>
                 <th className="text-right px-4 py-3">Advance</th>
                 <th className="text-right px-4 py-3">Net Pay</th>
@@ -177,6 +186,8 @@ export default function Salary() {
                 <tr key={slip.id}>
                   <td className="px-4 py-3 font-medium text-slate-800">{slip.employeeName}</td>
                   <td className="px-4 py-3 text-right text-slate-600">₹{(slip.baseSalary || 0).toLocaleString('en-IN')}</td>
+                  <td className="px-4 py-3 text-right text-slate-600" title={slip.pfEmployee ? `Employer also pays ₹${(slip.pfEmployerEps || 0) + (slip.pfEmployerEpf || 0)} + EDLI ₹${slip.pfEdli || 0}` : ''}>{slip.pfEmployee ? `₹${slip.pfEmployee.toLocaleString('en-IN')}` : '—'}</td>
+                  <td className="px-4 py-3 text-right text-slate-600" title={slip.esicEmployer ? `Employer also pays ₹${slip.esicEmployer}` : ''}>{slip.esicEmployer ? `₹${(slip.esicEmployee || 0).toLocaleString('en-IN')}` : '—'}</td>
                   <td className="px-4 py-3 text-right text-red-600">
                     {editingId === slip.id ? (
                       <input type="number" value={editForm.deductions} onChange={e => setEditForm(p => ({ ...p, deductions: e.target.value }))}
@@ -215,7 +226,7 @@ export default function Salary() {
                 </tr>
               ))}
               {slips.length === 0 && (
-                <tr><td colSpan={7} className="text-center py-8 text-slate-400">
+                <tr><td colSpan={9} className="text-center py-8 text-slate-400">
                   No salary slips for {MONTHS[selMonth]} {selYear}.
                   {isAdmin && ' Click "Generate Payroll" to create them.'}
                 </td></tr>

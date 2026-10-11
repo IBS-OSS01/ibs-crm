@@ -148,7 +148,7 @@ export default function VoucherDetail({ entry, voucher, lines, seller, stockItem
 
         <div className="flex items-center gap-2 p-4 border-t border-slate-100 flex-wrap">
           {!entry.memo && <button onClick={() => printVoucher(entry, voucher, lines, seller)} className={btnGhost}>🖨 Print</button>}
-          {isNewVoucher && canWrite && !cancelled && (
+          {isNewVoucher && canWrite && !cancelled && voucher?.voucherType !== 'payroll' && (
             <>
               <button onClick={() => { onClose(); navigate(`/finance/vouchers/${entry.voucherType}?edit=${entry.id}`) }} className={btnPrimary}>✏️ Edit</button>
               <button onClick={doCancel} disabled={busy} className="px-3 py-1.5 bg-white border border-red-300 text-red-600 hover:bg-red-50 text-sm font-medium rounded-lg disabled:opacity-50">Cancel voucher</button>
