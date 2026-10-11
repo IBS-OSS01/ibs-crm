@@ -99,7 +99,7 @@ export default function Vouchers() {
   return (
     <ReportShell title={`${label} Vouchers`} loading={loading}
       subtitle="Record transactions the Tally way — every voucher posts balanced double entries and feeds GST, outstanding and the statements."
-      exportBar={canWrite && newType && !showForm ? <span className="flex gap-2">{type === 'purchase' && <button onClick={() => setShowImport('bills')} className={btnGhost}>⬆ Import bills from Zoho</button>}{type === 'payment' && <button onClick={() => setShowImport('expenses')} className={btnGhost}>⬆ Import expenses from Zoho</button>}<button onClick={() => setParams({ new: '1' })} className={btnPrimary}>+ New {label} <span className="opacity-60 text-xs ml-1">{VOUCHER_TYPES[type].fkey}</span></button></span> : null}
+      exportBar={canWrite && newType && !showForm ? <span className="flex gap-2">{params.get('zoho') === '1' && type === 'purchase' && <button onClick={() => setShowImport('bills')} className={btnGhost}>⬆ Import bills from Zoho</button>}{params.get('zoho') === '1' && type === 'payment' && <button onClick={() => setShowImport('expenses')} className={btnGhost}>⬆ Import expenses from Zoho</button>}<button onClick={() => setParams({ new: '1' })} className={btnPrimary}>+ New {label} <span className="opacity-60 text-xs ml-1">{VOUCHER_TYPES[type].fkey}</span></button></span> : null}
       filters={<>
         <CompanyToggle value={company} onChange={setCompany} />
         <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm flex-wrap">

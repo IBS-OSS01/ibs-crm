@@ -24,6 +24,9 @@ import { convertTotals, fmtFc, symbolOf } from '../utils/fx.js'
 import { useFx, CurrencyBar } from '../components/formShared.jsx'
 import InvoicesImport from '../components/InvoicesImport.jsx'
 import PayStatus from '../components/PayStatus.jsx'
+import ConvertOrderModal from '../components/ConvertOrderModal.jsx'
+import SalesOrdersImport from '../components/SalesOrdersImport.jsx'
+import { orderProgress, applyInvoicing, invoiceFromOrder, closeOrderItems, ORDER_STATE_LABEL } from '../utils/salesOrders.js'
 import { buildInvoicePdf, downloadPdf } from '../utils/invoicePdf.js'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { useVoucherModal } from '../components/useVoucherModal.jsx'
@@ -164,6 +167,18 @@ function computeTotals(items, posStateCode, sellerStateCode, applyGst) {
   return { subTotal, gstLines, total, roundOff }
 }
 
+// where a sales order stands: open, partly invoiced (6 of 12 billed), invoiced, closed
+const ORDER_CLS = { draft: 'bg-slate-100 text-slate-600', open: 'bg-amber-100 text-amber-700', partial: 'bg-blue-100 text-blue-700', invoiced: 'bg-green-100 text-green-700', closed: 'bg-slate-200 text-slate-600' }
+function OrderBadge({ inv }) {
+  const p = orderProgress(inv)
+  return (
+    <span className="whitespace-nowrap">
+      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${ORDER_CLS[p.state]}`}>{ORDER_STATE_LABEL[p.state]}</span>
+      {p.state !== 'invoiced' && p.ordered > 0 && <span className="text-xs text-slate-500 ml-1.5">{p.invoiced} of {p.ordered} billed</span>}
+    </span>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Invoices() {
   const { user, userProfile } = useAuth()
@@ -178,6 +193,8 @@ export default function Invoices() {
   const [params, setParams] = useSearchParams()
   const tab = TABS.find(t => t.key === params.get('tab')) || TABS[0]
   const [editingId, setEditingId] = useState('')
+  const [convertFor, setConvertFor] = useState(null)        // the sales order being invoiced
+  const [showOrdersImport, setShowOrdersImport] = useState(false)
   const openInv = useMemo(() => openBillMap(ledgerLines || [], { kind: 'receivable', asOf: todayStr() }), [ledgerLines])
   const [hsnCodes, setHsnCodes] = useState([])
   const [fxRates, setFxRates] = useState([])
@@ -281,6 +298,7 @@ export default function Invoices() {
     setError('')
     if (!form.billToName.trim()) { setError('Customer / Bill To name is required'); return }
     if (items.every(it => !it.description.trim())) { setError('Add at least one line item'); return }
+    if (form.invoiceType === 'SO') { const bad = items.find(it => (Number(it.qty) || 0) < (Number(it.invoicedQty) || 0) + (Number(it.cancelledQty) || 0) - 0.00005); if (bad) { setError('“' + String(bad.description).slice(0, 40) + '”: the quantity cannot be below what is already invoiced or cancelled.'); return } }
     setSaving(true)
     try {
       const seller = sellers[form.company] || {}
@@ -337,19 +355,32 @@ export default function Invoices() {
     setItems((inv.items || []).length ? inv.items.map(i => ({ ...newItem(), ...i })) : [newItem()])
     setEditingId(inv.id); setError(''); setView('form')
   }
-  // sales order → tax invoice: a new invoice with the same lines; the order is marked as invoiced
-  const convertOrder = async (so) => {
-    if (!window.confirm('Create a tax invoice from sales order ' + so.invoiceNumber + '? The order will be marked as invoiced.')) return
-    try {
-      const number = await getNextInvoiceNumber(so.company, 'TI')
-      const { id: _id, invoiceNumber: _n, status: _s, createdAt: _c, createdBy: _b, updatedAt: _u, updatedBy: _ub, invoicedAs: _ia, invoicedId: _ii, ...rest } = so
-      const body = JSON.parse(JSON.stringify({ ...rest, invoiceType: 'TI', invoiceNumber: number, invoiceDate: today(), dueDate: today(), status: 'draft', sourceOrderId: so.id, sourceOrderNumber: so.invoiceNumber, createdBy: user.uid, createdAt: new Date().toISOString() }))
-      const ref = await addDoc(collection(db, 'finance_invoices'), body)
-      await updateDoc(doc(db, 'finance_invoices', so.id), { status: 'invoiced', invoicedAs: number, invoicedId: ref.id })
-      setInvoices(list => [{ id: ref.id, ...body }, ...list.map(i => i.id === so.id ? { ...i, status: 'invoiced', invoicedAs: number, invoicedId: ref.id } : i)])
-      invalidateFinanceCache(); fd.reload(); setParams({})
-      alert('Invoice ' + number + ' created from ' + so.invoiceNumber + '. Review its date and terms from the Sales invoices tab.')
-    } catch (e) { alert('Could not convert: ' + e.message) }
+  // sales order → tax invoice for the chosen quantities (all, part, or a percentage); what is left stays open on the order
+  const convertOrder = (so) => setConvertFor(so)
+  const createFromOrder = async (so, { qtys, date, dueDate, terms, note }) => {
+    const sel = sellers[so.company] || {}
+    const calc = invoiceFromOrder(so, qtys, { sellerStateCode: sel.stateCode })
+    const items = applyInvoicing(so, qtys)                                  // refuses more than what is left
+    const lk = await getBooksLockDate(so.company); assertNotLocked(date, lk)
+    const number = await getNextInvoiceNumber(so.company, 'TI')
+    const { id: _a, invoiceNumber: _b, status: _c, createdAt: _d, createdBy: _e, updatedAt: _f, updatedBy: _g, invoiceLinks: _h, items: _i, expectedShipment: _j, zohoOrderId: _k, source: _l, ...rest } = so
+    const body = JSON.parse(JSON.stringify({ ...rest, invoiceType: 'TI', invoiceNumber: number, invoiceDate: date, dueDate, terms, items: calc.items, subTotal: calc.subTotal, gstLines: calc.gstLines, roundOff: calc.roundOff, total: calc.total,
+      applyGst: calc.applyGst, totalInWords: amountInWords(calc.total), notes: [note, 'Against sales order ' + so.invoiceNumber, so.notes].filter(Boolean).join(' · '), status: 'draft', sourceOrderId: so.id, sourceOrderNumber: so.invoiceNumber, createdBy: user.uid, createdAt: new Date().toISOString() }))
+    const ref = await addDoc(collection(db, 'finance_invoices'), body)
+    const links = [...(so.invoiceLinks || []), { id: ref.id, number, date, total: calc.total, note }]
+    const patch = { items, invoiceLinks: links, status: orderProgress({ ...so, items }).state === 'invoiced' ? 'invoiced' : 'partial' }
+    await updateDoc(doc(db, 'finance_invoices', so.id), JSON.parse(JSON.stringify(patch)))
+    setInvoices(list => [{ id: ref.id, ...body }, ...list.map(i => i.id === so.id ? { ...i, ...patch } : i)])
+    invalidateFinanceCache(); fd.reload(); setConvertFor(null)
+    alert('Invoice ' + number + ' created (₹' + calc.total.toLocaleString('en-IN', { minimumFractionDigits: 2 }) + ') against ' + so.invoiceNumber + '. See it in the Sales invoices tab.')
+  }
+  // close an order: whatever is not yet invoiced is cancelled
+  const closeOrder = async (so) => {
+    const left = orderProgress(so).remaining
+    if (!window.confirm('Close sales order ' + so.invoiceNumber + '? The ' + left + ' not yet invoiced will be cancelled and cannot be invoiced later.')) return
+    const items = closeOrderItems(so)
+    await updateDoc(doc(db, 'finance_invoices', so.id), JSON.parse(JSON.stringify({ items, status: 'closed' })))
+    setInvoices(list => list.map(i => i.id === so.id ? { ...i, items, status: 'closed' } : i)); invalidateFinanceCache(); fd.reload()
   }
 
   // A4 PDF with an empty digital-signature field at "Authorised Signatory" — sign it with the DSC (token / certificate) in Adobe, then share it
@@ -383,7 +414,7 @@ export default function Invoices() {
     if (!inv) return []
     return [
       { label: '✏️ Edit', primary: true, onClick: () => startEdit(inv) },
-      ...(inv.invoiceType === 'SO' && inv.status !== 'invoiced' ? [{ label: '➜ Convert to invoice', onClick: () => convertOrder(inv) }] : []),
+      ...(inv.invoiceType === 'SO' && orderProgress(inv).remaining > 0 ? [{ label: '➜ Invoice (all or part)', onClick: () => convertOrder(inv) }, { label: '✕ Close order', onClick: () => closeOrder(inv) }] : []),
       { label: '📄 PDF (for DSC)', onClick: () => handlePdf(inv) },
     ]
   } })
@@ -644,7 +675,8 @@ export default function Invoices() {
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Sales</h2>
           <p className="text-slate-500 text-sm">{tab.blurb}</p>
         </div>
-        {tab.key === 'invoices' && <button onClick={() => setShowImport(true)} className="ml-auto mr-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Import from Zoho</button>}
+        {params.get('zoho') === '1' && tab.key === 'orders' && <button onClick={() => setShowOrdersImport(true)} className="ml-auto mr-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Import from Zoho</button>}
+        {params.get('zoho') === '1' && tab.key === 'invoices' && <button onClick={() => setShowImport(true)} className="ml-auto mr-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Import from Zoho</button>}
         <button onClick={() => {
           const s = sellers['UIPL'] || {}
           setForm({ ...emptyForm, invoiceType: tab.type, termsAndConditions: s.termsAndConditions || '' })
@@ -658,6 +690,8 @@ export default function Invoices() {
         {TABS.map(t => <button key={t.key} onClick={() => setParams(t.key === 'invoices' ? {} : { tab: t.key })} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${t.key === tab.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{t.label} <span className="text-xs text-slate-400">{invoices.filter(t.match).length}</span></button>)}
       </div>
       {docModal}
+      {convertFor && <ConvertOrderModal order={convertFor} sellerStateCode={(sellers[convertFor.company] || {}).stateCode} onClose={() => setConvertFor(null)} onConfirm={(r) => createFromOrder(convertFor, r)} />}
+      {showOrdersImport && <SalesOrdersImport onClose={() => { setShowOrdersImport(false); loadAll(); fd.reload() }} />}
       {showImport && <InvoicesImport onClose={() => { setShowImport(false); loadAll() }} />}
 
       <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 overflow-hidden">
@@ -677,7 +711,7 @@ export default function Invoices() {
           <tbody className="divide-y divide-slate-100">
             {invoices.filter(tab.match).map(inv => (
               <tr key={inv.id} onClick={() => openKey(`invoice:${inv.id}`)} className="hover:bg-blue-50/40 cursor-pointer" title="Open this document">
-                <td className="px-4 py-3 font-mono font-bold text-blue-700">{inv.invoiceNumber}</td>
+                <td className="px-4 py-3 font-mono font-bold text-blue-700">{inv.invoiceNumber}{inv.sourceOrderNumber && <span className="block text-[10px] font-normal text-slate-400">from {inv.sourceOrderNumber}</span>}</td>
                 <td className="px-4 py-3">
                   <span className="px-2 py-0.5 rounded-lg text-xs font-bold bg-indigo-100 text-indigo-700">
                     {INVOICE_TYPES.find(t => t.code === inv.invoiceType)?.label || inv.invoiceType}
@@ -687,9 +721,9 @@ export default function Invoices() {
                 <td className="px-4 py-3 text-slate-800">{inv.billToName || '—'}</td>
                 <td className="px-4 py-3 text-slate-500">{inv.poNumber || '—'}</td>
                 <td className="px-4 py-3 text-right font-medium">₹{(inv.total || 0).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
-                <td className="px-4 py-3">{inv.invoiceType === 'SO' ? (inv.status === 'invoiced' ? <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">Invoiced · {inv.invoicedAs}</span> : <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">Open</span>) : inv.invoiceType === 'PI' ? <span className="text-slate-300">—</span> : <PayStatus st={payStatus(openInv, `invoice:${inv.id}`, inv.total)} today={todayStr()} />}</td>
+                <td className="px-4 py-3">{inv.invoiceType === 'SO' ? <OrderBadge inv={inv} /> : inv.invoiceType === 'PI' ? <span className="text-slate-300">—</span> : <PayStatus st={payStatus(openInv, `invoice:${inv.id}`, inv.total)} today={todayStr()} />}</td>
                 <td className="px-4 py-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                  {inv.invoiceType === 'SO' && inv.status !== 'invoiced' && <button onClick={() => convertOrder(inv)} className="text-green-700 hover:text-green-800 font-medium mr-3" title="Create a tax invoice from this order">➜ Invoice</button>}
+                  {inv.invoiceType === 'SO' && orderProgress(inv).remaining > 0 && <button onClick={() => convertOrder(inv)} className="text-green-700 hover:text-green-800 font-medium mr-3" title="Create a tax invoice from this order — all of it, or part">➜ Invoice</button>}
                   <button onClick={() => startEdit(inv)} className="text-blue-600 hover:text-blue-700 font-medium mr-3">✏️ Edit</button>
                   <button onClick={() => handlePrint(inv)}
                     className="text-blue-600 hover:text-blue-700 font-medium">🖨️ Print</button>

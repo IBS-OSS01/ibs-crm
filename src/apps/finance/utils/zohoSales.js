@@ -142,3 +142,69 @@ export function matchReceipts(invoices, receipts, { tolerance = 1.5 } = {}) {
   return { matches, unmatched: still, remaining: open.filter(i => i.left > 0.5).map(i => ({ number: i.number, customerName: i.customerName, date: i.date, total: i.total, left: i.left, zohoBalance: i.zohoBalance })) }
 }
 function cmp(a, b) { for (let i = 0; i < a.length; i++) { if (a[i] < b[i]) return -1; if (a[i] > b[i]) return 1 } return 0 }
+
+// ── Sales orders (Zoho Books "Sales Order" export: one row per line, with quantity ordered / invoiced / cancelled) ──────────
+const ORDER_STATUS = { draft: 'draft', confirmed: 'open', open: 'open', partially_invoiced: 'partial', invoiced: 'invoiced', closed: 'closed', void: 'closed' }
+
+export function parseZohoOrders(rows, { customers = [], company = 'UIPL' } = {}) {
+  const groups = new Map()
+  rows.forEach(r => {
+    const no = s(r['SalesOrder Number']); if (!no) return
+    if (!groups.has(no)) groups.set(no, { head: r, lines: [] })
+    groups.get(no).lines.push(r)
+  })
+  const out = []
+  for (const [number, { head, lines }] of groups) {
+    const warnings = []
+    const gstin = s(head['GST Identification Number (GSTIN)']).toUpperCase()
+    const pos = stateOf(head['Place of Supply(With State Code)'] || head['Place of Supply'])
+    const custName = s(head['Customer Name'])
+    const sameName = customers.filter(c => normName(c.shopName) === normName(custName))
+    const customer = (gstin && customers.find(c => String(c.gstin || '').toUpperCase() === gstin))
+      || (sameName.length === 1 ? sameName[0] : sameName.find(c => c.state && c.state === pos.name) || sameName[0]) || null
+    if (!customer) warnings.push(`Customer “${custName}” is not in Parties → Customers`)
+    const items = lines.map(l => {
+      const qty = n(l.QuantityOrdered) || 0
+      return {
+        description: [s(l['Item Name']), s(l['Item Desc'])].filter(Boolean).join(' — ').replace(/\s+/g, ' ') || 'Item', hsnCode: s(l['HSN/SAC']), qty, unit: normUnit(l['Usage unit'], !s(l['Usage unit'])),
+        rate: n(l['Item Price']), gstRate: n(l['Item Tax %']), stockItemId: '', sku: '', invoicedQty: n(l.QuantityInvoiced), cancelledQty: n(l.QuantityCancelled),
+        _total: n(l['Item Total']), _cgst: n(l.CGST), _sgst: n(l.SGST), _igst: n(l.IGST),
+      }
+    })
+    const subTotal = r2(items.reduce((t, i) => t + i._total, 0))
+    const byRate = {}
+    items.forEach(i => { if (!(i.gstRate > 0)) return; const b = (byRate[i.gstRate] = byRate[i.gstRate] || { base: 0, cgst: 0, sgst: 0, igst: 0 }); b.base += i._total; b.cgst += i._cgst; b.sgst += i._sgst; b.igst += i._igst })
+    const gstLines = []
+    Object.entries(byRate).forEach(([rate, b]) => {
+      const r = Number(rate)
+      if (b.igst > 0) gstLines.push({ label: `IGST ${r}%`, rate: r, base: r2(b.base), amount: r2(b.igst) })
+      else { gstLines.push({ label: `CGST ${r / 2}%`, rate: r / 2, base: r2(b.base), amount: r2(b.cgst) }); gstLines.push({ label: `SGST ${r / 2}%`, rate: r / 2, base: r2(b.base), amount: r2(b.sgst) }) }
+    })
+    const tax = r2(gstLines.reduce((t, g) => t + g.amount, 0))
+    const total = r2(n(head.Total)), roundOff = r2(total - subTotal - tax)
+    if (Math.abs(roundOff) > 1) warnings.push(`Lines add up to ${r2(subTotal + tax)} but Zoho's total is ${total}`)
+    out.push({
+      number, zohoId: s(head['SalesOrder ID']), company, date: s(head['Order Date']), expectedDate: s(head['Expected Shipment Date']), terms: s(head['Payment Terms Label']) || 'Due on Receipt', poNumber: s(head['Reference#']),
+      customer, customerName: custName, gstin, posState: pos.name, posStateCode: pos.code, status: ORDER_STATUS[s(head.Status)] || 'open', zohoStatus: s(head.Status),
+      items: items.map(({ _total, _cgst, _sgst, _igst, ...i }) => i), gstLines, subTotal, roundOff, total, applyGst: gstLines.length > 0,
+      notes: s(head.Notes), termsAndConditions: s(head['Terms & Conditions']), interCompany: normName(custName).includes('wayzim') ? 'Wayzim' : null,
+      shipTo: { name: s(head['Shipping Party Legal Name']), address: [s(head['Shipping Address']), s(head['Shipping Street2'])].filter(Boolean).join(', '), city: s(head['Shipping City']), state: s(head['Shipping State']), pincode: s(head['Shipping Code']) },
+      warnings,
+    })
+  }
+  return out.sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }))
+}
+
+export function toOrderDoc(o, { seller = {}, user, now = new Date().toISOString() } = {}) {
+  const c = o.customer || {}
+  return {
+    company: o.company, invoiceType: 'SO', invoiceDate: o.date, dueDate: o.expectedDate || o.date, terms: o.terms, poNumber: o.poNumber, customerId: c.id || '',
+    billToName: c.shopName || o.customerName, billToAddress: c.address || '', billToCity: c.city || '', billToState: c.state || o.posState, billToPincode: c.pincode || '', billToGstin: c.gstin || o.gstin || '',
+    sameShipTo: !o.shipTo.address, shipToName: o.shipTo.name, shipToAddress: o.shipTo.address, shipToCity: o.shipTo.city, shipToState: o.shipTo.state, shipToPincode: o.shipTo.pincode, shipToGstin: '',
+    posState: o.posState, posStateCode: o.posStateCode, applyGst: o.applyGst, interCompany: o.interCompany, isExport: false, exportType: 'WOPAY', shippingBillNo: '', shippingBillDate: '', portCode: '',
+    notes: o.notes, termsAndConditions: o.termsAndConditions || seller.termsAndConditions || '', currency: 'INR',
+    invoiceNumber: o.number, sellerName: seller.legalName || o.company, sellerGstin: seller.gstin || '', sellerState: seller.state || '', sellerStateCode: seller.stateCode || '',
+    items: o.items, subTotal: o.subTotal, gstLines: o.gstLines, roundOff: o.roundOff, total: o.total, expectedShipment: o.expectedDate || '',
+    status: o.status, source: 'zoho-import', zohoOrderId: o.zohoId, createdBy: user?.uid || '', createdAt: now,
+  }
+}

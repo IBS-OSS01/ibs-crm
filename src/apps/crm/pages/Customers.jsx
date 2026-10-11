@@ -6,6 +6,7 @@ import { useAuth } from '../../../context/AuthContext'
 import { fetchGstinDetails } from '../../finance/utils/gstLookup.js'
 import CustomerContactsModal from '../components/CustomerContactsModal.jsx'
 import CustomerHistoryModal from '../components/CustomerHistoryModal.jsx'
+import CustomerImportModal from '../components/CustomerImportModal.jsx'
 
 const COMPANIES = ['UIPL', 'Wayzim']
 const COMPANY_LABELS = { UIPL: 'UIPL', Wayzim: 'Wayzim Technology Co Ltd' }
@@ -18,7 +19,7 @@ const INDIA_STATES = [
   'Dadra & Nagar Haveli','Delhi','Jammu & Kashmir','Ladakh','Lakshadweep','Puducherry',
 ]
 const emptyForm = {
-  shopName: '', ownerName: '', phone: '', area: '', address: '', city: '', state: '', pincode: '',
+  shopName: '', ownerName: '', phone: '', email: '', area: '', address: '', city: '', state: '', pincode: '',
   gstin: '', pan: '', creditLimit: '', active: true, companies: ['UIPL'],
 }
 
@@ -45,6 +46,7 @@ export default function Customers() {
   const [gstStatus, setGstStatus] = useState('')
   const [contactsCustomer, setContactsCustomer] = useState(null)  // customer whose contacts modal is open
   const [historyCustomer, setHistoryCustomer]   = useState(null)  // customer whose history modal is open
+  const [showImport, setShowImport] = useState(false)
   const formRef = useRef(null)
 
   useEffect(() => { load() }, [])
@@ -121,7 +123,7 @@ export default function Customers() {
   const handleEdit = (c) => {
     setEditing(c.id)
     setForm({
-      shopName: c.shopName || '', ownerName: c.ownerName || '', phone: c.phone || '',
+      shopName: c.shopName || '', ownerName: c.ownerName || '', phone: c.phone || '', email: c.email || '',
       area: c.area || '', address: c.address || '', city: c.city || '', state: c.state || '',
       pincode: c.pincode || '', gstin: c.gstin || '', pan: c.pan || '',
       creditLimit: c.creditLimit ?? '', active: c.active !== false,
@@ -189,6 +191,12 @@ export default function Customers() {
             title="Pull the latest customer and contact changes from other users">
             {refreshing ? '⏳ Refreshing…' : '🔄 Refresh'}
           </button>
+          {isAdmin && (
+            <button onClick={() => setShowImport(true)}
+              className="px-3 py-2 bg-teal-50 hover:bg-teal-100 text-teal-700 text-sm font-medium rounded-lg transition">
+              📊 Import from Excel
+            </button>
+          )}
           <button onClick={() => { setShowForm(!showForm); resetForm() }}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
             {showForm && !editing ? '✕ Cancel' : '+ Add Customer'}
@@ -218,6 +226,11 @@ export default function Customers() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
               <input type="text" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} autoComplete="off"
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Email <span className="text-slate-400 font-normal text-xs">(optional)</span></label>
+              <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} autoComplete="off"
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
@@ -420,6 +433,16 @@ export default function Customers() {
           customer={historyCustomer}
           deals={deals}
           onClose={() => setHistoryCustomer(null)}
+        />
+      )}
+
+      {/* Bulk import modal */}
+      {showImport && (
+        <CustomerImportModal
+          existingCustomers={customers}
+          defaultCompany={defaultCompany}
+          onClose={() => setShowImport(false)}
+          onImported={() => { setShowImport(false); load() }}
         />
       )}
     </div>

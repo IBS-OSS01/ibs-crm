@@ -13,6 +13,7 @@ import { deductionRows, monthlyPosition, depositDueDate, monthsLate, lateFee, re
 import { tradingPL, cashFlow, ratios, costCentreSummary, budgetVsActual, balanceUpTo } from '../src/apps/finance/utils/financialStatements.js'
 import { parseBankStatement, bookEntries, autoMatch, reconciliation } from '../src/apps/finance/utils/bankRecon.js'
 import { parseStatementPages } from '../src/apps/finance/utils/bankPdf.js'
+import { orderProgress, qtysForPercent, qtysForBalance, invoiceFromOrder, applyInvoicing, closeOrderItems } from '../src/apps/finance/utils/salesOrders.js'
 import { parseZohoInvoices, toInvoiceDoc, matchReceipts } from '../src/apps/finance/utils/zohoSales.js'
 import { parseZohoBills, toPurchaseVoucher, matchPayments } from '../src/apps/finance/utils/zohoPurchases.js'
 import { parseZohoExpenses, matchExpenses, reclassify, toExpenseVoucher } from '../src/apps/finance/utils/zohoExpenses.js'
@@ -579,6 +580,22 @@ section('Zoho expenses → tied to bank payments or new entries')
   const fresh = pl.fresh.map(e => ({ id: 'X' + e.refId, voucherNumber: 'T', ...toExpenseVoucher(e, { bankIds }) }))
   const fl = fresh.flatMap(v => deriveVoucherLines(v, accounts))
   ok(balanced(fl) && Math.abs(sumBy(fl, '5170', 'debit') - 600) < 0.01 && Math.abs(sumBy(fl, '1301', 'debit') - 54) < 0.01 && Math.abs(sumBy(fl, '2910', 'credit') - 10000) < 0.01, 'expenses: new entries post balanced — bank charges with input GST from the bank, the director-paid one from the directors account')
+}
+
+// ── Sales orders: invoice all, part, or in several invoices
+{
+  const so = { invoiceType: 'SO', placeOfSupply: 'Maharashtra', applyGst: true, items: [{ description: 'A', qty: 10, rate: 1000, unit: 'Nos', gstRate: 18, invoicedQty: 0, cancelledQty: 0 }, { description: 'B', qty: 4, rate: 500, unit: 'Nos', gstRate: 18, invoicedQty: 0, cancelledQty: 0 }] }
+  ok(orderProgress(so).state === 'open' && orderProgress(so).remaining === 14, 'orders: a fresh order is open with everything left')
+  const q30 = qtysForPercent(so, 30)
+  ok(Math.abs(q30[0] - 3) < 1e-6 && Math.abs(q30[1] - 1.2) < 1e-6, 'orders: 30% of the order bills 30% of each line')
+  const inv1 = invoiceFromOrder(so, q30, { sellerStateCode: '27' })
+  ok(inv1.subTotal === 3600 && Math.abs(inv1.total - 4248) <= 1, 'orders: the first invoice carries only the billed quantities with GST')
+  const so1 = { ...so, items: applyInvoicing(so, q30) }
+  ok(orderProgress(so1).state === 'partial' && Math.abs(orderProgress(so1).remaining - 9.8) < 1e-6, 'orders: after part billing the order is partial and the balance stays open')
+  let threw = false; try { applyInvoicing(so1, [8, 0]) } catch { threw = true }
+  ok(threw, 'orders: cannot invoice more than what is left')
+  ok(orderProgress({ ...so, items: applyInvoicing(so1, qtysForBalance(so1)) }).state === 'invoiced', 'orders: billing the balance completes the order')
+  ok(orderProgress({ ...so, items: closeOrderItems(so1) }).state === 'closed', 'orders: closing cancels the unbilled balance')
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
