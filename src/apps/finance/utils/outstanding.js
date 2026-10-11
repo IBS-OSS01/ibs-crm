@@ -59,11 +59,13 @@ export function computeOutstanding(allLines, { kind, company, asOf, ageBy = 'due
         docNo: l.billRef || l.sourceDocNumber || '', externalRef: l.externalRef || '',
         sourceType: l.sourceType, sourceId: l.sourceId,
         date: l.date, dueDate: l.dueDate || l.date, original: r2(amt), pending: r2(amt),
+        ...(l.currency && l.fcAmount ? { currency: l.currency, fxRate: num(l.fxRate), fcOriginal: r2(l.fcAmount), fcPending: r2(l.fcAmount) } : {}),
       })
     }
     if (opp > 0) {
       p.settlements.push({
         date: l.date, amount: r2(opp), allocatesTo: l.allocatesTo || '', docNo: l.sourceDocNumber, sourceType: l.sourceType,
+        ...(l.fcAmount ? { fcAmount: r2(l.fcAmount) } : {}),
       })
     }
   })
@@ -85,6 +87,7 @@ export function computeOutstanding(allLines, { kind, company, asOf, ageBy = 'due
       if (target && target.pending > 0) {
         const use = Math.min(target.pending, remaining)
         target.pending = r2(target.pending - use)
+        if (target.fcPending !== undefined && s.fcAmount) target.fcPending = r2(Math.max(0, target.fcPending - s.fcAmount))
         remaining = r2(remaining - use)
       }
       if (remaining > 0.004) pool.push({ ...s, amount: remaining })
@@ -105,6 +108,7 @@ export function computeOutstanding(allLines, { kind, company, asOf, ageBy = 'due
     })
 
     const open = p.bills.filter(b => b.pending > 0.004).map(b => {
+      if (b.fcPending !== undefined && b.pending < 0.005) b.fcPending = 0
       const refDate = ageBy === 'bill' ? b.date : b.dueDate
       const daysOverdue = daysBetween(refDate, asOf)
       return { ...b, daysOverdue, bucket: bucketOf(daysOverdue).key }

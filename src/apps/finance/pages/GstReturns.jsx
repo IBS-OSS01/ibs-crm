@@ -115,6 +115,11 @@ export default function GstReturns() {
             </Table>
             <p className="text-xs text-slate-400">All zero-rate sales are shown as "nil-rated". If some are actually exempt or non-GST, split them in the portal.</p>
           </Section>
+          <Section title="6A — Exports" note="Supplies to customers outside India: under LUT (no IGST) or with payment of IGST.">
+            <Table head={<><Th>Invoice</Th><Th>Date</Th><Th>Buyer</Th><Th>Type</Th><Th>Shipping bill</Th><Th right>Taxable (₹)</Th><Th right>IGST</Th><Th right>Value (₹)</Th></>} empty={(g1.exports || []).length === 0 && <Empty>No export invoices.</Empty>}>
+              {(g1.exports || []).map(e => <tr key={e.key}><Td mono>{e.number}</Td><Td>{e.date}</Td><Td>{e.partyName}{e.currency ? <span className="text-slate-400"> · {e.currency} {fmtAmt(e.fcTotal)}</span> : null}</Td><Td>{e.exportType === 'WPAY' ? 'With IGST' : 'Under LUT'}</Td><Td mono>{e.sbNo || '—'}</Td><Td right>{fmtAmt(e.taxable)}</Td><Td right><A v={e.igst} /></Td><Td right>{fmtAmt(e.value)}</Td></tr>)}
+            </Table>
+          </Section>
           <Section title="9B — Credit notes issued (registered / unregistered)">
             <Table head={<><Th>Buyer GSTIN</Th><Th>Note</Th><Th>Date</Th><Th>Against invoice</Th><Th>Reason</Th><Th right>Taxable</Th><Th right>Tax</Th></>} empty={g1.cdnr.length + g1.cdnur.length === 0 && <Empty>None.</Empty>}>
               {[...g1.cdnr.flatMap(p => p.notes.map(n => ({ ...n, gstin: p.ctin }))), ...g1.cdnur].map(n => <tr key={n.key}><Td mono>{n.gstin || 'Unregistered'}</Td><Td mono>{n.number}</Td><Td>{n.date}</Td><Td mono>{n.refNumber || <span className="text-red-500">missing</span>}</Td><Td>{n.reason}</Td><Td right><A v={n.taxable} /></Td><Td right><A v={n.tax} /></Td></tr>)}
@@ -134,7 +139,7 @@ export default function GstReturns() {
           {g3.warnings.length > 0 && <Warnings list={g3.warnings} />}
           <Section title="3.1 — Outward supplies and inward supplies liable to reverse charge" note="Outward figures are net of credit notes in the period.">
             <Table head={<><Th>Nature of supply</Th><Th right>Taxable value</Th><Th right>IGST</Th><Th right>CGST</Th><Th right>SGST</Th></>}>
-              {[['(a) Outward taxable supplies (other than zero-rated, nil-rated, exempt)', g3.t31a], ['(b) Outward taxable supplies (zero-rated)', null], ['(c) Other outward supplies (nil-rated, exempt)', g3.t31c], ['(d) Inward supplies (liable to reverse charge)', g3.t31d], ['(e) Non-GST outward supplies', null]].map(([l, t]) => (
+              {[['(a) Outward taxable supplies (other than zero-rated, nil-rated, exempt)', g3.t31a], ['(b) Outward taxable supplies (zero-rated — exports)', g3.t31b], ['(c) Other outward supplies (nil-rated, exempt)', g3.t31c], ['(d) Inward supplies (liable to reverse charge)', g3.t31d], ['(e) Non-GST outward supplies', null]].map(([l, t]) => (
                 <tr key={l}><Td>{l}</Td><Td right>{t ? <A v={t.taxable} /> : <span className="text-slate-300">—</span>}</Td><Td right>{t ? <A v={t.igst} /> : '—'}</Td><Td right>{t ? <A v={t.cgst} /> : '—'}</Td><Td right>{t ? <A v={t.sgst} /> : '—'}</Td></tr>
               ))}
             </Table>
@@ -248,7 +253,7 @@ function gstr3bRows(g) {
   const t = (l, x) => [l, x.taxable, x.igst, x.cgst, x.sgst]
   return [
     ['GSTR-3B working'], [],
-    ['3.1 Outward / RCM', 'Taxable', 'IGST', 'CGST', 'SGST'], t('(a) Outward taxable', g.t31a), t('(c) Nil / exempt', g.t31c), t('(d) Inward RCM', g.t31d), [],
+    ['3.1 Outward / RCM', 'Taxable', 'IGST', 'CGST', 'SGST'], t('(a) Outward taxable', g.t31a), t('(b) Zero-rated (exports)', g.t31b), t('(c) Nil / exempt', g.t31c), t('(d) Inward RCM', g.t31d), [],
     ['3.2 Inter-state to unregistered', 'Taxable', 'IGST'], ...g.interUnreg.map(x => [x.posName, x.taxable, x.igst]), [],
     ['4 ITC', '', 'IGST', 'CGST', 'SGST'], ['(A)(3) RCM', '', g.itcRcm.igst, g.itcRcm.cgst, g.itcRcm.sgst], ['(A)(5) Other', '', g.itcOther.igst, g.itcOther.cgst, g.itcOther.sgst],
     ['(B)(2) Reversed', '', g.itcRevOther.igst, g.itcRevOther.cgst, g.itcRevOther.sgst], ['Net ITC', '', g.netItc.igst, g.netItc.cgst, g.netItc.sgst], [],
@@ -260,6 +265,7 @@ function gstr1Sheets(g) {
     { name: 'B2B', rows: [['GSTIN', 'Buyer', 'Invoice', 'Date', 'POS', 'Rate %', 'Taxable', 'IGST', 'CGST', 'SGST', 'Invoice value'], ...g.b2b.flatMap(p => p.invoices.flatMap(i => i.rows.map(r => [p.ctin, p.partyName, i.number, i.date, i.pos, r.rate, r.taxable, r.igst, r.cgst, r.sgst, i.value])))] },
     { name: 'B2CL', rows: [['POS', 'Invoice', 'Date', 'Rate %', 'Taxable', 'IGST', 'Value'], ...g.b2cl.flatMap(p => p.invoices.flatMap(i => i.rows.map(r => [p.posName, i.number, i.date, r.rate, r.taxable, r.igst, i.value])))] },
     { name: 'B2CS', rows: [['POS', 'Type', 'Rate %', 'Taxable', 'IGST', 'CGST', 'SGST'], ...g.b2cs.map(x => [x.posName, x.supplyType, x.rate, x.taxable, x.igst, x.cgst, x.sgst])] },
+    { name: 'Exports', rows: [['Invoice', 'Date', 'Buyer', 'Type', 'Currency', 'Foreign amount', 'Shipping bill', 'SB date', 'Port', 'Taxable (INR)', 'IGST', 'Value (INR)'], ...(g.exports || []).map(e => [e.number, e.date, e.partyName, e.exportType, e.currency || 'INR', e.fcTotal || '', e.sbNo || '', e.sbDate || '', e.portCode || '', e.taxable, e.igst, e.value])] },
     { name: 'Nil', rows: [['Category', 'Value'], ['Inter-state registered', g.nil.interReg], ['Inter-state unregistered', g.nil.interUnreg], ['Intra-state registered', g.nil.intraReg], ['Intra-state unregistered', g.nil.intraUnreg]] },
     { name: 'CDN', rows: [['GSTIN', 'Note', 'Date', 'Against', 'Reason', 'Rate %', 'Taxable', 'IGST', 'CGST', 'SGST'], ...[...g.cdnr.flatMap(p => p.notes.map(n => ({ ...n, gstin: p.ctin }))), ...g.cdnur].flatMap(n => n.rows.map(r => [n.gstin || 'Unregistered', n.number, n.date, n.refNumber, n.reason, r.rate, r.taxable, r.igst, r.cgst, r.sgst]))] },
     { name: 'HSN', rows: hsnRows(g.hsn.rows, true) },

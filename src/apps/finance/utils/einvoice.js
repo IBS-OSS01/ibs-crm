@@ -95,7 +95,7 @@ export function gstr3bJson(g, { gstin, to }) {
   const itc = (x) => ({ iamt: x.igst, camt: x.cgst, samt: x.sgst, csamt: 0 })
   return {
     gstin, ret_period: periodCode(to),
-    sup_details: { osup_det: o(g.t31a), osup_zero: { txval: 0, iamt: 0, csamt: 0 }, osup_nil_exmp: { txval: g.t31c.taxable }, isup_rev: o(g.t31d), osup_nongst: { txval: 0 } },
+    sup_details: { osup_det: o(g.t31a), osup_zero: { txval: g.t31b?.taxable || 0, iamt: g.t31b?.igst || 0, csamt: 0 }, osup_nil_exmp: { txval: g.t31c.taxable }, isup_rev: o(g.t31d), osup_nongst: { txval: 0 } },
     inter_sup: { unreg_details: g.interUnreg.map(x => ({ pos: x.pos, txval: x.taxable, iamt: x.igst })), comp_details: [], uin_details: [] },
     itc_elg: {
       itc_avl: [{ ty: 'IMPG', iamt: 0, camt: 0, samt: 0, csamt: 0 }, { ty: 'IMPS', iamt: 0, camt: 0, samt: 0, csamt: 0 }, { ty: 'ISRC', ...itc(g.itcRcm) }, { ty: 'ISD', iamt: 0, camt: 0, samt: 0, csamt: 0 }, { ty: 'OTH', ...itc(g.itcOther) }],

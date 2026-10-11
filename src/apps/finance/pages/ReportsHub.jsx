@@ -40,6 +40,7 @@ const GROUPS = [
     ['Sales / Purchase Analysis', '/finance/analysis/sales-party', 'By party and by item'],
     ['Cost Centres', '/finance/cost-centres', 'Income and expense per project / site'],
     ['Budgets', '/finance/budgets', 'Budget vs actual'],
+    ['Forex revaluation', '/finance/fx/revaluation', 'Open foreign-currency bills at the closing rate'],
   ]],
   ['GST', 'Returns and credit', [
     ['GSTR-1', '/finance/gst/gstr1', 'B2B, B2C, credit notes, HSN, documents + portal JSON'],
@@ -74,6 +75,7 @@ const GROUPS = [
     ['Audit Trail & Period Lock', '/finance/audit', 'Who changed what; lock closed periods'],
     ['Export & Backup', '/finance/export', 'Excel and Tally XML'],
     ['Chart of Accounts', '/finance/accounts', ''],
+    ['Exchange rates', '/finance/fx/rates', 'Rates for USD, EUR and other currencies'],
     ['Company Settings', '/finance/settings', 'GSTIN, TAN, state, lock date'],
   ]],
 ]

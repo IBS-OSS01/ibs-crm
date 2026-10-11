@@ -75,7 +75,7 @@ export default function DayBook() {
                 <td className="px-4 py-2.5 font-mono text-xs text-slate-600">{r.number}{r.companyInferred && <span title="No company on this record — assumed UIPL" className="ml-1 text-amber-600">⚠</span>}</td>
                 <td className="px-4 py-2.5 text-slate-800 font-medium">{r.partyName || '—'}</td>
                 <td className="px-4 py-2.5 text-slate-500 max-w-xs truncate">{r.narration}</td>
-                <td className="px-4 py-2.5 text-right font-medium text-slate-800">{fmtAmt(r.amount)}</td>
+                <td className="px-4 py-2.5 text-right font-medium text-slate-800">{fmtAmt(r.amount)}{r.fcNote && <div className="text-[11px] font-normal text-amber-700">{r.fcNote}</div>}</td>
               </tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={6}><Empty>No vouchers for {company} in this period.</Empty></td></tr>}

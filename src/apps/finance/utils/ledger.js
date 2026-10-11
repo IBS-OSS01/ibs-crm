@@ -57,6 +57,7 @@ export const SEED_ACCOUNTS = [
   { code: '4900', name: 'Other Income',                    type: 'income',    normalBalance: 'credit' },
   { code: '4910', name: 'Interest Income',                 type: 'income',    normalBalance: 'credit' },
   { code: '4920', name: 'Discount Received',               type: 'income',    normalBalance: 'credit' },
+  { code: '4925', name: 'Foreign Exchange Gain',            type: 'income',    normalBalance: 'credit', isSystem: true },
   { code: '4950', name: 'Rounding Off Income',             type: 'income',    normalBalance: 'credit', isSystem: true },
   { code: '5000', name: 'Purchases & Subcontractor Costs', type: 'expense',   normalBalance: 'debit',  isSystem: true, isDefaultPurchase: true },
   { code: '5010', name: 'Stock Adjustment (Opening / Closing Stock)', type: 'expense', normalBalance: 'debit', isSystem: true },
@@ -72,6 +73,7 @@ export const SEED_ACCOUNTS = [
   { code: '5190', name: 'Professional & Legal Fees',        type: 'expense',   normalBalance: 'debit' },
   { code: '5195', name: 'Freight & Cartage Inward',         type: 'expense',   normalBalance: 'debit' },
   { code: '5900', name: 'Miscellaneous Expenses',           type: 'expense',   normalBalance: 'debit',  isSystem: true, isDefaultExpense: true, mapsFromCategories: ['Miscellaneous'] },
+  { code: '5925', name: 'Foreign Exchange Loss',            type: 'expense',   normalBalance: 'debit',  isSystem: true },
   { code: '5950', name: 'Rounding Off Expense',             type: 'expense',   normalBalance: 'debit',  isSystem: true },
 ]
 
@@ -83,7 +85,7 @@ export const SEED_ACCOUNTS = [
 export const REQUIRED_ACCOUNT_CODES = [
   '1100', '1110', '1200', '1301', '1302', '1303', '1310', '1400',
   '2100', '2401', '2402', '2403', '2404', '2500',
-  '3200', '4000', '4950', '5000', '5010', '5900', '5950',
+  '3200', '4000', '4925', '4950', '5000', '5010', '5900', '5925', '5950',
 ]
 export const mergeRequiredAccounts = (dbAccounts = []) => {
   // Not seeded yet: use the standard chart virtually so vouchers and reports work straight away
@@ -136,6 +138,8 @@ export function deriveInvoiceLines(invoice, accounts) {
     partyType: 'customer', partyId: invoice.customerId || '', partyName: invoice.billToName || '',
     billKey: billKey('invoice', invoice.id), billRef: invoice.invoiceNumber || invoice.id,
     dueDate: invoice.dueDate || invoice.invoiceDate,
+    // foreign-currency invoice: remember the amount owed in that currency and the booking rate
+    ...(invoice.fx?.currency && invoice.fx.currency !== 'INR' ? { currency: invoice.fx.currency, fcAmount: Number(invoice.fx.total) || 0, fxRate: Number(invoice.fx.rate) || 0 } : {}),
   })
 
   const rev = acct(accounts, '4000')

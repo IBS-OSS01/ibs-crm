@@ -3,6 +3,7 @@ import React, { useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { createVoucher, updateVoucher, getBooksLockDate, VoucherError } from '../utils/voucherService.js'
 import { uploadAttachments } from '../utils/attachments.js'
+import { CURRENCIES, rateOn, fetchMarketRate, symbolOf, fmtFc } from '../utils/fx.js'
 import { COMPANIES, todayStr, fmtAmt, num, normName } from '../utils/financeConstants.js'
 import { INDIA_STATES, gstinToStateCode } from '../utils/indiaConstants.js'
 import { DEFAULT_TDS_SECTIONS, tdsRateFor, thresholdCrossed, ldcFor } from '../utils/tdsMaster.js'
@@ -90,6 +91,51 @@ export function FormShell({ title, subtitle, children, onSubmit, onCancel, savin
         <button type="button" onClick={onCancel} className={btnGhost}>Cancel (Esc)</button>
       </div>
     </form>
+  )
+}
+
+// ── currency of a document ──────────────────────────────────────────────────
+// useFx keeps { currency, rate }. The rate follows the date and currency (latest rate on file on or before the
+// booking date) until you type your own; `fetchRate` pulls the market rate for that date.
+export function useFx(raw, date, initial) {
+  const [currency, setCurrencyState] = useState(initial?.currency || 'INR')
+  const [rate, setRateState] = useState(initial?.fxRate ? String(initial.fxRate) : '')
+  const [touched, setTouched] = useState(!!initial?.fxRate)
+  const rates = raw?.fxRates || []
+  const filed = currency === 'INR' ? 1 : rateOn(rates, currency, date)
+  const effective = currency === 'INR' ? 1 : (touched ? num(rate) : filed)
+  const setCurrency = (c) => { setCurrencyState(c); setTouched(false); setRateState('') }
+  const setRate = (v) => { setRateState(v); setTouched(true) }
+  const fetchRate = async () => { const r = await fetchMarketRate(currency, date); setRateState(String(r.rate)); setTouched(true); return r }
+  return { currency, rate: effective, rateText: touched ? rate : (filed ? String(filed) : ''), isFc: currency !== 'INR', filed, setCurrency, setRate, fetchRate, symbol: symbolOf(currency) }
+}
+
+export function CurrencyBar({ fx, date, totalFc, label = 'Currency' }) {
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+  const get = async () => { setBusy(true); setMsg(''); try { const r = await fx.fetchRate(); setMsg(`ECB reference rate for ${r.date}: ${r.rate}`) } catch (e) { setMsg(e.message) } finally { setBusy(false) } }
+  return (
+    <div className={`rounded-xl border p-3 ${fx.isFc ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200 bg-slate-50/50'}`}>
+      <div className="flex items-end gap-3 flex-wrap">
+        <Field label={label}>
+          <select value={fx.currency} onChange={e => fx.setCurrency(e.target.value)} className={`${formInputCls} w-44`}>
+            {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
+          </select>
+        </Field>
+        {fx.isFc && (
+          <>
+            <Field label={`Rate on ${date || 'booking date'} (₹ per 1 ${fx.currency})`}>
+              <input type="number" min="0" step="any" value={fx.rateText} onChange={e => fx.setRate(e.target.value)} className={`${formInputCls} w-40`} />
+            </Field>
+            <button type="button" onClick={get} disabled={busy} className="px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50">{busy ? 'Fetching…' : 'Get market rate'}</button>
+            {num(totalFc) > 0 && fx.rate > 0 && <p className="text-sm text-slate-600 pb-2">{fmtFc(totalFc, fx.currency)} × {fx.rate} = <b>₹{fmtAmt(totalFc * fx.rate)}</b></p>}
+          </>
+        )}
+      </div>
+      {fx.isFc && !fx.rate && <p className="text-xs text-red-600 mt-2">No rate on file for {fx.currency} — enter one, or click “Get market rate”. (Add standing rates under Settings → Exchange rates.)</p>}
+      {fx.isFc && <p className="text-xs text-amber-800 mt-2">Amounts below are in {fx.currency}. The books record the rupee value at the rate above; later settlement at a different rate books an exchange gain or loss.</p>}
+      {msg && <p className="text-xs text-slate-500 mt-1">{msg}</p>}
+    </div>
   )
 }
 

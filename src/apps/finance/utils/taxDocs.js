@@ -32,7 +32,8 @@ function fromInvoice(inv) {
   const supplyType = supplyTypeOf(inv.sellerStateCode, stateCode)
   const taxable = r2(num(inv.subTotal))
   // Per-line detail for the HSN summary: recompute (stored invoices keep only rate-wise totals).
-  const items = computeLineTaxes((inv.items || []).map(i => ({ ...i, discountPct: 0 })), { supplyType, applyGst: inv.applyGst !== false })
+  const fxRate = inv.fx?.currency && inv.fx.currency !== 'INR' ? Number(inv.fx.rate) || 1 : 1   // foreign invoice: items are typed in that currency
+  const items = computeLineTaxes((inv.items || []).map(i => ({ ...i, rate: Number(i.rate) * fxRate, discountPct: 0 })), { supplyType, applyGst: inv.applyGst !== false })
   return {
     key: `invoice:${inv.id}`, docType: 'invoice', kind: 'sales', id: inv.id, collection: 'finance_invoices',
     number: inv.invoiceNumber || inv.id, date: inv.invoiceDate, company: inv.company || 'UIPL',
@@ -43,7 +44,8 @@ function fromInvoice(inv) {
     taxTotal: r2(gstLines.reduce((s, g) => s + num(g.amount), 0)),
     roundOff: r2(num(inv.roundOff)), total: r2(num(inv.total)),
     rateWise: rateWiseFromGstLines(gstLines), rcm: false, narration: inv.notes || '',
-    status: inv.status || '',
+    status: inv.status || '', isExport: !!inv.isExport, exportType: inv.exportType || '', shippingBillNo: inv.shippingBillNo || '', shippingBillDate: inv.shippingBillDate || '', portCode: inv.portCode || '',
+    currency: inv.fx?.currency || '', fcTotal: inv.fx?.total || 0, fxRate: inv.fx?.rate || 0,
   }
 }
 
@@ -68,6 +70,7 @@ function fromVoucher(v, vendorsById) {
     refInvoiceId: v.refInvoiceId || '', refInvoiceNumber: v.refInvoiceNumber || '', refInvoiceDate: v.refInvoiceDate || '',
     refPurchaseId: v.refPurchaseId || '', reason: v.reason || '', narration: v.narration || '',
     tds: v.tds?.applicable ? v.tds : null, status: v.status || 'active',
+    currency: v.currency && v.currency !== 'INR' ? v.currency : '', fcTotal: v.fc?.total || 0, fxRate: v.currency && v.currency !== 'INR' ? v.fxRate : 0,
   }
 }
 

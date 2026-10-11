@@ -5,7 +5,7 @@ import { fyOf } from '../utils/financeConstants.js'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
 import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
-  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect,
+  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar,
   cashBankOptions, customerOptions, vendorOptions, tdsSectionList,
   todayStr, normName, num, fmtAmt,
 } from './formShared.jsx'
@@ -16,27 +16,35 @@ export const isInvestmentName = (n) => (/deposit|\bfd\b|trust|invest|bond|mutual
 const bankKeyOf = (code, id) => (code === '1110' ? (id ? `cash:${id}` : 'cash') : (id ? `bank:${id}` : 'bank-default'))
 
 // ─── allocation table: tick bills and set how much of this payment goes to each ──
-function AllocationTable({ bills, alloc, setAlloc }) {
-  if (!bills.length) return <p className="text-xs text-slate-400">No pending bills for this party — the amount will be recorded as an advance / on-account.</p>
+// In a foreign currency the bill shows what is still owed in that currency and the amounts you type are in it too.
+const bookInr = (b, fcAmt) => (b.fcPending !== undefined && num(fcAmt) >= b.fcPending - 0.005 ? b.pending : r2(num(fcAmt) * num(b.fxRate)))
+
+function AllocationTable({ bills, alloc, setAlloc, fx }) {
+  const isFc = !!fx?.isFc
+  if (!bills.length) return <p className="text-xs text-slate-400">{isFc ? `No pending ${fx.currency} bills for this party — the amount will be recorded as an advance / on-account.` : 'No pending bills for this party — the amount will be recorded as an advance / on-account.'}</p>
   const setAmt = (b, v) => setAlloc({ ...alloc, [b.billKey]: v })
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-xs text-slate-500 uppercase"><tr>
           <th className="text-left px-3 py-2">Bill</th><th className="text-left px-3 py-2">Date</th><th className="text-left px-3 py-2">Due</th>
-          <th className="text-right px-3 py-2">Pending</th><th className="text-right px-3 py-2 w-36">Settle now</th><th className="w-16" />
+          <th className="text-right px-3 py-2">Pending{isFc ? ` (${fx.symbol})` : ''}</th>{isFc && <th className="text-right px-3 py-2">Booked at</th>}<th className="text-right px-3 py-2 w-36">Settle now{isFc ? ` (${fx.symbol})` : ''}</th><th className="w-16" />
         </tr></thead>
         <tbody className="divide-y divide-slate-100">
-          {bills.map(b => (
-            <tr key={b.billKey}>
-              <td className="px-3 py-1.5 font-mono text-xs">{b.docNo}{b.externalRef ? <span className="text-slate-400"> ({b.externalRef})</span> : null}</td>
-              <td className="px-3 py-1.5 text-slate-500">{b.date}</td>
-              <td className={`px-3 py-1.5 ${b.daysOverdue > 0 ? 'text-red-600' : 'text-slate-500'}`}>{b.dueDate}{b.daysOverdue > 0 ? ` (${b.daysOverdue}d)` : ''}</td>
-              <td className="px-3 py-1.5 text-right">{fmtAmt(b.pending)}</td>
-              <td className="px-3 py-1.5"><input type="number" min="0" step="any" max={b.pending} value={alloc[b.billKey] ?? ''} onChange={e => setAmt(b, e.target.value)} className="w-full px-2 py-1 border border-slate-300 rounded-md text-sm text-right" /></td>
-              <td className="px-1"><button type="button" className="text-xs text-blue-600 hover:underline" onClick={() => setAmt(b, b.pending)}>full</button></td>
-            </tr>
-          ))}
+          {bills.map(b => {
+            const max = isFc ? b.fcPending : b.pending
+            return (
+              <tr key={b.billKey}>
+                <td className="px-3 py-1.5 font-mono text-xs">{b.docNo}{b.externalRef ? <span className="text-slate-400"> ({b.externalRef})</span> : null}</td>
+                <td className="px-3 py-1.5 text-slate-500">{b.date}</td>
+                <td className={`px-3 py-1.5 ${b.daysOverdue > 0 ? 'text-red-600' : 'text-slate-500'}`}>{b.dueDate}{b.daysOverdue > 0 ? ` (${b.daysOverdue}d)` : ''}</td>
+                <td className="px-3 py-1.5 text-right">{fmtAmt(max)}</td>
+                {isFc && <td className="px-3 py-1.5 text-right text-xs text-slate-500">@ {b.fxRate} = ₹{fmtAmt(b.pending)}</td>}
+                <td className="px-3 py-1.5"><input type="number" min="0" step="any" max={max} value={alloc[b.billKey] ?? ''} onChange={e => setAmt(b, e.target.value)} className="w-full px-2 py-1 border border-slate-300 rounded-md text-sm text-right" /></td>
+                <td className="px-1"><button type="button" className="text-xs text-blue-600 hover:underline" onClick={() => setAmt(b, max)}>full</button></td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -45,20 +53,42 @@ function AllocationTable({ bills, alloc, setAlloc }) {
 
 // Shared by payment / receipt: bills for the chosen party, with the voucher's own
 // current allocation added back when editing so its amounts can be changed.
-function useBills({ allLines, kind, company, party, date, initial }) {
+// Bills in another currency only appear when the voucher is in that currency (and vice versa).
+function useBills({ allLines, kind, company, party, date, initial, fx }) {
   return useMemo(() => {
     if (!party) return []
     const bills = pendingBillsForParty(allLines, { kind, company, partyName: party.name, partyId: party.id, asOf: '9999-12-31' })
-    const own = {}
-    ;(initial?.allocations || []).forEach(a => { own[a.billKey] = (own[a.billKey] || 0) + num(a.amount) })
+    const own = {}, ownFc = {}
+    ;(initial?.allocations || []).forEach(a => { own[a.billKey] = (own[a.billKey] || 0) + num(a.amount); ownFc[a.billKey] = (ownFc[a.billKey] || 0) + num(a.fcAmount) })
     const today = new Date(todayStr() + 'T00:00:00')
-    return bills.map(b => ({ ...b, pending: r2(b.pending + (own[b.billKey] || 0)), daysOverdue: Math.round((today - new Date(b.dueDate + 'T00:00:00')) / 86400000) }))
-  }, [allLines, kind, company, party, initial])
+    return bills
+      .filter(b => (fx?.isFc ? b.currency === fx.currency : !b.currency))
+      .map(b => ({ ...b, pending: r2(b.pending + (own[b.billKey] || 0)), ...(b.fcPending !== undefined ? { fcPending: r2(b.fcPending + (ownFc[b.billKey] || 0)) } : {}), daysOverdue: Math.round((today - new Date(b.dueDate + 'T00:00:00')) / 86400000) }))
+  }, [allLines, kind, company, party, initial, fx?.isFc, fx?.currency])
 }
 
-const initAlloc = (initial) => Object.fromEntries((initial?.allocations || []).map(a => [a.billKey, a.amount]))
+const initAlloc = (initial) => Object.fromEntries((initial?.allocations || []).map(a => [a.billKey, a.fcAmount ?? a.amount]))
 
-function AccountLines({ lines, setLines, accounts, label }) {
+// Rupee figures for a settlement. In INR everything is as typed; in a foreign currency the bills clear at their own
+// booking rate, the money actually moves at this voucher's rate, and the difference is the exchange gain / loss.
+function settlement({ fx, bills, alloc, onAccount, accLines }) {
+  const rows = bills.filter(b => num(alloc[b.billKey]) > 0).map(b => {
+    const typed = num(alloc[b.billKey])
+    return fx.isFc
+      ? { b, typed, amount: bookInr(b, typed), fcAmount: typed, billRate: b.fxRate }
+      : { b, typed, amount: r2(typed) }
+  })
+  const allocInr = r2(rows.reduce((s, r) => s + r.amount, 0))
+  const allocFc = r2(rows.reduce((s, r) => s + (r.fcAmount || 0), 0))
+  const onAccInr = fx.isFc ? r2(num(onAccount) * fx.rate) : r2(num(onAccount))
+  const lines = accLines.filter(l => num(l.amount) > 0).map(l => ({ ...l, ...(fx.isFc ? { amountFc: num(l.amount), amount: r2(num(l.amount) * fx.rate) } : { amount: num(l.amount) }) }))
+  const accSum = r2(lines.reduce((s, l) => s + l.amount, 0))
+  const partyAmount = r2(allocInr + onAccInr)
+  const partyMoney = fx.isFc ? r2(r2(allocFc * fx.rate) + onAccInr) : partyAmount        // rupees that really change hands for the party part
+  return { rows, partyAmount, partyMoney, onAccInr, lines, accSum, fxDiff: r2(partyMoney - partyAmount) }
+}
+
+function AccountLines({ lines, setLines, accounts, label, symbol }) {
   const upd = (i, patch) => setLines(lines.map((l, idx) => idx === i ? { ...l, ...patch } : l))
   return (
     <div className="space-y-2">
@@ -70,7 +100,7 @@ function AccountLines({ lines, setLines, accounts, label }) {
             <option value="">— ledger —</option>{accounts.map(a => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}
           </select>
           <input value={l.description} onChange={e => upd(i, { description: e.target.value })} placeholder="Description" className={`${formInputCls} col-span-4`} />
-          <input type="number" min="0" step="any" value={l.amount} onChange={e => upd(i, { amount: e.target.value })} placeholder="Amount" className={`${formInputCls} col-span-2 text-right`} />
+          <input type="number" min="0" step="any" value={l.amount} onChange={e => upd(i, { amount: e.target.value })} placeholder={symbol && symbol !== '₹' ? `Amount (${symbol})` : 'Amount'} className={`${formInputCls} col-span-2 text-right`} />
           <button type="button" onClick={() => setLines(lines.filter((_, idx) => idx !== i))} className="text-slate-300 hover:text-red-500">✕</button>
         </div>
       ))}
@@ -98,43 +128,45 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
   const [narration, setNarration] = useState(initial?.narration || '')
   const [costCentreId, setCostCentreId] = useState(initial?.costCentreId || '')
   const draft = useAttachmentDraft()
-  const bills = useBills({ allLines, kind: 'payable', company, party: mode === 'vendor' ? vendor : null, date, initial })
+  const fx = useFx(raw, date, initial)
+  const bills = useBills({ allLines, kind: 'payable', company, party: mode === 'vendor' ? vendor : null, date, initial, fx })
   const [alloc, setAlloc] = useState(initAlloc(initial))
   const [onAccount, setOnAccount] = useState(() => {
     if (!initial) return ''
+    if (initial.currency && initial.currency !== 'INR') return initial.onAccountFc || ''
     const allocated = (initial.allocations || []).reduce((s, a) => s + num(a.amount), 0)
     return r2(num(initial.partyAmount) - allocated) || ''
   })
-  const [accLines, setAccLines] = useState(initial?.accountLines?.length ? initial.accountLines : [{ accountCode: '', amount: '', description: '' }])
+  const [accLines, setAccLines] = useState(initial?.accountLines?.length ? initial.accountLines.map(l => ({ ...l, amount: l.amountFc ?? l.amount })) : [{ accountCode: '', amount: '', description: '' }])
   const [tds, setTds] = useState(initial?.tds?.applicable ? { applicable: true, section: initial.tds.section, rate: initial.tds.rate, baseOverride: initial.tds.base } : { applicable: false })
 
-  const allocTotal = r2(Object.values(alloc).reduce((s, v) => s + num(v), 0))
-  const partyAmount = mode === 'vendor' ? r2(allocTotal + num(onAccount)) : 0
-  const accSum = r2(accLines.reduce((s, l) => s + num(l.amount), 0))
+  const st = useMemo(() => settlement({ fx, bills: mode === 'vendor' ? bills : [], alloc, onAccount: mode === 'vendor' ? onAccount : 0, accLines }), [fx.isFc, fx.rate, bills, alloc, onAccount, accLines, mode]) // eslint-disable-line react-hooks/exhaustive-deps
+  const partyAmount = mode === 'vendor' ? st.partyAmount : 0
+  const accSum = st.accSum
   const tdsFinal = finalTds(tds, partyAmount + (mode === 'expense' ? accSum : 0))
-  const bankAmt = r2(partyAmount + accSum - tdsFinal.amount)
+  const bankAmt = r2(st.partyMoney + accSum - tdsFinal.amount)      // what really leaves the bank (rupees)
   const payAccounts = useMemo(() => accounts.filter(a => ['expense', 'asset', 'liability'].includes(a.type) && !['1100', '1110', '1200', '2100', '2500'].includes(a.code)), [accounts])
 
   const { save, saving, error } = useVoucherSave({
     initial, onSaved, draft,
     getPayload: () => {
       need(bank, 'Select the bank / cash account paying.')
-      const lines = accLines.filter(l => num(l.amount) > 0)
+      need(!fx.isFc || fx.rate > 0, `Enter the exchange rate for ${fx.currency}.`)
+      const lines = st.lines
       lines.forEach(l => need(l.accountCode, 'Pick a ledger for every expense line that has an amount.'))
       if (mode === 'vendor') need(vendor, 'Select a vendor.')
-      need(partyAmount + lines.reduce((s, l) => s + num(l.amount), 0) > 0, 'Enter an amount to pay.')
-      const allocations = bills.filter(b => num(alloc[b.billKey]) > 0).map(b => {
-        need(num(alloc[b.billKey]) <= b.pending + 0.005, `${b.docNo}: settling more than the pending ${fmtAmt(b.pending)}.`)
-        return { billKey: b.billKey, docNumber: b.docNo, amount: r2(num(alloc[b.billKey])) }
-      })
+      need(partyAmount + accSum + (mode === 'vendor' ? st.onAccInr : 0) > 0, 'Enter an amount to pay.')
+      st.rows.forEach(r => need(r.typed <= (fx.isFc ? r.b.fcPending : r.b.pending) + 0.005, `${r.b.docNo}: settling more than the pending ${fmtAmt(fx.isFc ? r.b.fcPending : r.b.pending)}.`))
+      const allocations = mode === 'vendor' ? st.rows.map(r => ({ billKey: r.b.billKey, docNumber: r.b.docNo, amount: r.amount, ...(fx.isFc ? { fcAmount: r.fcAmount, billRate: r.billRate } : {}) })) : []
       if (tds.applicable) need(tds.section, 'Choose a TDS section or untick Deduct TDS.')
       const tdsF = finalTds(tds, partyAmount + (mode === 'expense' ? accSum : 0))
-      need(r2(partyAmount + accSum - tdsF.amount) > 0, 'TDS cannot exceed the payment.')
+      need(r2(st.partyMoney + accSum - tdsF.amount) > 0, 'TDS cannot exceed the payment.')
       return {
         voucherType: 'payment', company, date,
         ...(mode === 'vendor' ? { partyType: 'vendor', partyId: vendor.id, partyName: vendor.name } : {}),
         partyAmount, allocations, accountLines: lines, tds: tdsF,
         bankAccountCode: bank.code, bankAccountId: bank.id, refNumber: refNumber.trim(), narration: narration.trim(), amount: bankAmt, costCentreId,
+        currency: fx.currency, fxRate: fx.isFc ? fx.rate : 1, ...(fx.isFc ? { bankAmountInr: bankAmt, onAccountFc: mode === 'vendor' ? num(onAccount) : 0 } : { bankAmountInr: null, onAccountFc: 0 }),
       }
     },
   })
@@ -146,6 +178,7 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
           <Field label="Paid from *"><select value={bank?.key || ''} onChange={e => setBankKey(e.target.value)} className={formInputCls}>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>
           <Field label="Cheque / UTR no."><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
         </>} />
+      <CurrencyBar fx={fx} date={date} label="Paying in" />
       <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm w-fit">
         {[['vendor', 'Pay a vendor'], ['expense', 'Direct expense / other']].map(([k, l]) => <button type="button" key={k} onClick={() => setMode(k)} className={`px-3 py-1.5 font-medium ${mode === k ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{l}</button>)}
       </div>
@@ -154,20 +187,22 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
           <Field label="Vendor *"><select value={vendorId} onChange={e => { setVendorId(e.target.value); setAlloc({}) }} className={formInputCls}><option value="">— select vendor —</option>{vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></Field>
           {vendor && <>
             <label className={labelCls}>Against pending bills</label>
-            <AllocationTable bills={bills} alloc={alloc} setAlloc={setAlloc} />
-            <Field label="Advance / on account (₹)" className="max-w-xs"><input type="number" min="0" step="any" value={onAccount} onChange={e => setOnAccount(e.target.value)} className={formInputCls} /></Field>
+            <AllocationTable bills={bills} alloc={alloc} setAlloc={setAlloc} fx={fx} />
+            <Field label={`Advance / on account (${fx.symbol})`} className="max-w-xs"><input type="number" min="0" step="any" value={onAccount} onChange={e => setOnAccount(e.target.value)} className={formInputCls} /></Field>
           </>}
         </>
       )}
-      <AccountLines lines={accLines} setLines={setAccLines} accounts={payAccounts} label={mode === 'vendor' ? 'Other charges paid in the same payment (optional)' : 'Expense / ledger being paid'} />
+      <AccountLines symbol={fx.symbol} lines={accLines} setLines={setAccLines} accounts={payAccounts} label={mode === 'vendor' ? 'Other charges paid in the same payment (optional)' : 'Expense / ledger being paid'} />
       <TdsBlock raw={raw} vendor={vendor} date={date} base={partyAmount + (mode === 'expense' ? accSum : 0)} tds={tds} setTds={setTds} fy={fyOf(date)}
         partyId={vendor?.id} currentDocId={initial?.id} />
       <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
       <AttachmentPanel entityType="payment" entityId={initial?.id} company={company} draft={draft} label="Bill / receipt for this payment or expense" />
       <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
       <div className="ml-auto w-full max-w-sm space-y-1 text-sm">
-        {mode === 'vendor' && <SumRow label="To vendor (gross)" value={partyAmount} />}
-        {accSum > 0 && <SumRow label="Other ledgers" value={accSum} />}
+        {mode === 'vendor' && <SumRow label={fx.isFc ? 'Bills cleared (₹ at booking rate)' : 'To vendor (gross)'} value={partyAmount} />}
+        {fx.isFc && mode === 'vendor' && <SumRow label={`Paid to vendor (₹ at ${fx.rate})`} value={st.partyMoney} />}
+        {fx.isFc && Math.abs(st.fxDiff) > 0.004 && <SumRow label={st.fxDiff > 0 ? 'Exchange loss' : 'Exchange gain'} value={Math.abs(st.fxDiff)} tone={st.fxDiff > 0 ? 'text-red-600' : 'text-green-700'} />}
+        {accSum > 0 && <SumRow label="Other ledgers (₹)" value={accSum} />}
         {tdsFinal.amount > 0 && <SumRow label={`Less: TDS ${tdsFinal.section} deducted`} value={-tdsFinal.amount} tone="text-red-600" />}
         <SumRow label="Paid from bank / cash" value={bankAmt} strong />
       </div>
@@ -199,14 +234,16 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
   const [refNumber, setRefNumber] = useState(initial?.refNumber || '')
   const [narration, setNarration] = useState(initial?.narration || '')
   const draft = useAttachmentDraft()
-  const bills = useBills({ allLines, kind: 'receivable', company, party: customer, date, initial })
+  const fx = useFx(raw, date, initial)
+  const bills = useBills({ allLines, kind: 'receivable', company, party: customer, date, initial, fx })
   const [alloc, setAlloc] = useState(initAlloc(initial))
   const [onAccount, setOnAccount] = useState(() => {
     if (!initial) return ''
+    if (initial.currency && initial.currency !== 'INR') return initial.onAccountFc || ''
     const allocated = (initial.allocations || []).reduce((s, a) => s + num(a.amount), 0)
     return r2(num(initial.partyAmount) - allocated) || ''
   })
-  const [accLines, setAccLines] = useState(initial?.accountLines?.length ? initial.accountLines : [{ accountCode: '', amount: '', description: '' }])
+  const [accLines, setAccLines] = useState(initial?.accountLines?.length ? initial.accountLines.map(l => ({ ...l, amount: l.amountFc ?? l.amount })) : [{ accountCode: '', amount: '', description: '' }])
   const [tdsOn, setTdsOn] = useState(!!initial?.tdsReceivable?.applicable)
   const [tdsSection, setTdsSection] = useState(initial?.tdsReceivable?.section || '')
   const [tdsAmount, setTdsAmount] = useState(initial?.tdsReceivable?.amount || '')
@@ -214,30 +251,30 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
   // everything a receipt can credit: income, liabilities, equity and assets such as Fixed Deposits or Trust funds (principal coming back)
   const incomeAccounts = useMemo(() => accounts.filter(a => ['income', 'liability', 'equity', 'asset'].includes(a.type) && !['1100', '1110', '1200', '2100', '1310', '2500'].includes(a.code)).sort((x, y) => (isInvestmentName(y.name) - isInvestmentName(x.name)) || x.code.localeCompare(y.code)), [accounts])
 
-  const allocTotal = r2(Object.values(alloc).reduce((s, v) => s + num(v), 0))
-  const partyAmount = mode === 'customer' ? r2(allocTotal + num(onAccount)) : 0
-  const accSum = r2(accLines.reduce((s, l) => s + num(l.amount), 0))
+  const st = useMemo(() => settlement({ fx, bills: mode === 'customer' ? bills : [], alloc, onAccount: mode === 'customer' ? onAccount : 0, accLines }), [fx.isFc, fx.rate, bills, alloc, onAccount, accLines, mode]) // eslint-disable-line react-hooks/exhaustive-deps
+  const partyAmount = mode === 'customer' ? st.partyAmount : 0
+  const accSum = st.accSum
   const tdsAmt = tdsOn ? r2(num(tdsAmount)) : 0
-  const bankAmt = r2(partyAmount - tdsAmt + accSum)
+  const bankAmt = r2(st.partyMoney - tdsAmt + accSum)      // rupees that really arrive in the bank
 
   const { save, saving, error } = useVoucherSave({
     initial, onSaved, draft,
     getPayload: () => {
       need(bank, 'Select the bank / cash account receiving.')
       if (mode === 'customer') need(customer, 'Select a customer.')
-      const lines = accLines.filter(l => num(l.amount) > 0)
+      need(!fx.isFc || fx.rate > 0, `Enter the exchange rate for ${fx.currency}.`)
+      const lines = st.lines
       lines.forEach(l => need(l.accountCode, 'Pick a ledger for every line that has an amount.'))
       need(partyAmount + accSum > 0, mode === 'customer' ? 'Enter the amount received.' : 'Add the ledger(s) this money is for and the amount.')
-      const allocations = bills.filter(b => num(alloc[b.billKey]) > 0).map(b => {
-        need(num(alloc[b.billKey]) <= b.pending + 0.005, `${b.docNo}: settling more than the pending ${fmtAmt(b.pending)}.`)
-        return { billKey: b.billKey, docNumber: b.docNo, amount: r2(num(alloc[b.billKey])) }
-      })
+      st.rows.forEach(r => need(r.typed <= (fx.isFc ? r.b.fcPending : r.b.pending) + 0.005, `${r.b.docNo}: settling more than the pending ${fmtAmt(fx.isFc ? r.b.fcPending : r.b.pending)}.`))
+      const allocations = mode === 'customer' ? st.rows.map(r => ({ billKey: r.b.billKey, docNumber: r.b.docNo, amount: r.amount, ...(fx.isFc ? { fcAmount: r.fcAmount, billRate: r.billRate } : {}) })) : []
       if (tdsOn) { need(tdsSection, 'Choose the TDS section the customer deducted under.'); need(tdsAmt > 0, 'Enter the TDS amount deducted by the customer.'); need(tdsAmt < partyAmount + accSum, 'TDS cannot exceed the amount received.') }
       return {
         voucherType: 'receipt', company, date, ...(customer ? { partyType: 'customer', partyId: customer.id, partyName: customer.name } : {}),
         partyAmount, allocations, accountLines: lines,
         tdsReceivable: tdsOn ? { applicable: true, section: tdsSection, amount: tdsAmt } : { applicable: false },
         bankAccountCode: bank.code, bankAccountId: bank.id, refNumber: refNumber.trim(), narration: narration.trim(), amount: bankAmt,
+        currency: fx.currency, fxRate: fx.isFc ? fx.rate : 1, ...(fx.isFc ? { bankAmountInr: bankAmt, onAccountFc: mode === 'customer' ? num(onAccount) : 0 } : { bankAmountInr: null, onAccountFc: 0 }),
       }
     },
   })
@@ -249,6 +286,7 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
           <Field label="Received in *"><select value={bank?.key || ''} onChange={e => setBankKey(e.target.value)} className={formInputCls}>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>
           <Field label="Cheque / UTR no."><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
         </>} />
+      <CurrencyBar fx={fx} date={date} label="Received in" />
       <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm w-fit">
         {[['customer', 'From a customer'], ['other', 'Other (FD maturity, interest, refund)']].map(([k, l]) => <button type="button" key={k} onClick={() => setMode(k)} className={`px-3 py-1.5 font-medium ${mode === k ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{l}</button>)}
       </div>
@@ -256,8 +294,8 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
       {mode === 'other' && <p className="text-xs text-slate-500 -mt-2">Pick the ledgers below: for example credit the Fixed Deposit account for the principal that came back and Interest Income for the interest. If the bank deducted TDS, tick the TDS box and enter the amount.</p>}
       {customer && <>
         <label className={labelCls}>Against pending invoices</label>
-        <AllocationTable bills={bills} alloc={alloc} setAlloc={setAlloc} />
-        <Field label="Advance / on account (₹)" className="max-w-xs"><input type="number" min="0" step="any" value={onAccount} onChange={e => setOnAccount(e.target.value)} className={formInputCls} /></Field>
+        <AllocationTable bills={bills} alloc={alloc} setAlloc={setAlloc} fx={fx} />
+        <Field label={`Advance / on account (${fx.symbol})`} className="max-w-xs"><input type="number" min="0" step="any" value={onAccount} onChange={e => setOnAccount(e.target.value)} className={formInputCls} /></Field>
       </>}
       <div className="rounded-xl border border-slate-200 p-3 space-y-2 bg-slate-50/50">
         <label className="flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={tdsOn} onChange={e => setTdsOn(e.target.checked)} />{mode === 'customer' ? 'Customer deducted TDS' : 'TDS deducted before paying me (e.g. bank on FD interest)'} (credited to my Form 26AS — TDS receivable)</label>
@@ -266,12 +304,14 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
           <Field label="TDS amount (₹)"><input type="number" min="0" step="any" value={tdsAmount} onChange={e => setTdsAmount(e.target.value)} className={formInputCls} /></Field>
         </div>}
       </div>
-      <AccountLines lines={accLines} setLines={setAccLines} accounts={incomeAccounts} label={mode === 'customer' ? 'Other income / ledgers received in the same receipt (optional)' : 'Ledgers this money belongs to (principal, interest...)'} />
+      <AccountLines symbol={fx.symbol} lines={accLines} setLines={setAccLines} accounts={incomeAccounts} label={mode === 'customer' ? 'Other income / ledgers received in the same receipt (optional)' : 'Ledgers this money belongs to (principal, interest...)'} />
       <AttachmentPanel entityType="receipt" entityId={initial?.id} company={company} draft={draft} label="Proof of receipt (bank advice, cheque photo)" />
       <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
       <div className="ml-auto w-full max-w-sm space-y-1 text-sm">
-        {mode === 'customer' && <SumRow label="Settled (customer account)" value={partyAmount} />}
-        {accSum > 0 && <SumRow label="Other ledgers" value={accSum} />}
+        {mode === 'customer' && <SumRow label={fx.isFc ? 'Invoices cleared (₹ at booking rate)' : 'Settled (customer account)'} value={partyAmount} />}
+        {fx.isFc && mode === 'customer' && <SumRow label={`Received from customer (₹ at ${fx.rate})`} value={st.partyMoney} />}
+        {fx.isFc && Math.abs(st.fxDiff) > 0.004 && <SumRow label={st.fxDiff > 0 ? 'Exchange gain' : 'Exchange loss'} value={Math.abs(st.fxDiff)} tone={st.fxDiff > 0 ? 'text-green-700' : 'text-red-600'} />}
+        {accSum > 0 && <SumRow label="Other ledgers (₹)" value={accSum} />}
         {tdsAmt > 0 && <SumRow label="Less: TDS deducted at source" value={-tdsAmt} tone="text-red-600" />}
         <SumRow label="Received in bank / cash" value={bankAmt} strong />
       </div>

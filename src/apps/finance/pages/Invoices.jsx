@@ -11,7 +11,11 @@ const INVOICE_TYPES = [
 ]
 const TERMS_OPTS = ['Due on Receipt', 'Net 15', 'Net 30', 'Net 45', 'Net 60']
 const UNITS = ['pcs', 'nos', 'set', 'kg', 'ltr', 'mtr', 'sqft', 'hours', 'days', 'lot']
-const today = () => new Date().toISOString().slice(0, 10)
+import { todayStr } from '../utils/financeConstants.js'
+import { computeVoucherTotals } from '../utils/taxCalc.js'
+import { convertTotals, fmtFc, symbolOf } from '../utils/fx.js'
+import { useFx, CurrencyBar } from '../components/formShared.jsx'
+const today = todayStr   // local date (toISOString would be a day behind in India early morning)
 const getFY = () => { const d = new Date(); const y = d.getFullYear(); const m = d.getMonth() + 1; const s = m >= 4 ? y : y - 1; return `${String(s).slice(2)}-${String(s+1).slice(2)}` }
 const newItem = () => ({ description: '', hsnCode: '', qty: 1, unit: 'pcs', rate: '', gstRate: 18, stockItemId: '', sku: '' })
 
@@ -22,6 +26,7 @@ const emptyForm = {
   sameShipTo: true,
   shipToName: '', shipToAddress: '', shipToCity: '', shipToState: '', shipToPincode: '', shipToGstin: '',
   posState: '', posStateCode: '', applyGst: true,
+  isExport: false, exportType: 'WOPAY', shippingBillNo: '', shippingBillDate: '', portCode: '',
   notes: '', termsAndConditions: '',
 }
 
@@ -29,7 +34,9 @@ const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:o
 const lbl = 'block text-xs font-medium text-slate-600 mb-1'
 
 // ── Print HTML generator ─────────────────────────────────────────────────────
-function buildPrintHtml({ inv, items, seller, gstLines, subTotal, roundOff, total }) {
+function buildPrintHtml({ inv, items, seller, gstLines, subTotal, roundOff, total, fx }) {
+  const isFc = !!(fx?.currency && fx.currency !== 'INR')
+  const sym = isFc ? `${symbolOf(fx.currency)} ` : '₹'
   const sellerAddr = [seller.address, seller.city, seller.state, seller.pincode].filter(Boolean).join(', ')
   const billAddr = [inv.billToAddress, inv.billToCity, inv.billToState, inv.billToPincode].filter(Boolean).join(', ')
   const shipAddr = inv.sameShipTo ? billAddr : [inv.shipToAddress, inv.shipToCity, inv.shipToState, inv.shipToPincode].filter(Boolean).join(', ')
@@ -101,11 +108,13 @@ function buildPrintHtml({ inv, items, seller, gstLines, subTotal, roundOff, tota
       ${gstRows}${roundRow}
       <tr class="total-row">
         <td colspan="4" style="padding:8px;text-align:right">Total</td>
-        <td style="padding:8px;text-align:right">₹${total.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+        <td style="padding:8px;text-align:right">${sym}${total.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
       </tr>
+      ${isFc ? `<tr><td colspan="5" style="padding:4px 8px;text-align:right;font-size:11px;color:#555">Exchange rate ₹${fx.rate} per ${fx.currency} on ${inv.invoiceDate} — equivalent to ₹${(Number(inv.total) || 0).toLocaleString('en-IN', {minimumFractionDigits:2})}</td></tr>` : ''}
     </tfoot>
   </table>
-  <div class="words"><b>Total In Words:</b> ${amountInWords(total)}</div>
+  <div class="words"><b>Total In Words:</b> ${isFc ? `${fx.currency} ${total.toLocaleString('en-IN', {minimumFractionDigits:2})}` : amountInWords(total)}</div>
+  ${inv.isExport ? `<div style="margin-top:8px;font-size:12px"><b>Export supply</b> ${inv.exportType === 'WOPAY' ? 'under Letter of Undertaking (LUT) without payment of IGST' : 'with payment of IGST'}${inv.shippingBillNo ? ` · Shipping bill ${inv.shippingBillNo}${inv.shippingBillDate ? ' dt ' + inv.shippingBillDate : ''}${inv.portCode ? ' · Port ' + inv.portCode : ''}` : ''}</div>` : ''}
   ${inv.termsAndConditions ? `<div style="margin-top:14px;font-size:12px"><b>Terms &amp; Conditions</b><br/><pre style="font-family:inherit;white-space:pre-wrap;margin:4px 0">${inv.termsAndConditions}</pre></div>` : ''}
   ${seller.bankAccount ? `<div style="margin-top:14px;font-size:12px;border-top:1px solid #ddd;padding-top:8px"><b>Bank Details:</b> ${seller.bankName} · A/C ${seller.bankAccount} · IFSC ${seller.ifsc}</div>` : ''}
   <div style="margin-top:40px;text-align:right;font-size:12px"><b>Authorized Signature</b><br/><br/><div style="margin-top:30px;border-top:1px solid #222;display:inline-block;min-width:150px;text-align:center">${seller.legalName || inv.company}</div></div>
@@ -150,6 +159,7 @@ export default function Invoices() {
   const [sellers, setSellers] = useState({})
   const [customers, setCustomers] = useState([])
   const [hsnCodes, setHsnCodes] = useState([])
+  const [fxRates, setFxRates] = useState([])
   const [stockItems, setStockItems] = useState([])   // optional link: picking a stock item makes the sale reduce inventory and book cost of goods
   const [form, setForm] = useState(emptyForm)
   const [items, setItems] = useState([newItem()])
@@ -160,14 +170,16 @@ export default function Invoices() {
 
   const loadAll = async () => {
     try {
-      const [invSnap, custSnap, hsnSnap, uiplSnap, wayzimSnap, stockSnap] = await Promise.all([
+      const [invSnap, custSnap, hsnSnap, uiplSnap, wayzimSnap, stockSnap, fxSnap] = await Promise.all([
         getDocs(collection(db, 'finance_invoices')),
         getDocs(collection(db, 'crm_customers')),
         getDocs(collection(db, 'finance_hsn_codes')),
         getDoc(doc(db, 'company_settings', 'UIPL')),
         getDoc(doc(db, 'company_settings', 'Wayzim')),
         getDocs(collection(db, 'inventory_items')).catch(() => null),
+        getDocs(collection(db, 'finance_fx_rates')).catch(() => null),
       ])
+      const fxr = []; fxSnap?.forEach(d => fxr.push({ id: d.id, ...d.data() })); setFxRates(fxr)
       const stk = []; stockSnap?.forEach(d => stk.push({ id: d.id, ...d.data() }))
       stk.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       setStockItems(stk)
@@ -252,11 +264,22 @@ export default function Invoices() {
     try {
       const seller = sellers[form.company] || {}
       const invoiceNumber = await getNextInvoiceNumber(form.company, form.invoiceType)
-      const { subTotal, gstLines, total, roundOff } = computeTotals(
-        items, form.posStateCode, seller.stateCode, form.applyGst
-      )
+      const expNoTax = form.isExport && form.exportType === 'WOPAY'
+      const applyGstNow = form.applyGst && !expNoTax
+      const posCode = form.isExport && !expNoTax ? '96' : form.posStateCode
+      if (fx.isFc && !(fx.rate > 0)) { setError(`Enter the exchange rate for ${fx.currency}`); setSaving(false); return }
+      const base = computeTotals(items, posCode, seller.stateCode, applyGstNow)
+      const lines = items.filter(it => it.description.trim())
+      let subTotal = base.subTotal, gstLines = base.gstLines, total = base.total, roundOff = base.roundOff, fxDoc = null
+      if (fx.isFc) {
+        const f = computeVoucherTotals(lines.map(i => ({ ...i, discountPct: 0 })), { supplyType: (form.isExport || !(seller.stateCode && posCode && seller.stateCode === posCode)) ? 'inter' : 'intra', applyGst: applyGstNow, rounding: false })
+        const b = convertTotals(f, fx.rate, fx.currency)
+        subTotal = b.subTotal; gstLines = b.gstLines; total = b.total; roundOff = 0
+        fxDoc = { currency: fx.currency, rate: fx.rate, subTotal: f.subTotal, taxTotal: f.taxTotal, total: f.total, gstLines: f.gstLines }
+      }
       const payload = {
-        ...form,
+        ...form, applyGst: applyGstNow, ...(form.isExport ? { posStateCode: posCode, posState: posCode === '96' ? 'Other Country' : form.posState } : {}),
+        currency: fx.currency, ...(fxDoc ? { fx: fxDoc } : {}),
         invoiceNumber,
         sellerName: seller.legalName || form.company,
         sellerGstin: seller.gstin || '',
@@ -264,7 +287,7 @@ export default function Invoices() {
         sellerStateCode: seller.stateCode || '',
         items: items.filter(it => it.description.trim()),
         subTotal, gstLines, roundOff, total,
-        totalInWords: amountInWords(total),
+        totalInWords: fxDoc ? `${fx.currency} ${fxDoc.total.toFixed(2)}` : amountInWords(total),
         status: 'draft',
         createdBy: user.uid,
         createdAt: new Date().toISOString(),
@@ -279,17 +302,30 @@ export default function Invoices() {
 
   const handlePrint = (inv) => {
     const seller = { legalName: inv.sellerName, gstin: inv.sellerGstin, ...sellers[inv.company] }
-    const { subTotal, gstLines, total, roundOff } = computeTotals(
-      inv.items || [], inv.posStateCode, inv.sellerStateCode, inv.applyGst !== false
-    )
-    const html = buildPrintHtml({ inv, items: inv.items || [], seller, gstLines, subTotal, roundOff, total })
+    const fcInv = inv.fx?.currency && inv.fx.currency !== 'INR'
+    const t = fcInv ? { subTotal: inv.fx.subTotal, gstLines: inv.fx.gstLines || [], total: inv.fx.total, roundOff: 0 }
+      : computeTotals(inv.items || [], inv.posStateCode, inv.sellerStateCode, inv.applyGst !== false)
+    const html = buildPrintHtml({ inv, items: inv.items || [], seller, gstLines: t.gstLines, subTotal: t.subTotal, roundOff: t.roundOff, total: t.total, fx: fcInv ? inv.fx : null })
     const w = window.open('', '_blank', 'width=860,height=960')
     w.document.write(html); w.document.close()
     setTimeout(() => { w.print() }, 400)
   }
 
   const seller = sellers[form.company] || {}
-  const { subTotal, gstLines, total, roundOff } = computeTotals(items, form.posStateCode, seller.stateCode, form.applyGst)
+  const fx = useFx({ fxRates }, form.invoiceDate)
+  // Export under LUT = zero-rated: no GST. Export with payment of IGST is always an inter-state (IGST) supply.
+  const exportNoTax = form.isExport && form.exportType === 'WOPAY'
+  const effApplyGst = form.applyGst && !exportNoTax
+  const effPosCode = form.isExport && !exportNoTax ? '96' : form.posStateCode
+  const inrTotals = computeTotals(items, effPosCode, seller.stateCode, effApplyGst)
+  // foreign currency: totals in that currency (no rupee rounding) and the rupee value booked in the accounts
+  const fcT = fx.isFc ? computeVoucherTotals(items.map(i => ({ ...i, discountPct: 0 })), { supplyType: (form.isExport || !(seller.stateCode && effPosCode && seller.stateCode === effPosCode)) ? 'inter' : 'intra', applyGst: effApplyGst, rounding: false }) : null
+  const booked = fcT && fx.rate > 0 ? convertTotals(fcT, fx.rate, fx.currency) : null
+  const subTotal = fcT ? fcT.subTotal : inrTotals.subTotal
+  const gstLines = fcT ? fcT.gstLines : inrTotals.gstLines
+  const total = fcT ? fcT.total : inrTotals.total
+  const roundOff = fcT ? 0 : inrTotals.roundOff
+  const sym = fx.isFc ? `${fx.symbol} ` : '₹'
 
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>
 
@@ -341,6 +377,28 @@ export default function Invoices() {
               Apply GST
             </label>
           </div>
+        </div>
+
+        <CurrencyBar fx={fx} date={form.invoiceDate} totalFc={total} label="Invoice currency" />
+
+        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-4 space-y-3">
+          <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer font-medium">
+            <input type="checkbox" checked={form.isExport} onChange={e => setForm(p => ({ ...p, isExport: e.target.checked }))} />
+            Export supply (goods or services to a customer outside India)
+          </label>
+          {form.isExport && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="col-span-2"><label className={lbl}>Tax treatment</label>
+                <select className={inp} value={form.exportType} onChange={e => setForm(p => ({ ...p, exportType: e.target.value }))}>
+                  <option value="WOPAY">Zero-rated under LUT — no GST charged</option>
+                  <option value="WPAY">With payment of IGST (refund claimed later)</option>
+                </select></div>
+              <div><label className={lbl}>Shipping bill no.</label><input className={inp} value={form.shippingBillNo} onChange={e => setForm(p => ({ ...p, shippingBillNo: e.target.value }))} /></div>
+              <div><label className={lbl}>Shipping bill date</label><input type="date" className={inp} value={form.shippingBillDate} onChange={e => setForm(p => ({ ...p, shippingBillDate: e.target.value }))} /></div>
+              <div><label className={lbl}>Port code</label><input className={inp} value={form.portCode} maxLength={6} onChange={e => setForm(p => ({ ...p, portCode: e.target.value.toUpperCase() }))} /></div>
+              <p className="col-span-full text-xs text-slate-400">Exports appear in GSTR-1 table 6A. The shipping bill details can be added later by your CA on the portal; leave blank for services.</p>
+            </div>
+          )}
         </div>
 
         {/* Seller info */}
@@ -412,7 +470,7 @@ export default function Invoices() {
                 <th className="px-3 py-2" style={{width:'12%'}}>HSN/SAC</th>
                 <th className="px-3 py-2" style={{width:'8%'}}>Qty</th>
                 <th className="px-3 py-2" style={{width:'8%'}}>Unit</th>
-                <th className="px-3 py-2" style={{width:'12%'}}>Rate (₹)</th>
+                <th className="px-3 py-2" style={{width:'12%'}}>Rate ({fx.isFc ? fx.symbol : '₹'})</th>
                 <th className="px-3 py-2" style={{width:'8%'}}>GST %</th>
                 <th className="px-3 py-2 text-right" style={{width:'12%'}}>Amount</th>
                 <th className="px-3 py-2" style={{width:'6%'}}></th>
@@ -441,7 +499,7 @@ export default function Invoices() {
                     </td>
                     <td className="px-2 py-1"><input type="number" className={inp} value={it.rate} min={0} onChange={e => updateItem(idx, 'rate', e.target.value)} /></td>
                     <td className="px-2 py-1"><input type="number" className={inp} value={it.gstRate} min={0} max={40} onChange={e => updateItem(idx, 'gstRate', e.target.value)} /></td>
-                    <td className="px-2 py-1 text-right font-medium">₹{amt.toLocaleString('en-IN')}</td>
+                    <td className="px-2 py-1 text-right font-medium">{sym}{amt.toLocaleString('en-IN')}</td>
                     <td className="px-2 py-1 text-center">
                       {items.length > 1 && <button type="button" onClick={() => setItems(p => p.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 text-lg">×</button>}
                     </td>
@@ -454,12 +512,13 @@ export default function Invoices() {
           <div className="px-4 py-3 bg-slate-50 border-t text-sm">
             <div className="flex justify-end">
               <div className="w-64 space-y-1">
-                <div className="flex justify-between"><span className="text-slate-500">Sub Total</span><span>₹{subTotal.toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Sub Total</span><span>{sym}{subTotal.toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>
                 {gstLines.map((g, i) => (
-                  <div key={i} className="flex justify-between text-slate-600"><span>{g.label}</span><span>₹{g.amount.toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>
+                  <div key={i} className="flex justify-between text-slate-600"><span>{g.label}</span><span>{sym}{g.amount.toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>
                 ))}
                 {roundOff !== 0 && <div className="flex justify-between text-slate-500"><span>Rounding</span><span>{roundOff.toFixed(2)}</span></div>}
-                <div className="flex justify-between font-bold text-base border-t pt-1"><span>Total</span><span>₹{total.toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>
+                <div className="flex justify-between font-bold text-base border-t pt-1"><span>Total</span><span>{sym}{total.toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>
+                {booked && <div className="flex justify-between text-xs text-amber-800 bg-amber-50 rounded px-2 py-1"><span>Booked in accounts as</span><span className="font-semibold">₹{booked.total.toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>}
               </div>
             </div>
           </div>

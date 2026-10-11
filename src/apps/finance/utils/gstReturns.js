@@ -65,9 +65,14 @@ export function buildGstr1(docs, { company, from, to, companyStateCode, gstin })
   const warnings = []
 
   const b2b = {}, b2cl = {}, b2cs = {}, nil = { interReg: 0, intraReg: 0, interUnreg: 0, intraUnreg: 0 }
+  const exports = []   // table 6A
   const inv = (d) => ({ number: d.number, date: d.date, value: d.total, pos: d.stateCode || companyStateCode, posName: stateName(d.stateCode || companyStateCode), rows: rateRows(d).filter(r => r.rate > 0 || d.taxable > 0), taxable: d.taxable, tax: d.taxTotal, partyName: d.partyName, gstin: d.gstin, key: d.key })
 
   sales.forEach(d => {
+    if (d.isExport) {
+      exports.push({ number: d.number, date: d.date, value: d.total, taxable: d.taxable, igst: d.igst, exportType: d.exportType === 'WPAY' ? 'WPAY' : 'WOPAY', sbNo: d.shippingBillNo, sbDate: d.shippingBillDate, portCode: d.portCode, partyName: d.partyName, currency: d.currency, fcTotal: d.fcTotal, key: d.key, rate: d.exportType === 'WPAY' ? (rateRows(d).find(r => r.rate > 0)?.rate || 0) : 0 })
+      return
+    }
     const registered = isRegisteredGstin(d.gstin)
     const pos = d.stateCode || companyStateCode
     if (!pos) warnings.push(`${d.number}: place of supply is missing — set the customer's state.`)
@@ -119,6 +124,7 @@ export function buildGstr1(docs, { company, from, to, companyStateCode, gstin })
   })
 
   const hsn = hsnSummary(docs, { company, from, to, split: true })
+  exports.forEach(e => { if (!e.sbNo && e.exportType === 'WPAY') warnings.push(`${e.number}: export with payment of IGST needs a shipping bill number to claim the refund.`) })
   if (hsn.missingHsn) warnings.push(`${hsn.missingHsn} HSN line(s) have no HSN/SAC code — Table 12 needs it (4 digits up to ₹5 cr turnover, 6 digits above).`)
 
   // Documents issued (Table 13) — contiguous series per prefix.
@@ -149,7 +155,7 @@ export function buildGstr1(docs, { company, from, to, companyStateCode, gstin })
     cdn: { count: cns.length, taxable: sum(cns, d => d.taxable), tax: sum(cns, d => d.taxTotal) },
     sales: { count: sales.length, taxable: sum(sales, d => d.taxable), tax: sum(sales, d => d.taxTotal) },
   }
-  return { b2b: b2bList, b2cl: b2clList, b2cs: b2csList, cdnr: cdnrList, cdnur, nil, hsn, docIssued, totals, warnings: [...new Set(warnings)], gstin, period: { from, to } }
+  return { b2b: b2bList, b2cl: b2clList, b2cs: b2csList, cdnr: cdnrList, cdnur, nil, exports, hsn, docIssued, totals, warnings: [...new Set(warnings)], gstin, period: { from, to } }
 }
 
 // Portal offline-utility JSON (GSTR-1). Item numbering restarts per invoice.
@@ -159,6 +165,7 @@ export function gstr1Json(g, { gstin, to, grossTurnover = 0, currentGrossTurnove
   if (g.b2b.length) out.b2b = g.b2b.map(p => ({ ctin: p.ctin, inv: p.invoices.map(i => ({ inum: i.number, idt: portalDate(i.date), val: i.value, pos: i.pos, rchrg: 'N', inv_typ: 'R', itms: itms(i.rows) })) }))
   if (g.b2cl.length) out.b2cl = g.b2cl.map(p => ({ pos: p.pos, inv: p.invoices.map(i => ({ inum: i.number, idt: portalDate(i.date), val: i.value, itms: itms(i.rows) })) }))
   if (g.b2cs.length) out.b2cs = g.b2cs.map(x => ({ sply_ty: x.supplyType, rt: x.rate, typ: 'OE', pos: x.pos, txval: x.taxable, iamt: x.igst, camt: x.cgst, samt: x.sgst, csamt: 0 }))
+  if (g.exports?.length) out.exp = ['WOPAY', 'WPAY'].filter(t => g.exports.some(e => e.exportType === t)).map(t => ({ exp_typ: t, inv: g.exports.filter(e => e.exportType === t).map(e => ({ inum: e.number, idt: portalDate(e.date), val: e.value, ...(e.portCode ? { sbpcode: e.portCode } : {}), ...(e.sbNo ? { sbnum: e.sbNo } : {}), ...(e.sbDate ? { sbdt: portalDate(e.sbDate) } : {}), itms: [{ txval: e.taxable, rt: e.rate, iamt: e.igst, csamt: 0 }] })) }))
   if (g.cdnr.length) out.cdnr = g.cdnr.map(p => ({ ctin: p.ctin, nt: p.notes.map(n => ({ ntty: 'C', nt_num: n.number, nt_dt: portalDate(n.date), val: n.value, pos: n.pos, rchrg: 'N', inv_typ: 'R', itms: itms(n.rows) })) }))
   if (g.cdnur.length) out.cdnur = g.cdnur.map(n => ({ typ: 'B2CL', ntty: 'C', nt_num: n.number, nt_dt: portalDate(n.date), val: n.value, pos: n.pos, itms: itms(n.rows) }))
   // sply_ty codes (portal naming): INTRB2B / INTRB2C = inter-state to registered / unregistered; INTRAB2B / INTRAB2C = intra-state.
@@ -199,10 +206,11 @@ export function buildGstr3b(docs, { company, from, to, companyStateCode, opening
   const purchases = periodDocs(docs, 'purchase', company, from, to).filter(d => !d.legacy)
   const dns = periodDocs(docs, 'debit_note', company, from, to)
 
-  const t31a = zeroTax(), t31c = zeroTax(), t31d = zeroTax()
+  const t31a = zeroTax(), t31b = zeroTax(), t31c = zeroTax(), t31d = zeroTax()
   const interUnreg = {}   // 3.2: pos → { taxable, igst }
   ;[[sales, 1], [cns, -1]].forEach(([list, sign]) => list.forEach(d => {
     const rows = rateRows(d)
+    if (d.isExport) { addRows(t31b, rows, sign); return }          // exports are zero-rated supplies, 3.1(b)
     addRows(t31a, rows.filter(r => r.rate > 0), sign)
     addRows(t31c, rows.filter(r => r.rate === 0), sign)
     const pos = d.stateCode || companyStateCode
@@ -240,7 +248,7 @@ export function buildGstr3b(docs, { company, from, to, companyStateCode, opening
   const legacy = docsOfKind(docs, 'purchase', { company, from, to }).filter(d => d.legacy)
   if (legacy.length) warnings.push(`${legacy.length} old Payables record(s) in this period carry no GST detail, so no ITC is claimed on them. Re-enter them as Purchase vouchers to claim ITC.`)
 
-  return { t31a, t31c, t31d, interUnreg: Object.values(interUnreg), itcImport, itcRcm, itcOther, itcRevOther, itcBlocked, grossItc, netItc, available, setOff: so, rcmCash, cashTotal, openingCredit, warnings }
+  return { t31a, t31b, t31c, t31d, interUnreg: Object.values(interUnreg), itcImport, itcRcm, itcOther, itcRevOther, itcBlocked, grossItc, netItc, available, setOff: so, rcmCash, cashTotal, openingCredit, warnings }
 }
 
 // ═══ ITC REGISTER ═══════════════════════════════════════════════════════════

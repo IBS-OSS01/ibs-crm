@@ -11,7 +11,7 @@ export const newLine = () => ({ description: '', hsnCode: '', qty: 1, unit: 'pcs
 const cell = 'px-1.5 py-1.5'
 const mini = 'w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white'
 
-export default function ItemsEditor({ items, onChange, computed = [], date, stockItems = [], hsnCodes = [], accounts = [], accountLabel = 'Ledger', defaultAccountCode = '', applyGst = true, readOnly = false }) {
+export default function ItemsEditor({ items, onChange, computed = [], date, stockItems = [], hsnCodes = [], accounts = [], accountLabel = 'Ledger', defaultAccountCode = '', applyGst = true, readOnly = false, symbol = '' }) {
   const rates = gstRatesFor(date)
   const update = (i, patch) => onChange(items.map((it, idx) => idx === i ? { ...it, ...patch } : it))
   const pickStock = (i, id) => {
@@ -34,7 +34,7 @@ export default function ItemsEditor({ items, onChange, computed = [], date, stoc
         <thead className="text-xs text-slate-500 uppercase tracking-wide">
           <tr>
             <th className={`${cell} text-left w-44`}>Stock item</th><th className={`${cell} text-left`}>Description</th><th className={`${cell} text-left w-24`}>HSN/SAC</th>
-            <th className={`${cell} text-right w-20`}>Qty</th><th className={`${cell} text-left w-20`}>Unit</th><th className={`${cell} text-right w-28`}>Rate</th>
+            <th className={`${cell} text-right w-20`}>Qty</th><th className={`${cell} text-left w-20`}>Unit</th><th className={`${cell} text-right w-28`}>Rate{symbol && symbol !== '₹' ? ` (${symbol})` : ''}</th>
             <th className={`${cell} text-right w-16`}>Disc %</th><th className={`${cell} text-right w-20`}>GST %</th>
             {accounts.length > 0 && <th className={`${cell} text-left w-40`}>{accountLabel}</th>}
             <th className={`${cell} text-right w-28`}>Amount</th><th className="w-8" />
@@ -79,15 +79,16 @@ export default function ItemsEditor({ items, onChange, computed = [], date, stoc
   )
 }
 
-export function TotalsBox({ totals, rcm, tds, extra }) {
+export function TotalsBox({ totals, rcm, tds, extra, symbol = '₹', inr = null }) {
   return (
     <div className="ml-auto w-full max-w-sm space-y-1 text-sm">
       <div className="flex justify-between text-slate-600"><span>Taxable value</span><span>{fmtAmt(totals.subTotal)}</span></div>
       {totals.gstLines.map(g => <div key={g.label} className="flex justify-between text-slate-500"><span>{g.label}{rcm ? ' (RCM — payable by you)' : ''}</span><span>{fmtAmt(g.amount)}</span></div>)}
       {totals.roundOff !== 0 && <div className="flex justify-between text-slate-400"><span>Round off</span><span>{fmtAmt(totals.roundOff)}</span></div>}
-      <div className="flex justify-between font-bold text-slate-800 border-t border-slate-200 pt-1.5"><span>Invoice total</span><span>₹{fmtAmt(totals.total)}</span></div>
+      <div className="flex justify-between font-bold text-slate-800 border-t border-slate-200 pt-1.5"><span>Invoice total</span><span>{symbol}{symbol.length > 1 ? ' ' : ''}{fmtAmt(totals.total)}</span></div>
       {tds?.applicable && tds.amount > 0 && <div className="flex justify-between text-red-600"><span>Less: TDS {tds.section} @ {tds.rate}%</span><span>− {fmtAmt(tds.amount)}</span></div>}
       {tds?.applicable && tds.amount > 0 && <div className="flex justify-between font-bold text-blue-700"><span>Net payable to vendor</span><span>₹{fmtAmt(totals.total - tds.amount)}</span></div>}
+      {inr && <div className="flex justify-between text-amber-800 bg-amber-50 rounded px-2 py-1 text-xs"><span>Booked in the accounts as</span><span className="font-semibold">₹{fmtAmt(inr.total)}</span></div>}
       {extra}
     </div>
   )

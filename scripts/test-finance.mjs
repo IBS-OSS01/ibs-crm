@@ -14,6 +14,7 @@ import { tradingPL, cashFlow, ratios, costCentreSummary, budgetVsActual, balance
 import { parseBankStatement, bookEntries, autoMatch, reconciliation } from '../src/apps/finance/utils/bankRecon.js'
 import { tallyVouchers, tallyMasters } from '../src/apps/finance/utils/tallyExport.js'
 import { buildEInvoice, buildEwayBill, invoiceProblems, ewayProblems, gstr3bJson } from '../src/apps/finance/utils/einvoice.js'
+import { convertTotals, rateOn, revaluation, fmtFc } from '../src/apps/finance/utils/fx.js'
 import { buildGstr1, gstr1Json, buildGstr3b, setOff, hsnSummary, itcRegister, reconcile2b, parseGstr2bJson, normInvNo } from '../src/apps/finance/utils/gstReturns.js'
 
 let pass = 0, fail = 0
@@ -333,6 +334,56 @@ fdv = { id: 'fd2', voucherType: 'receipt', voucherNumber: 'RCT/9', company: 'UIP
 fdL = deriveVoucherLines(fdv, fdAccts)
 ok(balanced(fdL), 'FD maturity receipt (principal + interest, bank TDS) balances')
 eq(sumBy(fdL, '1100', 'debit'), 106300, 'bank receives principal + interest - TDS'); eq(sumBy(fdL, '1310', 'debit'), 700, 'TDS receivable booked'); eq(sumBy(fdL, '1600', 'credit'), 100000, 'FD closed'); eq(sumBy(fdL, '4910', 'credit'), 7000, 'interest income')
+
+section('multi-currency')
+const fcT = computeVoucherTotals([{ qty: 10, rate: 100, gstRate: 0 }], { supplyType: 'inter', applyGst: false, rounding: false })
+const inrT = convertTotals(fcT, 83, 'USD')
+eq(inrT.total, 83000, 'USD 1,000 at 83 = ₹83,000'); eq(inrT.fc.total, 1000, 'foreign total remembered')
+const usdBill = { id: 'ub1', voucherType: 'purchase', voucherNumber: 'PUR/U1', company: 'UIPL', date: '2026-07-01', partyName: 'Acme Inc', partyId: 'v7', applyGst: false, creditDays: 30, currency: 'USD', fxRate: 83, fc: inrT.fc, items: inrT.items, gstLines: inrT.gstLines, subTotal: inrT.subTotal, total: inrT.total, roundOff: 0 }
+let uL = deriveVoucherLines(usdBill, accounts)
+ok(balanced(uL), 'foreign purchase balances in INR'); eq(sumBy(uL, '2100', 'credit'), 83000, 'payable in INR')
+ok(uL.find(l => l.accountCode === '2100').fcAmount === 1000 && uL.find(l => l.accountCode === '2100').currency === 'USD', 'payable line remembers USD 1,000')
+// pay in full at a worse rate: loss
+const usdPay = { id: 'up1', voucherType: 'payment', voucherNumber: 'PAY/U1', company: 'UIPL', date: '2026-08-01', partyName: 'Acme Inc', partyId: 'v7', bankAccountCode: '1100', currency: 'USD', fxRate: 85,
+  partyAmount: 83000, bankAmountInr: 85000, allocations: [{ billKey: 'purchase:ub1', docNumber: 'PUR/U1', amount: 83000, fcAmount: 1000, billRate: 83 }] }
+let pL = deriveVoucherLines(usdPay, accounts)
+ok(balanced(pL), 'foreign payment balances'); eq(sumBy(pL, '1100', 'credit'), 85000, 'bank pays at today\'s rate'); eq(sumBy(pL, '2100', 'debit'), 83000, 'bill cleared at its booking rate'); eq(sumBy(pL, '5925', 'debit'), 2000, 'exchange loss booked')
+let os3 = computeOutstanding([...uL, ...pL], { kind: 'payable', company: 'UIPL', asOf: '2026-12-31' })
+ok(os3.parties.length === 0, 'fully settled foreign bill leaves nothing outstanding')
+// part payment: USD 400 at 81 -> gain
+const part = { ...usdPay, id: 'up2', fxRate: 81, partyAmount: 33200, bankAmountInr: 32400, allocations: [{ billKey: 'purchase:ub1', docNumber: 'PUR/U1', amount: 33200, fcAmount: 400, billRate: 83 }] }
+pL = deriveVoucherLines(part, accounts)
+ok(balanced(pL) && sumBy(pL, '4925', 'credit') === 800, 'part payment at a better rate books an exchange gain')
+os3 = computeOutstanding([...uL, ...pL], { kind: 'payable', company: 'UIPL', asOf: '2026-12-31' })
+const ob = os3.parties[0].bills[0]
+eq(ob.pending, 49800, 'rupee balance'); eq(ob.fcPending, 600, 'USD 600 still owed')
+const rv = revaluation(os3.parties[0].bills, 'payable', () => 86)
+eq(rv[0].closingInr, 51600, 'USD 600 at closing rate 86'); eq(rv[0].gain, -1800, 'unrealised loss on a payable when the currency strengthens')
+// foreign sales invoice + receipt at better rate: gain
+const usdInv = { id: 'ui1', invoiceType: 'TI', invoiceNumber: 'INV/U1', invoiceDate: '2026-07-05', company: 'UIPL', billToName: 'Zeta LLC', applyGst: false, subTotal: 41000, gstLines: [], total: 41000, roundOff: 0, fx: { currency: 'USD', rate: 82, total: 500 } }
+const invL = deriveAllLines({ invoices: [usdInv], payments: [], orders: [], expenses: [], payables: [], accounts, vouchers: [] })
+const usdRct = { id: 'ur1', voucherType: 'receipt', voucherNumber: 'RCT/U1', company: 'UIPL', date: '2026-08-05', partyName: 'Zeta LLC', bankAccountCode: '1100', currency: 'USD', fxRate: 84, partyAmount: 41000, bankAmountInr: 42000, allocations: [{ billKey: 'invoice:ui1', docNumber: 'INV/U1', amount: 41000, fcAmount: 500, billRate: 82 }] }
+const rL = deriveVoucherLines(usdRct, accounts)
+ok(balanced(rL) && sumBy(rL, '4925', 'credit') === 1000 && sumBy(rL, '1100', 'debit') === 42000, 'foreign receipt at a better rate books an exchange gain')
+ok(computeOutstanding([...invL, ...rL], { kind: 'receivable', company: 'UIPL', asOf: '2026-12-31' }).parties.length === 0, 'foreign invoice cleared by the receipt')
+const rates = [{ currency: 'USD', date: '2026-07-01', rate: 83 }, { currency: 'USD', date: '2026-08-01', rate: 85 }]
+eq(rateOn(rates, 'USD', '2026-07-20'), 83, 'rate on a date uses the latest rate on or before it'); eq(rateOn(rates, 'USD', '2026-09-01'), 85, 'later date uses latest known'); eq(rateOn(rates, 'INR', '2026-09-01'), 1, 'INR is always 1')
+ok(fmtFc(1234.5, 'USD') === '$ 1,234.50', 'foreign amount formatting')
+
+section('exports (GST)')
+const expInv = { id: 'ex1', invoiceType: 'TI', invoiceNumber: 'EXP/1', invoiceDate: '2026-07-05', company: 'UIPL', billToName: 'Zeta LLC', applyGst: false, isExport: true, exportType: 'WOPAY', shippingBillNo: '123456', portCode: 'INBOM1', posStateCode: '96', sellerStateCode: '27',
+  items: [{ description: 'Service', hsnCode: '9983', qty: 1, rate: 500, gstRate: 18, unit: 'nos' }], subTotal: 41000, gstLines: [], total: 41000, roundOff: 0, fx: { currency: 'USD', rate: 82, total: 500, subTotal: 500, taxTotal: 0, gstLines: [] } }
+const exDocs = normalizeTaxDocs({ invoices: [expInv, ...invoices.slice(0, 1)], vouchers: [], payables: [], vendors: [] })
+const gx = buildGstr1(exDocs, { company: 'UIPL', from: '2026-04-01', to: '2026-12-31', companyStateCode: '27', gstin: '27AADCU8036C1ZF' })
+ok(gx.exports.length === 1 && gx.exports[0].exportType === 'WOPAY' && gx.exports[0].taxable === 41000, 'export invoice goes to table 6A')
+ok(gx.b2b.every(p => p.invoices.every(i => i.number !== 'EXP/1')), 'export invoice is not in B2B / B2C')
+eq(gx.nil.interUnreg + gx.nil.interReg + gx.nil.intraReg + gx.nil.intraUnreg, 0, 'export is not reported as nil-rated')
+const gxj = gstr1Json(gx, { gstin: '27AADCU8036C1ZF', to: '2026-12-31' })
+ok(gxj.exp?.[0].exp_typ === 'WOPAY' && gxj.exp[0].inv[0].sbnum === '123456' && gxj.exp[0].inv[0].itms[0].txval === 41000, 'portal JSON carries exports')
+const g3x = buildGstr3b(exDocs, { company: 'UIPL', from: '2026-04-01', to: '2026-12-31', companyStateCode: '27' })
+eq(g3x.t31b.taxable, 41000, '3B 3.1(b) zero-rated supplies include the export'); eq(g3x.t31c.taxable, 0, 'export not in nil-rated')
+const hs = hsnSummary(normalizeTaxDocs({ invoices: [expInv], vouchers: [], payables: [], vendors: [] }), { company: 'UIPL', from: '2026-04-01', to: '2026-12-31', split: false })
+eq(hs.rows.find(r => r.hsn === '9983' && r.rate === 18 && r.taxable === 41000) ? 1 : 0, 1, 'HSN summary uses rupee value of foreign items')
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

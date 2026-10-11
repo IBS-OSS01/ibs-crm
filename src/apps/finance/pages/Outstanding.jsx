@@ -107,7 +107,7 @@ export default function Outstanding() {
                         <tbody>{p.bills.map(b => (
                           <tr key={b.billKey} className="border-t border-slate-200/60">
                             <td className="py-1 font-mono">{b.docNo}</td><td>{b.externalRef}</td><td>{b.date}</td><td>{b.dueDate}</td>
-                            <td className="text-right">{fmtAmt(b.original)}</td><td className="text-right font-medium">{fmtAmt(b.pending)}</td>
+                            <td className="text-right">{fmtAmt(b.original)}</td><td className="text-right font-medium">{fmtAmt(b.pending)}{b.currency && <span className="block text-[10px] font-normal text-amber-700">{b.currency} {fmtAmt(b.fcPending)} @ {b.fxRate}</span>}</td>
                             <td className={`text-right ${b.daysOverdue > 0 ? 'text-red-600 font-medium' : 'text-slate-400'}`}>{b.daysOverdue > 0 ? `${b.daysOverdue} days` : 'not due'}</td>
                           </tr>))}</tbody>
                       </table>

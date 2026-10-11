@@ -36,6 +36,7 @@ export const COLLECTIONS = {
   tdsSections: 'finance_tds_sections',
   tdsChallans: 'finance_tds_challans',
   tdsReturns: 'finance_tds_returns',
+  fxRates: 'finance_fx_rates',
   gstChallans: 'finance_gst_challans',
   gstr2bImports: 'finance_gstr2b_imports',
   bankStatements: 'finance_bank_statement_lines',
@@ -48,7 +49,7 @@ export const CORE_KEYS = [
   'invoices', 'payments', 'orders', 'expenses', 'payables', 'accounts', 'journalEntries',
   'vouchers', 'vendors', 'customers', 'bankAccounts',
   // inventory — needed by every report because stock value feeds Stock in Hand / cost of goods
-  'stockItems', 'warehouses', 'stockAdjustments', 'stockTransfers', 'consumptionRequests',
+  'stockItems', 'warehouses', 'stockAdjustments', 'stockTransfers', 'consumptionRequests', 'fxRates',
 ]
 
 const TTL_MS = 60_000

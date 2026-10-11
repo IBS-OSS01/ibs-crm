@@ -3,17 +3,18 @@ import React, { useMemo, useState } from 'react'
 import { computeVoucherTotals, supplyTypeOf } from '../utils/taxCalc.js'
 import { isAccountingInvoice } from '../utils/ledger.js'
 import { addDays } from '../utils/voucherEngine.js'
+import { convertTotals } from '../utils/fx.js'
 import ItemsEditor, { newLine, TotalsBox } from './ItemsEditor.jsx'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
 import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
-  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect,
+  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar,
   vendorOptions, customerOptions, creditDaysFromTerms, companyStateCode, stateCodeFromName,
   todayStr, normName, num, gstinToStateCode, fmtAmt,
 } from './formShared.jsx'
 
 const cleanItems = (items) => items.filter(i => (i.description || '').trim() || num(i.rate) > 0)
-const lineFrom = (i) => ({ description: i.description || '', hsnCode: i.hsnCode || '', qty: i.qty ?? 1, unit: i.unit || 'pcs', rate: i.rate ?? '', discountPct: i.discountPct ?? 0, gstRate: i.gstRate ?? 18, stockItemId: i.stockItemId || '', sku: i.sku || '', accountCode: i.accountCode || '', ...(i.poLine !== undefined ? { poLine: i.poLine } : {}) })
+const lineFrom = (i) => ({ description: i.description || '', hsnCode: i.hsnCode || '', qty: i.qty ?? 1, unit: i.unit || 'pcs', rate: i.rateFc ?? i.rate ?? '', discountPct: i.discountPct ?? 0, gstRate: i.gstRate ?? 18, stockItemId: i.stockItemId || '', sku: i.sku || '', accountCode: i.accountCode || '', ...(i.poLine !== undefined ? { poLine: i.poLine } : {}) })
 
 // ═══ PURCHASE ═══════════════════════════════════════════════════════════════
 export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
@@ -34,14 +35,17 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
   const [tds, setTds] = useState(initial?.tds?.applicable ? { applicable: true, section: initial.tds.section, rate: initial.tds.rate, baseOverride: initial.tds.base } : { applicable: false })
   const [warehouseId, setWarehouseId] = useState(seed?.warehouseId || '')
   const draft = useAttachmentDraft()
+  const fx = useFx(raw, date, seed)
   const [costCentreId, setCostCentreId] = useState(seed?.costCentreId || '')
   const [narration, setNarration] = useState(seed?.narration || '')
 
   const compState = companyStateCode(raw, company)
   const vendorState = gstinToStateCode(vendor?.gstin) || stateCodeFromName(vendor?.state)
   const supplyType = supplyTypeOf(vendorState, compState)
-  const totals = useMemo(() => computeVoucherTotals(items, { supplyType, applyGst, rcm }), [items, supplyType, applyGst, rcm])
-  const tdsFinal = finalTds(tds, totals.subTotal)
+  const totals = useMemo(() => computeVoucherTotals(items, { supplyType, applyGst, rcm, rounding: !fx.isFc }), [items, supplyType, applyGst, rcm, fx.isFc])
+  // foreign currency: every ledger amount is the rupee value at the booking-date rate
+  const inr = useMemo(() => (fx.isFc && fx.rate > 0 ? convertTotals(totals, fx.rate, fx.currency) : totals), [totals, fx.isFc, fx.rate, fx.currency])
+  const tdsFinal = finalTds(tds, inr.subTotal)
   const expenseAccounts = useMemo(() => accounts.filter(a => a.type === 'expense' || a.code === '1500' || a.code === '1900'), [accounts])
   const stockItems = raw.stockItems || []
 
@@ -62,7 +66,9 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
       const lines = cleanItems(items)
       need(lines.length > 0, 'Add at least one line item with a rate.')
       need(!(rcm && !applyGst), 'Reverse charge needs GST to be applied.')
-      const t = computeVoucherTotals(lines, { supplyType, applyGst, rcm })
+      need(!fx.isFc || fx.rate > 0, `Enter the exchange rate for ${fx.currency}.`)
+      const tFc = computeVoucherTotals(lines, { supplyType, applyGst, rcm, rounding: !fx.isFc })
+      const t = fx.isFc ? convertTotals(tFc, fx.rate, fx.currency) : tFc
       need(t.total > 0, 'Invoice total is zero.')
       return {
         voucherType: 'purchase', company, date, partyType: 'vendor', partyId: vendor.id, partyName: vendor.name, partyGstin: vendor.gstin,
@@ -71,6 +77,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
         applyGst, rcm, itcEligible, purchaseAccountCode: '5000', warehouseId, costCentreId, ...(seed?.purchaseOrderId ? { purchaseOrderId: seed.purchaseOrderId, purchaseOrderNumber: seed.purchaseOrderNumber || '' } : {}),
         items: t.items.map(i => ({ ...i, accountCode: i.accountCode || '5000' })), gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal,
         roundOff: t.roundOff, total: t.total, tds: finalTds(tds, t.subTotal), narration: narration.trim(),
+        currency: fx.currency, fxRate: fx.isFc ? fx.rate : 1, fc: fx.isFc ? t.fc : null,
       }
     },
   })
@@ -102,14 +109,15 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
         <label className="flex items-center gap-2" title="Buyer pays the GST directly to the government (unregistered supplier / notified services)"><input type="checkbox" checked={rcm} disabled={!applyGst} onChange={e => setRcm(e.target.checked)} />Reverse charge (RCM)</label>
         <label className="flex items-center gap-2" title="Untick for blocked credits under section 17(5): motor vehicles, food, club memberships, etc."><input type="checkbox" checked={itcEligible} onChange={e => setItcEligible(e.target.checked)} />Input tax credit eligible</label>
       </div>
-      <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={stockItems} hsnCodes={raw.hsnCodes || []}
+      <CurrencyBar fx={fx} date={date} totalFc={totals.total} />
+      <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={stockItems} hsnCodes={raw.hsnCodes || []} symbol={fx.symbol}
         accounts={expenseAccounts} accountLabel="Purchase ledger" defaultAccountCode="5000" applyGst={applyGst} />
-      <TdsBlock raw={raw} vendor={vendor} date={date} base={totals.subTotal} tds={tds} setTds={setTds} fy={date ? `${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0)).slice(2)}-${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0) + 1).slice(2)}` : ''}
+      <TdsBlock raw={raw} vendor={vendor} date={date} base={inr.subTotal} tds={tds} setTds={setTds} fy={date ? `${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0)).slice(2)}-${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0) + 1).slice(2)}` : ''}
         partyId={vendor?.id} currentDocId={initial?.id} />
       <AttachmentPanel entityType="purchase" entityId={initial?.id} company={company} draft={draft} label="Vendor bill / challan" />
       <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} placeholder="Optional note" /></Field>
-      <TotalsBox totals={totals} rcm={rcm} tds={tdsFinal}
-        extra={applyGst && itcEligible && totals.taxTotal > 0 && <div className="flex justify-between text-green-700 text-xs"><span>ITC claimable</span><span>{fmtAmt(totals.taxTotal)}</span></div>} />
+      <TotalsBox totals={totals} rcm={rcm} tds={fx.isFc ? null : tdsFinal} symbol={fx.symbol} inr={fx.isFc ? inr : null}
+        extra={applyGst && itcEligible && inr.taxTotal > 0 && <div className="flex justify-between text-green-700 text-xs"><span>ITC claimable (₹)</span><span>{fmtAmt(inr.taxTotal)}</span></div>} />
     </FormShell>
   )
 }
@@ -135,6 +143,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
   const [narration, setNarration] = useState(initial?.narration || '')
   const [costCentreId, setCostCentreId] = useState(initial?.costCentreId || '')
   const draft = useAttachmentDraft()
+  const fx = useFx(raw, date, initial)
 
   // Parties that actually have documents to refer back to, plus master parties.
   const invoices = useMemo(() => (raw.invoices || []).filter(i => isAccountingInvoice(i) && i.invoiceDate && i.company === company), [raw, company])
@@ -167,9 +176,13 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
       setApplyGst((o.gstLines || []).length > 0); setSupplyType(o.supplyType || 'intra'); setItcEligible(o.itcEligible !== false)
     }
     setItems((o.items || []).map(lineFrom).concat([]).length ? (o.items || []).map(lineFrom) : [newLine()])
+    // a note against a foreign-currency document keeps that document's currency and booking rate
+    const oc = o.fx?.currency || o.currency
+    if (oc && oc !== 'INR') { fx.setCurrency(oc); fx.setRate(String(o.fx?.rate || o.fxRate || '')) } else fx.setCurrency('INR')
   }
 
-  const totals = useMemo(() => computeVoucherTotals(items, { supplyType, applyGst }), [items, supplyType, applyGst])
+  const totals = useMemo(() => computeVoucherTotals(items, { supplyType, applyGst, rounding: !fx.isFc }), [items, supplyType, applyGst, fx.isFc])
+  const inr = useMemo(() => (fx.isFc && fx.rate > 0 ? convertTotals(totals, fx.rate, fx.currency) : totals), [totals, fx.isFc, fx.rate, fx.currency])
 
   const { save, saving, error } = useVoucherSave({
     initial, onSaved, draft,
@@ -177,9 +190,12 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
       need(party, `Select the ${isCredit ? 'customer' : 'vendor'}.`)
       const lines = cleanItems(items)
       need(lines.length > 0, 'Add at least one line.')
-      const t = computeVoucherTotals(lines, { supplyType, applyGst })
+      need(!fx.isFc || fx.rate > 0, `Enter the exchange rate for ${fx.currency}.`)
+      const tFc = computeVoucherTotals(lines, { supplyType, applyGst, rounding: !fx.isFc })
+      const t = fx.isFc ? convertTotals(tFc, fx.rate, fx.currency) : tFc
       need(t.total > 0, 'Note value is zero.')
-      if (original && isCredit) need(t.total <= num(original.total) + 0.5, `Credit note (${fmtAmt(t.total)}) exceeds the original invoice (${fmtAmt(original.total)}).`)
+      const origTotal = fx.isFc ? num(original?.fx?.total ?? original?.fc?.total) : num(original?.total)
+      if (original && isCredit && origTotal) need(tFc.total <= origTotal + 0.5, `Credit note (${fmtAmt(tFc.total)}) exceeds the original invoice (${fmtAmt(origTotal)}).`)
       return {
         voucherType: type, company, date, partyType: isCredit ? 'customer' : 'vendor', partyId: party.id, partyName: party.name, partyGstin: party.gstin,
         ...(isCredit
@@ -188,6 +204,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
         reasonCode, reason: CN_REASONS.find(r => r[0] === reasonCode)?.[1] || '', applyGst, supplyType, itcEligible, costCentreId,
         companyStateCode: companyStateCode(raw, company),
         items: t.items, gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal, roundOff: t.roundOff, total: t.total, narration: narration.trim(),
+        currency: fx.currency, fxRate: fx.isFc ? fx.rate : 1, fc: fx.isFc ? t.fc : null,
       }
     },
   })
@@ -214,8 +231,8 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
         <select value={refId} onChange={e => loadOriginal(e.target.value)} className={formInputCls} disabled={!partyKey}>
           <option value="">{partyKey ? (originals.length ? '— none (not recommended) —' : 'No documents found for this party') : 'Select a party first'}</option>
           {originals.map(o => isCredit
-            ? <option key={o.id} value={o.id}>{o.invoiceNumber} · {o.invoiceDate} · ₹{fmtAmt(o.total)}</option>
-            : <option key={o.id} value={o.id}>{o.voucherNumber}{o.refNumber ? ` (${o.refNumber})` : ''} · {o.date} · ₹{fmtAmt(o.total)}</option>)}
+            ? <option key={o.id} value={o.id}>{o.invoiceNumber} · {o.invoiceDate} · {o.fx?.currency && o.fx.currency !== 'INR' ? `${o.fx.currency} ${fmtAmt(o.fx.total)}` : `₹${fmtAmt(o.total)}`}</option>
+            : <option key={o.id} value={o.id}>{o.voucherNumber}{o.refNumber ? ` (${o.refNumber})` : ''} · {o.date} · {o.fc?.currency ? `${o.fc.currency} ${fmtAmt(o.fc.total)}` : `₹${fmtAmt(o.total)}`}</option>)}
         </select>
         {original && <p className="text-xs text-slate-400 mt-1">Items, GST rates and supply type loaded from the original — reduce quantities to the returned amount, or replace with a single "post-sale discount" line.</p>}
       </div>
@@ -227,10 +244,11 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
         </label>
         {!isCredit && <label className="flex items-center gap-2"><input type="checkbox" checked={itcEligible} onChange={e => setItcEligible(e.target.checked)} />ITC was claimed on original</label>}
       </div>
-      <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={raw.stockItems || []} hsnCodes={raw.hsnCodes || []} applyGst={applyGst} />
+      <CurrencyBar fx={fx} date={date} totalFc={totals.total} />
+      <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={raw.stockItems || []} hsnCodes={raw.hsnCodes || []} applyGst={applyGst} symbol={fx.symbol} />
       <AttachmentPanel entityType={type} entityId={initial?.id} company={company} draft={draft} label="Supporting document" />
       <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
-      <TotalsBox totals={totals} />
+      <TotalsBox totals={totals} symbol={fx.symbol} inr={fx.isFc ? inr : null} />
     </FormShell>
   )
 }

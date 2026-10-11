@@ -17,6 +17,7 @@ export function buildVoucherIndex({ invoices = [], payments = [], orders = [], e
       narration: i.notes || '', collection: 'finance_invoices', id: i.id, memo,
       memoLabel: i.invoiceType === 'PI' ? 'Pro-forma Invoice' : i.invoiceType === 'SO' ? 'Sales Order' : '',
       status: i.status || '', taxable: r2(num(i.subTotal)),
+      ...(i.fx?.currency && i.fx.currency !== 'INR' ? { fcNote: `${i.fx.currency} ${num(i.fx.total).toFixed(2)} @ ${i.fx.rate}` } : {}),
     })
   })
 
@@ -76,12 +77,16 @@ export function buildVoucherIndex({ invoices = [], payments = [], orders = [], e
       const accSum = (v.accountLines || []).reduce((s, l) => s + num(l.amount), 0)
       amount = r2(num(v.partyAmount) - (v.tdsReceivable?.applicable ? num(v.tdsReceivable.amount) : 0) + accSum)
     } else if (v.voucherType === 'contra') amount = r2(num(v.amount))
+    // foreign-currency settlement: show the rupees that really moved through the bank
+    if (['payment', 'receipt'].includes(v.voucherType) && v.bankAmountInr !== undefined && v.bankAmountInr !== null && v.bankAmountInr !== '') amount = r2(num(v.bankAmountInr))
+    const fc = v.currency && v.currency !== 'INR' && num(v.fxRate) > 0
+    const fcNote = !fc ? '' : v.fc ? `${v.currency} ${num(v.fc.total).toFixed(2)} @ ${v.fxRate}` : `${v.currency} @ ${v.fxRate}`
     out.push({
       key: `voucher:${v.id}`, lineKey: `${v.voucherType}:${v.id}`, kind: v.voucherType, date: v.date, number: v.voucherNumber,
       partyName: v.partyName || (v.voucherType === 'contra' ? `${v.fromAccountName || ''} → ${v.toAccountName || ''}` : ''),
       amount, company: v.company || 'UIPL', narration: v.narration || '',
       collection: 'finance_vouchers', id: v.id, status: v.status === 'cancelled' ? 'cancelled' : '', cancelled: v.status === 'cancelled',
-      taxable: r2(num(v.subTotal)), refNumber: v.refNumber || '', voucherType: v.voucherType,
+      taxable: r2(num(v.subTotal)), refNumber: v.refNumber || '', voucherType: v.voucherType, ...(fcNote ? { fcNote } : {}),
       ...(v.voucherType === 'purchase_order' ? { memo: true, memoLabel: 'Purchase Order' } : {}),
     })
   })

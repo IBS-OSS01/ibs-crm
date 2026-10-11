@@ -54,6 +54,12 @@ function roundLine(accounts, roundOff, partyIsDebited) {
 // voucher's allocation refers back to it.
 export const billKey = (docType, docId) => `${docType}:${docId}`
 
+// Foreign-currency documents carry fc = { total } (in that currency) and fxRate (INR per 1 unit); every ledger
+// amount stays in INR, and the party line also remembers the foreign amount so bills can be settled in it.
+const isFc = (v) => !!v.currency && v.currency !== 'INR' && num(v.fxRate) > 0
+const fcTag = (v, inrPortion, inrTotal) => (isFc(v) && v.fc && num(inrTotal) > 0
+  ? { currency: v.currency, fcAmount: r2(num(v.fc.total) * num(inrPortion) / num(inrTotal)), fxRate: num(v.fxRate) } : {})
+
 export function deriveVoucherLines(v, accounts) {
   if (!v || v.status === 'cancelled' || !v.date) return []
   const t = v.voucherType
@@ -85,7 +91,7 @@ export function deriveVoucherLines(v, accounts) {
     const rcm = !!v.rcm
     const ap = line(accounts, '2100', 0, total - tds, {
       ...party, billKey: billKey('purchase', v.id), billRef: v.voucherNumber, externalRef: v.refNumber || '',
-      dueDate: v.dueDate || addDays(v.date, v.creditDays),
+      dueDate: v.dueDate || addDays(v.date, v.creditDays), ...fcTag(v, total - tds, total),
     })
     const heads = byAccount('5000')
     heads.forEach(([code, amt], idx) => {
@@ -117,7 +123,7 @@ export function deriveVoucherLines(v, accounts) {
       lines.push(line(accounts, OUTPUT_GST_CODE[head], num(g.amount), 0))
     })
     lines.push(line(accounts, '1200', 0, total, {
-      ...party, partyType: 'customer', billRef: v.voucherNumber,
+      ...party, partyType: 'customer', billRef: v.voucherNumber, ...fcTag(v, total, total),
       ...(v.refInvoiceId ? { allocatesTo: billKey('invoice', v.refInvoiceId) } : { onAccount: true }),
     }))
     const rl = roundLine(accounts, roundOff, false); if (rl) lines.push(rl)
@@ -138,7 +144,7 @@ export function deriveVoucherLines(v, accounts) {
       })
     }
     lines.push(line(accounts, '2100', total, 0, {
-      ...party, partyType: 'vendor', billRef: v.voucherNumber,
+      ...party, partyType: 'vendor', billRef: v.voucherNumber, ...fcTag(v, total, total),
       ...(v.refPurchaseId ? { allocatesTo: billKey('purchase', v.refPurchaseId) } : { onAccount: true }),
     }))
     const rl = roundLine(accounts, roundOff, true); if (rl) lines.push(rl)
@@ -150,6 +156,10 @@ export function deriveVoucherLines(v, accounts) {
     const accSum = r2(accLines.reduce((s, l) => s + num(l.amount), 0))
     const bankAmt = r2(partyAmt + accSum - tds)
     const bankCode = v.bankAccountCode || '1100'
+    // Foreign-currency payment: the bank pays (foreign amount x today's rate) while the bills clear at THEIR booking rate;
+    // the difference is a realised exchange gain / loss.
+    const bankPaid = v.bankAmountInr !== undefined && v.bankAmountInr !== null && v.bankAmountInr !== '' ? r2(num(v.bankAmountInr)) : bankAmt
+    const fxDiff = r2(bankPaid - bankAmt)
     if (partyAmt > 0) {
       const allocs = (v.allocations || []).filter(a => num(a.amount) > 0)
       let allocated = 0
@@ -157,14 +167,18 @@ export function deriveVoucherLines(v, accounts) {
         allocated += num(a.amount)
         lines.push(line(accounts, '2100', num(a.amount), 0, {
           ...party, partyType: 'vendor', billRef: a.docNumber || '', allocatesTo: a.billKey,
+          ...(a.fcAmount ? { currency: v.currency, fcAmount: num(a.fcAmount), fxRate: num(a.billRate) } : {}),
         }))
       })
       const rest = r2(partyAmt - allocated)
-      if (rest > 0.004) lines.push(line(accounts, '2100', rest, 0, { ...party, partyType: 'vendor', billRef: v.voucherNumber, onAccount: true }))
+      if (rest > 0.004) lines.push(line(accounts, '2100', rest, 0, { ...party, partyType: 'vendor', billRef: v.voucherNumber, onAccount: true,
+        ...(isFc(v) && num(v.onAccountFc) ? { currency: v.currency, fcAmount: num(v.onAccountFc), fxRate: num(v.fxRate) } : {}) }))
     }
     accLines.forEach(l => lines.push(line(accounts, l.accountCode, num(l.amount), 0, { description: l.description || '' })))
-    lines.push(line(accounts, bankCode, 0, bankAmt, isCashBank(bankCode) && v.bankAccountId ? { bankAccountId: v.bankAccountId } : {}))
+    lines.push(line(accounts, bankCode, 0, bankPaid, isCashBank(bankCode) && v.bankAccountId ? { bankAccountId: v.bankAccountId } : {}))
     if (tds) lines.push(line(accounts, '2500', 0, tds, { tdsSection: v.tds.section || '' }))
+    if (fxDiff > 0.004) lines.push(line(accounts, '5925', fxDiff, 0, { description: 'Exchange loss on settlement' }))
+    else if (fxDiff < -0.004) lines.push(line(accounts, '4925', 0, -fxDiff, { description: 'Exchange gain on settlement' }))
   }
 
   else if (t === 'receipt') {
@@ -174,7 +188,9 @@ export function deriveVoucherLines(v, accounts) {
     const tdsRec = v.tdsReceivable?.applicable ? r2(num(v.tdsReceivable.amount)) : 0
     const bankAmt = r2(partyAmt - tdsRec + accSum)
     const bankCode = v.bankAccountCode || '1100'
-    lines.push(line(accounts, bankCode, bankAmt, 0, isCashBank(bankCode) && v.bankAccountId ? { bankAccountId: v.bankAccountId } : {}))
+    const bankGot = v.bankAmountInr !== undefined && v.bankAmountInr !== null && v.bankAmountInr !== '' ? r2(num(v.bankAmountInr)) : bankAmt
+    const fxDiff = r2(bankGot - bankAmt)      // more rupees received than the receivable we cleared = gain
+    lines.push(line(accounts, bankCode, bankGot, 0, isCashBank(bankCode) && v.bankAccountId ? { bankAccountId: v.bankAccountId } : {}))
     if (tdsRec) lines.push(line(accounts, '1310', tdsRec, 0, { tdsSection: v.tdsReceivable.section || '' }))
     if (partyAmt > 0) {
       const allocs = (v.allocations || []).filter(a => num(a.amount) > 0)
@@ -183,12 +199,16 @@ export function deriveVoucherLines(v, accounts) {
         allocated += num(a.amount)
         lines.push(line(accounts, '1200', 0, num(a.amount), {
           ...party, partyType: 'customer', billRef: a.docNumber || '', allocatesTo: a.billKey,
+          ...(a.fcAmount ? { currency: v.currency, fcAmount: num(a.fcAmount), fxRate: num(a.billRate) } : {}),
         }))
       })
       const rest = r2(partyAmt - allocated)
-      if (rest > 0.004) lines.push(line(accounts, '1200', 0, rest, { ...party, partyType: 'customer', billRef: v.voucherNumber, onAccount: true }))
+      if (rest > 0.004) lines.push(line(accounts, '1200', 0, rest, { ...party, partyType: 'customer', billRef: v.voucherNumber, onAccount: true,
+        ...(isFc(v) && num(v.onAccountFc) ? { currency: v.currency, fcAmount: num(v.onAccountFc), fxRate: num(v.fxRate) } : {}) }))
     }
     accLines.forEach(l => lines.push(line(accounts, l.accountCode, 0, num(l.amount), { description: l.description || '' })))
+    if (fxDiff > 0.004) lines.push(line(accounts, '4925', 0, fxDiff, { description: 'Exchange gain on settlement' }))
+    else if (fxDiff < -0.004) lines.push(line(accounts, '5925', -fxDiff, 0, { description: 'Exchange loss on settlement' }))
   }
 
   else if (t === 'contra') {

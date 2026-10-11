@@ -70,11 +70,13 @@ export const NAV_GROUPS = [
     { label: 'Other registers', icon: '🗄️', path: '/finance/registers/receipt', keywords: 'receipt payment contra journal register' },
     { label: 'Cost centres', icon: '🎯', path: '/finance/cost-centres', keywords: 'project site department' },
     { label: 'Budgets', icon: '📐', path: '/finance/budgets', keywords: 'budget vs actual' },
+    { label: 'Forex revaluation', icon: '💱', path: '/finance/fx/revaluation', keywords: 'foreign currency exchange gain loss year end unrealised multi currency' },
     { label: 'Project costs', icon: '📋', path: '/finance/projectcosts', keywords: 'project' },
   ]},
   { id: 'settings', label: 'Settings', icon: '⚙️', items: [
     { label: 'Company settings', icon: '🏢', path: '/finance/settings', keywords: 'gstin tan state address bank details lock' },
     { label: 'Chart of accounts', icon: '📚', path: '/finance/accounts', keywords: 'ledgers accounts coa' },
+    { label: 'Exchange rates', icon: '💱', path: '/finance/fx/rates', keywords: 'currency usd eur rate multi currency forex' },
     { label: 'HSN / SAC master', icon: '📋', path: '/finance/hsn', keywords: 'hsn codes gst rate' },
     { label: 'Journal entries', icon: '📝', path: '/finance/journal', keywords: 'manual adjustment journal' },
     { label: 'Audit trail & lock period', icon: '🔒', path: '/finance/audit', keywords: 'who changed lock close year' },
