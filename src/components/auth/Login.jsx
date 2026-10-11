@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth'
 import { auth } from '../../lib/firebase-config'
@@ -23,7 +23,11 @@ export default function Login() {
   const [resetSending, setResetSending] = useState(false)
   const [resetMessage, setResetMessage] = useState('')
   const navigate = useNavigate()
-  const { disabledMessage, clearDisabledMessage } = useAuth()
+  const { user, disabledMessage, clearDisabledMessage } = useAuth()
+
+  // Go in as soon as the app has the signed-in user. Navigating straight after signIn() raced the profile load
+  // (the protected page saw "no user yet" and bounced back here), which is why the first sign-in seemed to do nothing.
+  useEffect(() => { if (user) navigate('/', { replace: true }) }, [user, navigate])
 
   const handleEmailLogin = async (e) => {
     e.preventDefault()
@@ -32,7 +36,7 @@ export default function Login() {
     setLoading(true)
     try {
       await signInWithEmailAndPassword(auth, email, password)
-      navigate('/')
+      // the effect above navigates once the user + profile are loaded
     } catch {
       setError('Invalid email or password.')
     } finally {

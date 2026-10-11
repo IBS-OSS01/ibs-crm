@@ -27,7 +27,7 @@ export const localDate = (iso) => {
 
 export function itemResolver(stockItems = []) {
   const byId = new Map(), bySku = new Map(), byName = new Map()
-  stockItems.forEach(i => {
+  stockItems.filter(i => !i.isService).forEach(i => {   // service / charge items never move stock
     byId.set(i.id, i)
     if (i.sku) bySku.set(String(i.sku).trim().toLowerCase(), i)
     byName.set(normName(i.name || i.itemName), i)

@@ -31,7 +31,7 @@ export default function StockReports() {
   const [q, setQ] = useState('')
   const [hideZero, setHideZero] = useState(true)
 
-  const items = raw?.stockItems || []
+  const items = (raw?.stockItems || []).filter(i => !i.isService)
   const warehouses = raw?.warehouses || []
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const whName = (id) => warehouses.find(w => w.id === id)?.name || id || 'Default'

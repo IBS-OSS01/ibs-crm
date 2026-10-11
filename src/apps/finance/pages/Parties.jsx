@@ -8,6 +8,7 @@ import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.
 import { computeOutstanding } from '../utils/outstanding.js'
 import { COMPANIES, fmtAmt, isValidGstin, isValidPan, todayStr, num } from '../utils/financeConstants.js'
 import { tdsSectionList, Field } from '../components/formShared.jsx'
+import PartiesSheetImport from '../components/PartiesSheetImport.jsx'
 import { ReportShell, Badge, Empty, cardCls, btnPrimary, btnGhost, formInputCls, inputCls, useFinancePerms } from '../components/FinanceUI.jsx'
 
 export default function Parties() {
@@ -20,6 +21,7 @@ export default function Parties() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const isCust = tab === 'customer'
+  const [showImport, setShowImport] = useState(false)
 
   const bal = useMemo(() => {
     const m = {}
@@ -81,6 +83,8 @@ export default function Parties() {
         </div>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, GSTIN, PAN…" className={`${inputCls} w-60`} />
       </>}>
+      {canWrite && <div><button onClick={() => setShowImport(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">⬆ Import {isCust ? 'customers' : 'vendors'} from spreadsheet</button></div>}
+      {showImport && <PartiesSheetImport kind={isCust ? 'customer' : 'vendor'} existing={isCust ? raw.customers : raw.vendors} onClose={() => setShowImport(false)} onDone={() => { invalidateFinanceCache(); reload() }} />}
       <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-xs">
         Opening balances entered here are posted to the books against <b>Opening Balance Equity (3200)</b>. If you already booked opening balances through a manual Journal Entry, don't enter them again here or they will count twice.
         {' '}Add new {isCust ? 'customers under CRM → Customers' : 'vendors under Finance → Vendors'}.

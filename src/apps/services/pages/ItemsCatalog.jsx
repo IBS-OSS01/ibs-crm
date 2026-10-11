@@ -26,7 +26,7 @@ export default function ItemsCatalog() {
       const snap = await getDocs(collection(db, 'inventory_items'))
       const data = []
       snap.forEach(d => data.push({ id: d.id, ...d.data() }))
-      setItems(data.sort((a, b) => (a.name || '').localeCompare(b.name || '')))
+      setItems(data.filter(i => !i.isService).sort((a, b) => (a.name || '').localeCompare(b.name || '')))   // service / charge lines live in Finance only
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
   }
