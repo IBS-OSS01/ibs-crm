@@ -8,7 +8,8 @@ import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { parseBankStatement, bookEntries, autoMatch, reconciliation, stmtSig } from '../utils/bankRecon.js'
-import { readPdfPages, parseStatementPages } from '../utils/bankPdf.js'
+import { readPdfPages, parseStatementPages, hasTextLayer } from '../utils/bankPdf.js'
+import { parseScannedStatement, ocrPdfPages } from '../utils/bankOcr.js'
 import { saveStatementFile, listStatementFiles, downloadStatementFile, deleteStatementFile } from '../utils/statementFiles.js'
 import BankEntriesModal from '../components/BankEntriesModal.jsx'
 import { fmtAmt, todayStr } from '../utils/financeConstants.js'
@@ -62,8 +63,14 @@ export default function BankRecon() {
     setMsg(''); setBusy(true)
     try {
       let parsed
-      if (/\.pdf$/i.test(f.name)) parsed = parseStatementPages(await readPdfPages(f))
-      else {
+      if (/\.pdf$/i.test(f.name)) {
+        const pages = await readPdfPages(f)
+        if (hasTextLayer(pages)) parsed = parseStatementPages(pages)
+        else {         // a scan: read the pictures of the pages (OCR, in this browser)
+          setMsg('This PDF is a scan — reading the pages, about 10 seconds each…')
+          parsed = parseScannedStatement(await ocrPdfPages(f, (p, n) => setMsg(`Reading the scanned statement… page ${p} of ${n} (first time it also downloads the reader, ~15 MB)`)))
+        }
+      } else {
         const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true })
         parsed = parseBankStatement(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: false, dateNF: 'yyyy-mm-dd' }))
       }
@@ -85,7 +92,7 @@ export default function BankRecon() {
         catch (err) { kept = ` (Could not keep a copy of the file: ${err.message})` }
       }
       invalidateFinanceCache(); reload()
-      setMsg(`Imported ${fresh.length} line(s)${lines.length - fresh.length ? `, skipped ${lines.length - fresh.length} already imported` : ''}.${meta ? (meta.balanceBreaks === 0 ? ' Every running balance in the statement checks out.' : ` ⚠ ${meta.balanceBreaks} running balance(s) do not add up — check the lines against the PDF.`) : ''}${kept}`)
+      setMsg(`Imported ${fresh.length} line(s)${lines.length - fresh.length ? `, skipped ${lines.length - fresh.length} already imported` : ''}.${meta ? (meta.balanceBreaks === 0 ? ` Every running balance in the statement checks out${meta.scanned ? ` (opening ${fmtAmt(meta.opening)} → closing ${fmtAmt(meta.closing)}${meta.repaired ? `; ${meta.repaired} misread figure(s) corrected from the balance chain` : ''})` : ''}.` : ` ⚠ ${meta.balanceBreaks} running balance(s) do not add up — check the lines marked against the PDF.`) : ''}${kept}`)
     } catch (err) { setMsg('Could not import: ' + err.message) }
     finally { setBusy(false); e.target.value = '' }
   }

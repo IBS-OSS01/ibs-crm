@@ -38,6 +38,8 @@ const HEADS = [
 const headKey = (s) => { const t = String(s).trim(); const h = HEADS.find(([, re]) => re.test(t)); return h ? h[0] : '' }
 
 // pages: [[{ x, y, s }]]  (pdf coordinates: y grows upwards)
+export const hasTextLayer = (pages) => pages.some(items => items.some(i => String(i.s).trim().length > 1))
+
 export function parseStatementPages(pages) {
   if (!pages.some(items => items.some(i => String(i.s).trim().length > 1))) {
     return { lines: [], error: 'This PDF has no readable text — it is a picture of the statement (a scan). Download the transaction report from HSBC Net Banking (Accounts → Statements → “Statement details”) as PDF, Excel or CSV instead.' }

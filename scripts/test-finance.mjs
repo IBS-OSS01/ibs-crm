@@ -13,6 +13,7 @@ import { deductionRows, monthlyPosition, depositDueDate, monthsLate, lateFee, re
 import { tradingPL, cashFlow, ratios, costCentreSummary, budgetVsActual, balanceUpTo } from '../src/apps/finance/utils/financialStatements.js'
 import { parseBankStatement, bookEntries, autoMatch, reconciliation } from '../src/apps/finance/utils/bankRecon.js'
 import { parseStatementPages } from '../src/apps/finance/utils/bankPdf.js'
+import { parseScannedStatement, parseScanDate } from '../src/apps/finance/utils/bankOcr.js'
 import { suggestEntry, buildVoucher, bankLineKey } from '../src/apps/finance/utils/bankEntries.js'
 import { tallyVouchers, tallyMasters } from '../src/apps/finance/utils/tallyExport.js'
 import { buildEInvoice, buildEwayBill, invoiceProblems, ewayProblems, gstr3bJson } from '../src/apps/finance/utils/einvoice.js'
@@ -466,6 +467,28 @@ section('bank statement PDF → entries')
   ok(sg('SALARY NOV -2025 · ALOK JAYRAM PATOLE', 0, 5).accountCode === '5110' && sg('AUTOPAY OUT AAI, BatchSalSept2026', 0, 5).accountCode === '5110', 'rules: salaries')
   const unk = sg('SOMEBODY UNKNOWN', 5, 0)
   ok(unk.review && unk.accountCode === '2900' && sg('SOMEBODY UNKNOWN', 0, 5).accountCode === '5900', 'rules: unidentified lines are parked and flagged')
+
+  // scanned statement (OCR words) → lines
+  ok(parseScanDate('010CT2025') === '2025-10-01' && parseScanDate('30SEP2025') === '2025-09-30' && parseScanDate('13MAY2025') === '2025-05-13' && parseScanDate('05JUN2025') === '2025-06-05' && parseScanDate('05JUL2025') === '2025-07-05', 'scan: OCR dates (0 for O, MAY vs MAR, JUN vs JUL)')
+  {
+    const W = 1000, rowsOf = (y, ...ws) => ws.map(([t, x0, x1]) => ({ t, x0, x1, y0: y - 10, y1: y + 10 }))
+    const money = (t, right, y) => ['', t, right - 60, right]
+    const words = [
+      ...rowsOf(100, ['(DR=Debit)', 800, 900]),
+      ...rowsOf(150, ['OPENING', 200, 260], ['BALANCE', 270, 340], ['1,000.00', 840, 900]),
+      ...rowsOf(200, ['01OCT2025', 50, 140], ['HEXAGON', 200, 260]),
+      ...rowsOf(230, ['ACME', 200, 250], ['TRADERS', 260, 320], ['250.00', 540, 614], ['750.00', 840, 900]),
+      ...rowsOf(280, ['HEXAGON', 200, 260]),
+      ...rowsOf(310, ['CUSTOMER', 200, 280], ['PAYS', 290, 320], ['2,000.00', 700, 780], ['2,750.00', 840, 900]),
+      ...rowsOf(360, ['HEXAGON', 200, 260]),
+      ...rowsOf(390, ['RENT', 200, 240], ['5OO.00', 540, 614], ['2,250.00', 840, 900]),      // amount misread by the OCR (5OO.00 is not a number)
+      ...rowsOf(440, ['Balance', 200, 260], ['Carried', 270, 330], ['Forward', 340, 400], ['2,250.00', 840, 900]),
+    ]
+    const r = parseScannedStatement([{ w: W, words }])
+    ok(!r.error && r.lines.length === 3 && r.meta.opening === 1000 && r.meta.closing === 2250, 'scan: three transactions between opening and closing balance')
+    ok(r.lines[0].debit === 250 && r.lines[1].credit === 2000 && r.lines[0].date === '2025-10-01', 'scan: withdrawal / deposit columns and dates')
+    ok(r.lines[2].debit === 500 && r.lines[2].balance === 2250 && r.meta.balanceBreaks === 0, 'scan: a misread amount is recovered from the balance chain')
+  }
 
   const accs = SEED_ACCOUNTS.map(a => ({ ...a, id: a.code }))
   for (const [line, sug] of [[{ id: 'L1', date: '2026-09-22', description: 'x', ref: 'R1', credit: 1388738.74, debit: 0 }, { kind: 'receipt', partyType: 'customer', partyId: 'c1', partyName: 'Wayzim Technology Co.,Ltd.' }],

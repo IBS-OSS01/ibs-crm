@@ -41,7 +41,7 @@ const ALIASES = [   // narrative fragment → party name to look for (statement 
   { re: /INSTAKART/i, side: 'credit', like: 'instakart' },
 ]
 
-const DIRECTORS = /KUMAR KAUSHIK VARSH|VARSHA KRI|VARSHA KAUSHIK|KHARBANDA S\b|ADVAIT KAUSHIK|FROM KUMAR P\b|VARSHAKRISHANKUMARKA/i
+const DIRECTORS = /KUMAR KAUSHIK VARSH|VARSHA KRI|VARSHA KAUSHIK|KHARBANDA S\b|SANDEEP KHARBANDA|NEHA MALHOTRA|ADVAIT KAUSHIK|FROM KUMAR P\b|VARSHAKRISHANKUMARKA/i
 const digitsOf = (s) => String(s || '').replace(/\D/g, '')
 
 // line: { date, description, ref, debit, credit, trnType }
@@ -68,6 +68,10 @@ export function suggestEntry(line, ctx) {
   if (!isCredit && (/Bank Charges|IMP BILL COMM|Annual fee/i.test(d) || /SVC/.test(line.trnType || ''))) return out({ accountCode: '5170', reason: 'Bank charges' })
   // 4. salaries
   if (!isCredit && /\bSALARY\b|SAL DIFF|AUTOPAY OUT/i.test(d)) return out({ accountCode: '5110', reason: /AUTOPAY/i.test(d) ? 'Salary batch' : 'Salary' })
+  // 4b. statutory dues paid through net banking (the narrative names the person who made the payment, so check this before the directors rule)
+  if (!isCredit && /\bGST TAX PAYMENT\b|\bGST PAYMENT\b/i.test(d)) return out({ accountCode: '2400', reason: 'GST paid to the government — check the heads (CGST / SGST / IGST)', review: true })
+  if (!isCredit && /\bTDS\b/i.test(d) && !/REFUND/i.test(d)) return out({ accountCode: '2500', reason: 'TDS paid to the government', review: true })
+  if (!isCredit && /\bPTRC\b|PROFESSIONAL TAX/i.test(d)) return out({ accountCode: '2630', reason: 'Professional tax paid', review: true })
   // 5. directors / promoters' own money
   if (DIRECTORS.test(d)) return out({ accountCode: '2900', reason: isCredit ? 'Money from a director / promoter — loan or capital?' : 'Paid to a director / promoter — advance, reimbursement or loan repayment?', review: true })
   // 6. known counter-parties
