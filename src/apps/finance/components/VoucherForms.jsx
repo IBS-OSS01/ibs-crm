@@ -6,6 +6,7 @@ import { addDays } from '../utils/voucherEngine.js'
 import { convertTotals } from '../utils/fx.js'
 import ItemsEditor, { newLine, TotalsBox } from './ItemsEditor.jsx'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
+import SearchSelect from './SearchSelect.jsx'
 import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
   Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar, groupFlag,
@@ -83,13 +84,11 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
   })
 
   return (
-    <FormShell title={initial ? `Edit Purchase — ${initial.voucherNumber}` : 'Purchase Voucher'} subtitle="Records a vendor bill with input tax credit; the vendor's payable is raised automatically." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
-      <HeaderFields company={company} setCompany={setCompany} date={date} setDate={setDate} locked={!!initial}
+    <FormShell title={initial && !initial._clone ? `Edit Purchase — ${initial.voucherNumber}` : 'Purchase Voucher'} subtitle="Records a vendor bill with input tax credit; the vendor's payable is raised automatically." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
+      <HeaderFields company={company} setCompany={setCompany} date={date} setDate={setDate} locked={!!initial && !initial._clone}
         extra={<>
           <Field label="Vendor *">
-            <select value={vendorId} onChange={e => pickVendor(e.target.value)} className={formInputCls} required>
-              <option value="">— select vendor —</option>{vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </select>
+            <SearchSelect value={vendorId} onChange={pickVendor} className={formInputCls} required placeholder="Type to search vendor…" options={vendors.map(v => ({ value: v.id, label: v.name }))} />
           </Field>
           <Field label="Vendor invoice no."><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
         </>} />
@@ -212,16 +211,14 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
 
   const label = isCredit ? 'Credit Note' : 'Debit Note'
   return (
-    <FormShell title={initial ? `Edit ${label} — ${initial.voucherNumber}` : `${label} Voucher`}
+    <FormShell title={initial && !initial._clone ? `Edit ${label} — ${initial.voucherNumber}` : `${label} Voucher`}
       subtitle={isCredit ? 'Issued to a customer for sales returns, post-sale discounts or invoice corrections — reduces what they owe and your output GST.'
         : 'Issued to a vendor for purchase returns or rate differences — reduces what you owe and reverses the input tax credit.'}
       onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
-      <HeaderFields company={company} setCompany={c => { setCompany(c); setPartyKey(''); setRefId('') }} date={date} setDate={setDate} locked={!!initial}
+      <HeaderFields company={company} setCompany={c => { setCompany(c); setPartyKey(''); setRefId('') }} date={date} setDate={setDate} locked={!!initial && !initial._clone}
         extra={<>
           <Field label={`${isCredit ? 'Customer' : 'Vendor'} *`}>
-            <select value={partyKey} onChange={e => { setPartyKey(e.target.value); setRefId('') }} className={formInputCls} required>
-              <option value="">— select —</option>{parties.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}
-            </select>
+            <SearchSelect value={partyKey} onChange={v => { setPartyKey(v); setRefId('') }} className={formInputCls} required placeholder={`Type to search ${isCredit ? 'customer' : 'vendor'}…`} options={parties.map(p => ({ value: p.key, label: p.name }))} />
           </Field>
           <Field label="Reason">
             <select value={reasonCode} onChange={e => setReasonCode(e.target.value)} className={formInputCls}>{CN_REASONS.map(([c, l]) => <option key={c} value={c}>{l}</option>)}</select>

@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react'
 import { pendingBillsForParty } from '../utils/outstanding.js'
 import { fyOf } from '../utils/financeConstants.js'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
+import SearchSelect from './SearchSelect.jsx'
 import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
   Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar, groupFlag,
@@ -172,8 +173,8 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
   })
 
   return (
-    <FormShell title={initial ? `Edit Payment — ${initial.voucherNumber}` : 'Payment Voucher'} subtitle="Money going out — settle vendor bills, pay direct expenses, deduct TDS." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
-      <HeaderFields company={company} setCompany={c => { setCompany(c); setBankKey(undefined) }} date={date} setDate={setDate} locked={!!initial}
+    <FormShell title={initial && !initial._clone ? `Edit Payment — ${initial.voucherNumber}` : 'Payment Voucher'} subtitle="Money going out — settle vendor bills, pay direct expenses, deduct TDS." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
+      <HeaderFields company={company} setCompany={c => { setCompany(c); setBankKey(undefined) }} date={date} setDate={setDate} locked={!!initial && !initial._clone}
         extra={<>
           <Field label="Paid from *"><select value={bank?.key || ''} onChange={e => setBankKey(e.target.value)} className={formInputCls}>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>
           <Field label="Cheque / UTR no."><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
@@ -184,7 +185,7 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
       </div>
       {mode === 'vendor' && (
         <>
-          <Field label="Vendor *"><select value={vendorId} onChange={e => { setVendorId(e.target.value); setAlloc({}) }} className={formInputCls}><option value="">— select vendor —</option>{vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></Field>
+          <Field label="Vendor *"><SearchSelect value={vendorId} onChange={v => { setVendorId(v); setAlloc({}) }} className={formInputCls} placeholder="Type to search vendor…" options={vendors.map(v => ({ value: v.id, label: v.name }))} /></Field>
           {vendor && <>
             <label className={labelCls}>Against pending bills</label>
             <AllocationTable bills={bills} alloc={alloc} setAlloc={setAlloc} fx={fx} />
@@ -280,8 +281,8 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
   })
 
   return (
-    <FormShell title={initial ? `Edit Receipt — ${initial.voucherNumber}` : 'Receipt Voucher'} subtitle="Money coming in — settle customer invoices, record advances, and book TDS the customer deducted." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
-      <HeaderFields company={company} setCompany={c => { setCompany(c); setBankKey(undefined); setCustomerId(''); setAlloc({}) }} date={date} setDate={setDate} locked={!!initial}
+    <FormShell title={initial && !initial._clone ? `Edit Receipt — ${initial.voucherNumber}` : 'Receipt Voucher'} subtitle="Money coming in — settle customer invoices, record advances, and book TDS the customer deducted." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
+      <HeaderFields company={company} setCompany={c => { setCompany(c); setBankKey(undefined); setCustomerId(''); setAlloc({}) }} date={date} setDate={setDate} locked={!!initial && !initial._clone}
         extra={<>
           <Field label="Received in *"><select value={bank?.key || ''} onChange={e => setBankKey(e.target.value)} className={formInputCls}>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>
           <Field label="Cheque / UTR no."><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
@@ -290,7 +291,7 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
       <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm w-fit">
         {[['customer', 'From a customer'], ['other', 'Other (FD maturity, interest, refund)']].map(([k, l]) => <button type="button" key={k} onClick={() => setMode(k)} className={`px-3 py-1.5 font-medium ${mode === k ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{l}</button>)}
       </div>
-      {mode === 'customer' && <Field label="Customer *"><select value={customerId} onChange={e => { setCustomerId(e.target.value); setAlloc({}) }} className={formInputCls}><option value="">— select customer —</option>{customers.map(c => <option key={c.key} value={c.key}>{c.name}</option>)}</select></Field>}
+      {mode === 'customer' && <Field label="Customer *"><SearchSelect value={customerId} onChange={v => { setCustomerId(v); setAlloc({}) }} className={formInputCls} placeholder="Type to search customer…" options={customers.map(c => ({ value: c.key, label: c.name }))} /></Field>}
       {mode === 'other' && <p className="text-xs text-slate-500 -mt-2">Pick the ledgers below: for example credit the Fixed Deposit account for the principal that came back and Interest Income for the interest. If the bank deducted TDS, tick the TDS box and enter the amount.</p>}
       {customer && <>
         <label className={labelCls}>Against pending invoices</label>
@@ -356,8 +357,8 @@ export function ContraForm({ data, initial, onSaved, onCancel }) {
   })
 
   return (
-    <FormShell title={initial ? `Edit Contra — ${initial.voucherNumber}` : 'Contra Voucher'} subtitle="Cash deposited / withdrawn, a transfer between your own bank accounts, or money moved to / from a Fixed Deposit or Trust account (marked *). No profit effect; record interest separately as a Receipt (Other)." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
-      <HeaderFields company={company} setCompany={c => { setCompany(c); setFromKey(''); setToKey('') }} date={date} setDate={setDate} locked={!!initial} />
+    <FormShell title={initial && !initial._clone ? `Edit Contra — ${initial.voucherNumber}` : 'Contra Voucher'} subtitle="Cash deposited / withdrawn, a transfer between your own bank accounts, or money moved to / from a Fixed Deposit or Trust account (marked *). No profit effect; record interest separately as a Receipt (Other)." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
+      <HeaderFields company={company} setCompany={c => { setCompany(c); setFromKey(''); setToKey('') }} date={date} setDate={setDate} locked={!!initial && !initial._clone} />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Field label="From (credit) *"><select value={fromKey} onChange={e => setFromKey(e.target.value)} className={formInputCls}><option value="">— select —</option>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>
         <Field label="To (debit) *"><select value={toKey} onChange={e => setToKey(e.target.value)} className={formInputCls}><option value="">— select —</option>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>

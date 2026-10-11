@@ -12,6 +12,7 @@ import { PurchaseOrderForm, StockJournalForm } from '../components/InventoryForm
 import { pendingPoLines } from '../utils/purchaseOrders.js'
 import { creditDaysFromTerms } from '../components/formShared.jsx'
 import { useVoucherModal } from '../components/useVoucherModal.jsx'
+import { cloneVoucher } from '../utils/cloneDoc.js'
 import BillsImport from '../components/BillsImport.jsx'
 import ExpensesImport from '../components/ExpensesImport.jsx'
 import PayStatus from '../components/PayStatus.jsx'
@@ -38,7 +39,8 @@ export default function Vouchers() {
 
   const editId = params.get('edit')
   const creating = params.get('new') === '1'
-  const showForm = canWrite && (creating || !!editId)
+  const cloneId = params.get('clone')
+  const showForm = canWrite && (creating || !!editId || !!cloneId)
   const poId = params.get('po')
   const prefill = useMemo(() => {
     if (!poId || !raw) return null
@@ -48,7 +50,12 @@ export default function Vouchers() {
     return { company: po.company, partyId: po.partyId, warehouseId: po.warehouseId, purchaseOrderId: po.id, purchaseOrderNumber: po.voucherNumber, applyGst: po.applyGst, creditDays: creditDaysFromTerms(vend?.paymentTerms),
       items: lines.map(l => ({ ...l.item, qty: l.pending, poLine: l.index })), narration: `Against ${po.voucherNumber}` }
   }, [poId, raw])
-  const editing = useMemo(() => editId && raw ? raw.vouchers.find(v => v.id === editId) : null, [editId, raw])
+  const editing = useMemo(() => {
+    if (!raw) return null
+    if (editId) return raw.vouchers.find(v => v.id === editId) || null
+    const src = cloneId ? raw.vouchers.find(v => v.id === cloneId) : null          // clone: same entry, new number, today's date
+    return src ? cloneVoucher(src, today) : null
+  }, [editId, cloneId, raw, today])
 
   const closeForm = () => setParams({}, { replace: true })
   const saved = () => { invalidateFinanceCache(); reload(); closeForm() }
@@ -82,7 +89,7 @@ export default function Vouchers() {
 
   const form = (() => {
     if (!showForm || !raw) return null
-    if (editId && !editing) return <div className={`${cardCls} p-5 text-sm text-slate-500`}>Voucher not found (it may live in an older module — open it from its original page).</div>
+    if ((editId || cloneId) && !editing) return <div className={`${cardCls} p-5 text-sm text-slate-500`}>Voucher not found (it may live in an older module — open it from its original page).</div>
     const props = { data, initial: editing || undefined, onSaved: saved, onCancel: closeForm }
     switch (type) {
       case 'purchase': return <PurchaseForm {...props} prefill={prefill} />

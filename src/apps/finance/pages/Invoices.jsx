@@ -24,6 +24,8 @@ import { convertTotals, fmtFc, symbolOf } from '../utils/fx.js'
 import { useFx, CurrencyBar } from '../components/formShared.jsx'
 import InvoicesImport from '../components/InvoicesImport.jsx'
 import PayStatus from '../components/PayStatus.jsx'
+import SearchSelect from '../components/SearchSelect.jsx'
+import { cloneInvoiceItems } from '../utils/cloneDoc.js'
 import ConvertOrderModal from '../components/ConvertOrderModal.jsx'
 import SalesOrdersImport from '../components/SalesOrdersImport.jsx'
 import { orderProgress, applyInvoicing, invoiceFromOrder, closeOrderItems, ORDER_STATE_LABEL } from '../utils/salesOrders.js'
@@ -355,6 +357,16 @@ export default function Invoices() {
     setItems((inv.items || []).length ? inv.items.map(i => ({ ...newItem(), ...i })) : [newItem()])
     setEditingId(inv.id); setError(''); setView('form')
   }
+  // new document from an existing one: same customer and lines, today's date, next number on save
+  const startClone = (inv) => {
+    if (inv.fx?.currency && inv.fx.currency !== 'INR') { alert('Foreign-currency documents cannot be cloned here — issue a new one.'); return }
+    const days = Math.max(0, Math.round((new Date(inv.dueDate || inv.invoiceDate) - new Date(inv.invoiceDate)) / 86400000)) || 0
+    const d = new Date(); d.setDate(d.getDate() + days)
+    const due = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    setForm({ ...emptyForm, ...Object.fromEntries(Object.keys(emptyForm).map(k => [k, inv[k] ?? emptyForm[k]])), customerId: inv.customerId || '', invoiceDate: today(), dueDate: due })
+    setItems((inv.items || []).length ? cloneInvoiceItems(inv.items).map(i => ({ ...newItem(), ...i })) : [newItem()])
+    setEditingId(''); setError(''); setView('form')
+  }
   // sales order → tax invoice for the chosen quantities (all, part, or a percentage); what is left stays open on the order
   const convertOrder = (so) => setConvertFor(so)
   const createFromOrder = async (so, { qtys, date, dueDate, terms, note }) => {
@@ -414,6 +426,7 @@ export default function Invoices() {
     if (!inv) return []
     return [
       { label: '✏️ Edit', primary: true, onClick: () => startEdit(inv) },
+      { label: '⧉ Clone', onClick: () => startClone(inv) },
       ...(inv.invoiceType === 'SO' && orderProgress(inv).remaining > 0 ? [{ label: '➜ Invoice (all or part)', onClick: () => convertOrder(inv) }, { label: '✕ Close order', onClick: () => closeOrder(inv) }] : []),
       { label: '📄 PDF (for DSC)', onClick: () => handlePdf(inv) },
     ]
@@ -538,10 +551,7 @@ export default function Invoices() {
             <p className="text-xs font-bold uppercase text-blue-600 border-b pb-1">Bill To</p>
             <div>
               <label className={lbl}>Select Customer</label>
-              <select className={inp} value={form.customerId} onChange={e => handleCustomerChange(e.target.value)}>
-                <option value="">— select customer —</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.shopName}</option>)}
-              </select>
+              <SearchSelect className={inp} value={form.customerId} onChange={handleCustomerChange} placeholder="Type to search customer…" options={customers.map(c => ({ value: c.id, label: c.shopName }))} />
             </div>
             <div><label className={lbl}>Name *</label><input className={inp} value={form.billToName} onChange={e => setForm(p => ({ ...p, billToName: e.target.value }))} required /></div>
             <div><label className={lbl}>Address</label><input className={inp} value={form.billToAddress} onChange={e => setForm(p => ({ ...p, billToAddress: e.target.value }))} /></div>
@@ -725,6 +735,7 @@ export default function Invoices() {
                 <td className="px-4 py-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                   {inv.invoiceType === 'SO' && orderProgress(inv).remaining > 0 && <button onClick={() => convertOrder(inv)} className="text-green-700 hover:text-green-800 font-medium mr-3" title="Create a tax invoice from this order — all of it, or part">➜ Invoice</button>}
                   <button onClick={() => startEdit(inv)} className="text-blue-600 hover:text-blue-700 font-medium mr-3">✏️ Edit</button>
+                  <button onClick={() => startClone(inv)} title="Start a new one from this" className="text-blue-600 hover:text-blue-700 font-medium mr-3">⧉ Clone</button>
                   <button onClick={() => handlePrint(inv)}
                     className="text-blue-600 hover:text-blue-700 font-medium">🖨️ Print</button>
                   <button onClick={() => handlePdf(inv)} title="PDF with a digital-signature field — sign it with your DSC, then share"

@@ -151,6 +151,7 @@ export default function VoucherDetail({ entry, voucher, lines, seller, stockItem
           {isNewVoucher && canWrite && !cancelled && voucher?.voucherType !== 'payroll' && (
             <>
               <button onClick={() => { onClose(); navigate(`/finance/vouchers/${entry.voucherType}?edit=${entry.id}`) }} className={btnPrimary}>✏️ Edit</button>
+              <button onClick={() => { onClose(); navigate(`/finance/vouchers/${entry.voucherType}?clone=${entry.id}`) }} className={btnGhost} title="Start a new entry from this one">⧉ Clone</button>
               <button onClick={doCancel} disabled={busy} className="px-3 py-1.5 bg-white border border-red-300 text-red-600 hover:bg-red-50 text-sm font-medium rounded-lg disabled:opacity-50">Cancel voucher</button>
             </>
           )}

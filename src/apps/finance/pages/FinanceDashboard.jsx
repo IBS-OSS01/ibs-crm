@@ -8,9 +8,12 @@ import { tradingPL, balanceUpTo } from '../utils/financialStatements.js'
 import { deductionRows, monthlyPosition } from '../utils/tdsReports.js'
 import { fmtAmt, todayStr, r2, currentFY } from '../utils/financeConstants.js'
 import { CompanyToggle, cardCls } from '../components/FinanceUI.jsx'
+import { DuesRow, CashFlowCard, IncomeExpenseCard, TopExpensesCard } from '../components/DashboardCharts.jsx'
+import { useAuth } from '../../../context/AuthContext.jsx'
 
 export default function FinanceDashboard() {
   const navigate = useNavigate()
+  const { userProfile } = useAuth()
   const { raw, allLines, accounts, stock, loading } = useFinanceData(['tdsChallans'])
   const [company, setCompany] = useState('UIPL')
   const today = todayStr()
@@ -83,8 +86,8 @@ export default function FinanceDashboard() {
     <div className="p-6 space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">💰 Finance Dashboard</h2>
-          <p className="text-slate-500 text-sm">As of {today} · from the books (vouchers, invoices and opening balances)</p>
+          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Hello, {(userProfile?.name || '').split(' ')[0] || 'there'} 👋</h2>
+          <p className="text-slate-500 text-sm">{cs.legalName || company} · As of {today} · from the books (vouchers, invoices and opening balances)</p>
         </div>
         <CompanyToggle value={company} onChange={setCompany} />
       </div>
@@ -118,6 +121,13 @@ export default function FinanceDashboard() {
           ))}
         </div>
       )}
+
+      <DuesRow recv={m.recv} pay={m.pay} />
+      <CashFlowCard allLines={allLines} accounts={accounts} company={company} />
+      <div className="grid lg:grid-cols-2 gap-4">
+        <IncomeExpenseCard allLines={allLines} accounts={accounts} company={company} />
+        <TopExpensesCard allLines={allLines} accounts={accounts} company={company} />
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {cards.filter(c => !wayzim || ['Cash & bank', 'Receivables outstanding', 'Payables outstanding', 'Collected this month', 'Sales this month'].includes(c.label)).map(c => (

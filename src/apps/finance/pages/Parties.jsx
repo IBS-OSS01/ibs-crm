@@ -1,7 +1,8 @@
 // Party ledgers — the finance view of customers and vendors: credit terms, PAN/GSTIN,
 // default TDS, and opening balances (which flow into the books against 3200).
 // Contact details stay in CRM → Customers and Finance → Vendors.
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
@@ -9,12 +10,15 @@ import { computeOutstanding } from '../utils/outstanding.js'
 import { COMPANIES, fmtAmt, isValidGstin, isValidPan, todayStr, num } from '../utils/financeConstants.js'
 import { tdsSectionList, Field } from '../components/formShared.jsx'
 import PartiesSheetImport from '../components/PartiesSheetImport.jsx'
+import PartyProfile from '../components/PartyProfile.jsx'
 import { ReportShell, Badge, Empty, cardCls, btnPrimary, btnGhost, formInputCls, inputCls, useFinancePerms } from '../components/FinanceUI.jsx'
 
 export default function Parties() {
   const { canWrite } = useFinancePerms()
   const { raw, allLines, loading, reload } = useFinanceData(['tdsSections'])
-  const [tab, setTab] = useState('customer')
+  const [params, setParams] = useSearchParams()
+  const [tab, setTab] = useState(params.get('tab') === 'vendor' ? 'vendor' : 'customer')
+  const [profile, setProfile] = useState(null)         // { kind, party } — the details / ledger window
   const [q, setQ] = useState('')
   const [edit, setEdit] = useState(null)
   const [form, setForm] = useState({})
@@ -22,6 +26,15 @@ export default function Parties() {
   const [error, setError] = useState('')
   const isCust = tab === 'customer'
   const [showImport, setShowImport] = useState(false)
+
+  // arrive from a link (?tab=vendor&open=<id>) straight into that party's window
+  useEffect(() => {
+    const id = params.get('open'); if (!id || !raw) return
+    const kind = params.get('tab') === 'vendor' ? 'vendor' : 'customer'
+    const party = (kind === 'vendor' ? raw.vendors : raw.customers).find(p => p.id === id)
+    if (party) { setTab(kind); setProfile({ kind, party }) }
+    setParams({ tab: kind }, { replace: true })
+  }, [raw]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const bal = useMemo(() => {
     const m = {}
@@ -101,14 +114,14 @@ export default function Parties() {
               const b = bal[`${isCust ? 'receivable' : 'payable'}|${(name || '').toLowerCase()}`] || 0
               return (
                 <tr key={p.id} className="hover:bg-slate-50/60">
-                  <td className="px-4 py-2.5 font-medium text-slate-800">{name}{p.active === false && <span className="ml-2"><Badge color="bg-red-100 text-red-700">inactive</Badge></span>}</td>
+                  <td className="px-4 py-2.5 font-medium text-slate-800"><button onClick={() => setProfile({ kind: tab, party: p })} className="text-left hover:text-blue-700 hover:underline" title="Business details & ledger">{name}</button>{(!p.address || !p.city || !p.pincode) && <span className="ml-2" title="Address is incomplete"><Badge color="bg-amber-100 text-amber-700">address?</Badge></span>}{p.active === false && <span className="ml-2"><Badge color="bg-red-100 text-red-700">inactive</Badge></span>}</td>
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{p.gstin || <span className="text-slate-300">—</span>}</td>
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{p.pan || (!isCust ? <span className="text-amber-600">missing</span> : '—')}</td>
                   <td className="px-4 py-2.5 text-right text-slate-600">{isCust ? (p.creditDays ?? 0) : (p.paymentTerms || '—')}</td>
                   {!isCust && <td className="px-4 py-2.5 text-slate-600">{p.tdsSection ? `${p.tdsSection} @ ${p.tdsRate}%` : '—'}</td>}
                   <td className="px-4 py-2.5 text-right text-slate-600">{num(p.openingBalance) ? `${fmtAmt(p.openingBalance)} ${p.openingType || (isCust ? 'Dr' : 'Cr')}` : '—'}</td>
                   <td className={`px-4 py-2.5 text-right font-medium ${b > 0.005 ? 'text-slate-800' : 'text-slate-400'}`}>{fmtAmt(b)}</td>
-                  <td className="px-4 py-2.5 text-right">{canWrite && <button onClick={() => open(p)} className="text-blue-600 hover:underline text-xs">Edit</button>}</td>
+                  <td className="px-4 py-2.5 text-right whitespace-nowrap"><button onClick={() => setProfile({ kind: tab, party: p })} className="text-blue-600 hover:underline text-xs mr-3">Details &amp; ledger</button>{canWrite && <button onClick={() => open(p)} className="text-blue-600 hover:underline text-xs">Terms</button>}</td>
                 </tr>
               )
             })}
@@ -117,6 +130,7 @@ export default function Parties() {
         </table>
       </div>
 
+      {profile && <PartyProfile key={profile.party.id} kind={profile.kind} party={profile.party} raw={raw} allLines={allLines} canWrite={canWrite} reload={reload} onClose={() => setProfile(null)} />}
       {edit && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setEdit(null)}>
           <div className={`${cardCls} w-full max-w-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto`} onClick={e => e.stopPropagation()}>

@@ -8,6 +8,7 @@ import React, { useMemo, useState } from 'react'
 import { computeVoucherTotals, supplyTypeOf } from '../utils/taxCalc.js'
 import { addDays } from '../utils/voucherEngine.js'
 import ItemsEditor, { newLine, TotalsBox } from './ItemsEditor.jsx'
+import SearchSelect from './SearchSelect.jsx'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
 import {
   Field, FormShell, HeaderFields, useVoucherSave, need,
@@ -56,10 +57,10 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
   })
 
   return (
-    <FormShell title={initial ? `Edit Purchase Order — ${initial.voucherNumber}` : 'Purchase Order'} subtitle="Order goods from a vendor. No accounting entry is made until you enter the vendor's bill." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
-      <HeaderFields company={company} setCompany={setCompany} date={date} setDate={setDate} locked={!!initial}
+    <FormShell title={initial && !initial._clone ? `Edit Purchase Order — ${initial.voucherNumber}` : 'Purchase Order'} subtitle="Order goods from a vendor. No accounting entry is made until you enter the vendor's bill." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
+      <HeaderFields company={company} setCompany={setCompany} date={date} setDate={setDate} locked={!!initial && !initial._clone}
         extra={<>
-          <Field label="Vendor *"><select value={vendorId} onChange={e => setVendorId(e.target.value)} className={formInputCls} required><option value="">— select vendor —</option>{vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></Field>
+          <Field label="Vendor *"><SearchSelect value={vendorId} onChange={setVendorId} className={formInputCls} required placeholder="Type to search vendor…" options={vendors.map(v => ({ value: v.id, label: v.name }))} /></Field>
           <Field label="Expected delivery"><input type="date" value={expected} onChange={e => setExpected(e.target.value)} className={formInputCls} min={date} /></Field>
         </>} />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -117,8 +118,8 @@ export function StockJournalForm({ data, initial, onSaved, onCancel }) {
   })
 
   return (
-    <FormShell title={initial ? `Edit Stock Journal — ${initial.voucherNumber}` : 'Stock Journal'} subtitle={JTYPES.find(t => t[0] === type)[2]} onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
-      <HeaderFields company={company} setCompany={setCompany} date={date} setDate={setDate} locked={!!initial}
+    <FormShell title={initial && !initial._clone ? `Edit Stock Journal — ${initial.voucherNumber}` : 'Stock Journal'} subtitle={JTYPES.find(t => t[0] === type)[2]} onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
+      <HeaderFields company={company} setCompany={setCompany} date={date} setDate={setDate} locked={!!initial && !initial._clone}
         extra={<Field label="Type"><select value={type} onChange={e => setType(e.target.value)} disabled={!!initial} className={formInputCls}>{JTYPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>} />
       {whs.length === 0 && <p className="text-xs text-amber-600">No godowns exist yet — add them under Services → Warehouses. Movements are recorded against the default godown.</p>}
 

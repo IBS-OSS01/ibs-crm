@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
@@ -20,6 +21,7 @@ const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:o
 const lbl = 'block text-xs font-medium text-slate-600 mb-1'
 
 export default function Vendors() {
+  const navigate = useNavigate()
   const { user, userProfile } = useAuth()
   const isAdmin = userProfile?.role === 'admin'
   const [vendors, setVendors] = useState([])
@@ -255,7 +257,7 @@ export default function Vendors() {
             {filtered.map(v => (
               <tr key={v.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
-                  <div className="font-medium text-slate-800">{v.vendorName}</div>
+                  <button onClick={() => navigate(`/finance/parties?tab=vendor&open=${v.id}`)} className="font-medium text-slate-800 hover:text-blue-700 hover:underline text-left" title="Business details & ledger">{v.vendorName}</button>
                   {v.contactPerson && <div className="text-xs text-slate-500">{v.contactPerson}</div>}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-slate-600">{v.gstin || '—'}</td>

@@ -16,6 +16,7 @@ export function parsePdfDate(v) {
     if (!mo) return ''
     return `${m[3].length === 2 ? 2000 + Number(m[3]) : m[3]}-${String(mo).padStart(2, '0')}-${String(Number(m[1])).padStart(2, '0')}`
   }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s            // ISO, as YES Bank prints it
   m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/.exec(s)
   if (m) return `${m[3].length === 2 ? 2000 + Number(m[3]) : m[3]}-${String(Number(m[2])).padStart(2, '0')}-${String(Number(m[1])).padStart(2, '0')}`
   return ''
@@ -30,7 +31,7 @@ const money = (v) => {
 
 // header text → column key (order matters: the specific names first)
 const HEADS = [
-  ['custRef', /customer\s*ref/i], ['ref', /(bank\s*ref|ref(erence)?\s*no|chq|cheque|instrument|utr)/i], ['type', /(trn|txn|transaction)\s*type|^type$|^mode$/i],
+  ['custRef', /customer\s*ref/i], ['ref', /(bank\s*ref|ref(erence)?\s*(no|num)|chq|cheque|instrument|utr)/i], ['type', /(trn|txn|transaction)\s*type|^type$|^mode$/i],
   ['valueDate', /value\s*date/i], ['postDate', /post(ing)?\s*date/i], ['date', /^(txn\s*|transaction\s*)?date$/i],
   ['credit', /credit|deposit|paid\s*in/i], ['debit', /debit|withdraw|paid\s*out/i], ['balance', /balance/i], ['time', /^time$/i],
   ['desc', /(narrat|descript|particular|remark|detail)/i],
@@ -58,17 +59,26 @@ export function parseStatementPages(pages) {
     }
     rows.forEach(r => r.items.sort((a, b) => a.x - b.x))
 
-    for (const row of rows) {
+    const isHead = (r) => { const k = r.items.map(i => headKey(i.s)); return k.includes('credit') && k.includes('debit') && k.some(x => /date/i.test(x)) }
+    const hdrAt = rows.findIndex(isHead)            // a page that repeats the heading starts its table there (letterhead above is skipped)
+    for (const [at, row] of rows.entries()) {
+      if (hdrAt >= 0 && at < hdrAt) continue
       const texts = row.items.map(i => String(i.s).trim())
       // header row?
       const keys = row.items.map(i => headKey(i.s))
       if (keys.includes('credit') && keys.includes('debit') && keys.some(k => /date/i.test(k))) {
         cols = row.items.map((i, n) => ({ key: keys[n], x: i.x })).filter(c => c.key)
+        // a lone "Transaction" heading (with "Date" on the line below) is the posting-date column
+        const lone = row.items.find((i, n) => !keys[n] && /^transaction$/i.test(String(i.s).trim()) && i.x < cols[0].x - 20)
+        if (lone && !cols.some(c => c.key === 'postDate')) cols.unshift({ key: 'postDate', x: lone.x })
+        // headings can be centred over their column, so a column starts half-way back to the previous heading
+        cols.forEach((c, n) => { c.from = n === 0 ? -Infinity : Math.min(c.x, (cols[n - 1].x + c.x) / 2) })
         continue
       }
       if (!cols) continue
+      if (texts.length === 1 && /^date$/i.test(texts[0])) continue            // second line of a two-line heading ("Transaction / Date")
       if (texts.some(t => /^page$/i.test(t)) && texts.some(t => /account number/i.test(t))) continue   // running footer
-      const colOf = (x) => { let hit = null; for (const c of cols) if (c.x <= x + 3) hit = c; return hit ? hit.key : cols[0].key }
+      const colOf = (x) => { let hit = null; for (const c of cols) if (c.from <= x + 3) hit = c; return hit ? hit.key : cols[0].key }
 
       const byCol = {}
       row.items.forEach(i => { const k = colOf(i.x); (byCol[k] = byCol[k] || []).push(String(i.s).trim()) })
@@ -90,7 +100,7 @@ export function parseStatementPages(pages) {
       const first = cols[0].key
       row.items.forEach(i => {
         const k = colOf(i.x), s = String(i.s).trim()
-        if (k === first && first === 'ref') cur.ref += s          // wrapped reference number
+        if (k === 'ref') cur.ref += s          // wrapped reference number
         else cur.narr.push(s)
       })
     }

@@ -10,6 +10,7 @@ import { suggestAll, buildVoucher, bankLineKey } from '../utils/bankEntries.js'
 import { customerOptions, vendorOptions, groupFlag } from './formShared.jsx'
 import { fmtAmt } from '../utils/financeConstants.js'
 import { btnPrimary, btnGhost, cardCls, Badge } from './FinanceUI.jsx'
+import SearchSelect from './SearchSelect.jsx'
 
 const sel = 'px-2 py-1 border border-slate-300 rounded text-xs max-w-[230px] bg-white'
 const KINDS = { receipt: 'Receipt', payment: 'Payment', contra: 'Transfer (contra)' }
@@ -106,11 +107,8 @@ export default function BankEntriesModal({ lines, company, bank, banks, raw, acc
                     <td className="px-2">
                       {editing === r.lineId ? (r.kind === 'contra'
                         ? <select autoFocus value={r.otherBankId} onChange={e => { patch(r.lineId, { otherBankId: e.target.value, review: false, include: !!e.target.value }); setEditing('') }} onBlur={() => setEditing('')} className={sel}><option value="">— choose —</option>{bankList.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
-                        : <select autoFocus value={r.partyId ? `p:${r.partyId}` : r.accountCode ? `a:${r.accountCode}` : ''} onChange={e => e.target.value && setTarget(r, e.target.value)} onBlur={() => setEditing('')} className={sel}>
-                          <option value="">— choose —</option>
-                          <optgroup label={r.kind === 'receipt' ? 'Customers' : 'Vendors'}>{(r.kind === 'receipt' ? customers : vendors).map(p => <option key={p.id} value={`p:${p.id}`}>{p.name}</option>)}</optgroup>
-                          <optgroup label="Ledger accounts">{ledgers.map(a => <option key={a.code} value={`a:${a.code}`}>{a.code} {a.name}</option>)}</optgroup>
-                        </select>)
+                        : <SearchSelect autoFocus value={r.partyId ? `p:${r.partyId}` : r.accountCode ? `a:${r.accountCode}` : ''} onChange={v => v && setTarget(r, v)} onBlur={() => setEditing('')} className={sel} placeholder="Type a name or ledger…"
+                          options={[...(r.kind === 'receipt' ? customers : vendors).map(p => ({ value: `p:${p.id}`, label: p.name, hint: r.kind === 'receipt' ? 'customer' : 'vendor' })), ...ledgers.map(a => ({ value: `a:${a.code}`, label: `${a.code} ${a.name}`, hint: 'ledger' }))]} />)
                         : <button className="text-left hover:underline" onClick={() => setEditing(r.lineId)} title={r.reason}><span className={ok ? 'text-slate-800' : 'text-red-600'}>{label(r)}</span> <span className="text-slate-400">· {r.reason}</span></button>}
                       {r.review && <Badge color="bg-amber-100 text-amber-700">check</Badge>}
                     </td>
