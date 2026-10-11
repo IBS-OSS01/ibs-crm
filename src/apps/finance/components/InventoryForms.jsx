@@ -9,6 +9,7 @@ import { computeVoucherTotals, supplyTypeOf } from '../utils/taxCalc.js'
 import { addDays } from '../utils/voucherEngine.js'
 import ItemsEditor, { newLine, TotalsBox } from './ItemsEditor.jsx'
 import SearchSelect from './SearchSelect.jsx'
+import { VendorCard, SupplyRow, NotesTotals } from './DocLayout.jsx'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
 import {
   Field, FormShell, HeaderFields, useVoucherSave, need,
@@ -58,20 +59,27 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
 
   return (
     <FormShell title={initial && !initial._clone ? `Edit Purchase Order — ${initial.voucherNumber}` : 'Purchase Order'} subtitle="Order goods from a vendor. No accounting entry is made until you enter the vendor's bill." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
+      <VendorCard vendors={vendors} vendorId={vendorId} onPick={setVendorId} vendor={vendor} />
+
+      <SupplyRow sourceState={vendor?.state || ''} destState={raw?.companySettings?.[company]?.state || ''} supplyType={supplyType} hasVendor={!!vendor}>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={applyGst} onChange={e => setApplyGst(e.target.checked)} />Show GST on this order</label>
+      </SupplyRow>
+
       <HeaderFields company={company} setCompany={setCompany} date={date} setDate={setDate} locked={!!initial && !initial._clone}
         extra={<>
-          <Field label="Vendor *"><SearchSelect value={vendorId} onChange={setVendorId} className={formInputCls} required placeholder="Type to search vendor…" options={vendors.map(v => ({ value: v.id, label: v.name }))} /></Field>
           <Field label="Expected delivery"><input type="date" value={expected} onChange={e => setExpected(e.target.value)} className={formInputCls} min={date} /></Field>
+          {(raw.warehouses || []).length > 0 && <Field label="Deliver to godown"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={formInputCls}><option value="">Default</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></Field>}
         </>} />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {(raw.warehouses || []).length > 0 && <Field label="Deliver to godown"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={formInputCls}><option value="">Default</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></Field>}
-        <Field label="Terms / delivery notes" className="md:col-span-2"><input value={terms} onChange={e => setTerms(e.target.value)} className={formInputCls} placeholder="Payment terms, delivery address…" /></Field>
-      </div>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={applyGst} onChange={e => setApplyGst(e.target.checked)} />Show GST on this order</label>
+
       <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={raw.stockItems || []} hsnCodes={raw.hsnCodes || []} applyGst={applyGst} />
-      <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
-      {initial && <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={closed} onChange={e => setClosed(e.target.checked)} />Close this order (stop expecting the pending balance)</label>}
-      <TotalsBox totals={totals} />
+
+      <NotesTotals
+        left={<>
+          <Field label="Notes"><textarea value={narration} onChange={e => setNarration(e.target.value)} className={`${formInputCls} h-16 resize-none`} /></Field>
+          <Field label="Terms / delivery notes"><textarea value={terms} onChange={e => setTerms(e.target.value)} className={`${formInputCls} h-20 resize-none`} placeholder="Payment terms, delivery address…" /></Field>
+          {initial && !initial._clone && <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={closed} onChange={e => setClosed(e.target.checked)} />Close this order (stop expecting the pending balance)</label>}
+        </>}
+        right={<TotalsBox totals={totals} />} />
     </FormShell>
   )
 }

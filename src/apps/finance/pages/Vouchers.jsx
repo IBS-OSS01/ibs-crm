@@ -57,7 +57,7 @@ export default function Vouchers() {
     return src ? cloneVoucher(src, today) : null
   }, [editId, cloneId, raw, today])
 
-  const closeForm = () => setParams({}, { replace: true })
+  const closeForm = () => (type === 'credit_note' ? navigate('/finance/invoices?tab=creditnotes', { replace: true }) : setParams({}, { replace: true }))
   const saved = () => { invalidateFinanceCache(); reload(); closeForm() }
 
   // Tally-style keyboard shortcuts
@@ -74,6 +74,8 @@ export default function Vouchers() {
   }, [showForm, navigate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (EXTERNAL[type]) navigate(EXTERNAL[type], { replace: true }) }, [type, navigate])
+  // the credit-note list lives in the Sales tabs (same header, tabs and table as invoices); only its form is shown here
+  useEffect(() => { if (type === 'credit_note' && !creating && !editId && !cloneId) navigate('/finance/invoices?tab=creditnotes', { replace: true }) }, [type, creating, editId, cloneId, navigate])
 
   const entries = useMemo(() => {
     if (!raw) return []

@@ -73,7 +73,7 @@ export async function buildInvoicePdf({ inv, items, seller = {}, gstLines = [], 
     const sub = it.hsnCode ? `HSN/SAC: ${it.hsnCode}${it.gstRate ? `   GST ${it.gstRate}%` : ''}` : (it.gstRate ? `GST ${it.gstRate}%` : '')
     const h = desc.length * 11 + (sub ? 10 : 0) + 6
     if (y - h < 190) newPage()
-    const amt = (Number(it.qty) || 0) * (Number(it.rate) || 0)
+    const amt = (Number(it.qty) || 0) * (Number(it.rate) || 0) * (1 - Math.min(100, Math.max(0, Number(it.discountPct) || 0)) / 100)
     text(String(i + 1), cols.n + 2, y); desc.forEach((d, k) => text(d, cols.desc, y - k * 11))
     if (sub) text(sub, cols.desc, y - desc.length * 11, { size: 7.5, color: grey })
     text(`${it.qty} ${it.unit || ''}`.trim(), cols.qty, y, { align: 'right' }); text(money(it.rate), cols.rate, y, { align: 'right' }); text(money(amt), cols.amt - 2, y, { align: 'right' })

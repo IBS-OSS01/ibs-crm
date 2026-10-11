@@ -23,7 +23,7 @@ export const NAV_GROUPS = [
     { label: 'Sales invoices', icon: '🧾', path: '/finance/invoices', keywords: 'invoice sale tax invoice proforma' },
     { label: 'Sales orders', icon: '📑', path: '/finance/invoices?tab=orders', keywords: 'sales order so customer order quotation convert to invoice' },
     { label: 'Receipts (money in)', icon: '💰', path: '/finance/vouchers/receipt', keywords: 'receipt collect payment received f6' },
-    { label: 'Credit notes (returns)', icon: '↩️', path: '/finance/vouchers/credit_note', keywords: 'credit note sales return discount' },
+    { label: 'Credit notes (returns)', icon: '↩️', path: '/finance/invoices?tab=creditnotes', keywords: 'credit note sales return discount' },
     { label: 'E-invoice & e-way bill', icon: '🚚', path: '/finance/einvoice', keywords: 'irn eway e-way einvoice transport' },
     { label: 'Who owes me', icon: '📥', path: '/finance/outstanding/receivables', keywords: 'receivables outstanding ageing debtors overdue' },
   ]},

@@ -7,6 +7,7 @@ import { convertTotals } from '../utils/fx.js'
 import ItemsEditor, { newLine, TotalsBox } from './ItemsEditor.jsx'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
 import SearchSelect from './SearchSelect.jsx'
+import { VendorCard, SupplyRow, NotesTotals } from './DocLayout.jsx'
 import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
   Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar, groupFlag,
@@ -85,38 +86,46 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
 
   return (
     <FormShell title={initial && !initial._clone ? `Edit Purchase — ${initial.voucherNumber}` : 'Purchase Voucher'} subtitle="Records a vendor bill with input tax credit; the vendor's payable is raised automatically." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
+      <VendorCard vendors={vendors} vendorId={vendorId} onPick={pickVendor} vendor={vendor}>
+        <Field label="Order number / vendor invoice no."><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
+        <CurrencyBar fx={fx} date={date} totalFc={totals.total} />
+      </VendorCard>
+
+      <SupplyRow sourceState={vendor?.state || (vendor?.gstin ? '' : '')} destState={raw?.companySettings?.[company]?.state || ''} supplyType={supplyType} hasVendor={!!vendor}>
+        {vendor && !vendor.gstin && <p className="text-xs text-amber-600">Unregistered supplier — usually no GST, unless reverse charge applies.</p>}
+        {!compState && <p className="text-xs text-amber-600">Set your own state in Company Settings so CGST/SGST vs IGST is right.</p>}
+        <div className="flex gap-5 flex-wrap text-sm">
+          <label className="flex items-center gap-2"><input type="checkbox" checked={applyGst} onChange={e => { setApplyGst(e.target.checked); if (!e.target.checked) setRcm(false) }} />GST applicable</label>
+          <label className="flex items-center gap-2" title="Buyer pays the GST directly to the government (unregistered supplier / notified services)"><input type="checkbox" checked={rcm} disabled={!applyGst} onChange={e => setRcm(e.target.checked)} />Reverse charge (RCM)</label>
+          <label className="flex items-center gap-2" title="Untick for blocked credits under section 17(5): motor vehicles, food, club memberships, etc."><input type="checkbox" checked={itcEligible} onChange={e => setItcEligible(e.target.checked)} />Input tax credit eligible</label>
+        </div>
+      </SupplyRow>
+
       <HeaderFields company={company} setCompany={setCompany} date={date} setDate={setDate} locked={!!initial && !initial._clone}
         extra={<>
-          <Field label="Vendor *">
-            <SearchSelect value={vendorId} onChange={pickVendor} className={formInputCls} required placeholder="Type to search vendor…" options={vendors.map(v => ({ value: v.id, label: v.name }))} />
-          </Field>
-          <Field label="Vendor invoice no."><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
+          <Field label="Vendor invoice date"><input type="date" value={refDate} onChange={e => setRefDate(e.target.value)} className={formInputCls} /></Field>
+          <Field label="Credit days"><input type="number" min="0" value={creditDays} onChange={e => setCreditDays(e.target.value)} className={formInputCls} /></Field>
+          <Field label="Due date"><div className={`${formInputCls} bg-slate-100`}>{addDays(date, creditDays) || '—'}</div></Field>
         </>} />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Field label="Vendor invoice date"><input type="date" value={refDate} onChange={e => setRefDate(e.target.value)} className={formInputCls} /></Field>
-        <Field label="Credit days"><input type="number" min="0" value={creditDays} onChange={e => setCreditDays(e.target.value)} className={formInputCls} /></Field>
-        <Field label="Due date"><div className={`${formInputCls} bg-slate-100`}>{addDays(date, creditDays) || '—'}</div></Field>
-        <Field label="Supply"><div className={`${formInputCls} bg-slate-100`}>{vendor ? (supplyType === 'intra' ? 'Intra-state → CGST + SGST' : 'Inter-state → IGST') : '—'}</div></Field>
+      <div className="grid md:grid-cols-2 gap-3">
+        <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
+        {(raw.warehouses || []).length > 0 && (raw.stockItems || []).length > 0 && (
+          <Field label="Receive stock into godown"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={formInputCls}><option value="">Default godown</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></Field>
+        )}
       </div>
-      {vendor && <p className="text-xs text-slate-500 -mt-2">GSTIN {vendor.gstin || <span className="text-amber-600">not on file (unregistered supplier — usually no GST, unless reverse charge applies)</span>} · {vendor.state || 'state not set'}{!compState && <span className="text-amber-600"> · set your own state in Company Settings so CGST/SGST vs IGST is right</span>}</p>}
-      <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
-      {(raw.warehouses || []).length > 0 && (raw.stockItems || []).length > 0 && (
-        <Field label="Receive stock into godown" className="max-w-xs"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={formInputCls}><option value="">Default godown</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></Field>
-      )}
-      <div className="flex gap-5 flex-wrap text-sm">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={applyGst} onChange={e => { setApplyGst(e.target.checked); if (!e.target.checked) setRcm(false) }} />GST applicable</label>
-        <label className="flex items-center gap-2" title="Buyer pays the GST directly to the government (unregistered supplier / notified services)"><input type="checkbox" checked={rcm} disabled={!applyGst} onChange={e => setRcm(e.target.checked)} />Reverse charge (RCM)</label>
-        <label className="flex items-center gap-2" title="Untick for blocked credits under section 17(5): motor vehicles, food, club memberships, etc."><input type="checkbox" checked={itcEligible} onChange={e => setItcEligible(e.target.checked)} />Input tax credit eligible</label>
-      </div>
-      <CurrencyBar fx={fx} date={date} totalFc={totals.total} />
+
       <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={stockItems} hsnCodes={raw.hsnCodes || []} symbol={fx.symbol}
         accounts={expenseAccounts} accountLabel="Purchase ledger" defaultAccountCode="5000" applyGst={applyGst} />
-      <TdsBlock raw={raw} vendor={vendor} date={date} base={inr.subTotal} tds={tds} setTds={setTds} fy={date ? `${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0)).slice(2)}-${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0) + 1).slice(2)}` : ''}
-        partyId={vendor?.id} currentDocId={initial?.id} />
-      <AttachmentPanel entityType="purchase" entityId={initial?.id} company={company} draft={draft} label="Vendor bill / challan" />
-      <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} placeholder="Optional note" /></Field>
-      <TotalsBox totals={totals} rcm={rcm} tds={fx.isFc ? null : tdsFinal} symbol={fx.symbol} inr={fx.isFc ? inr : null}
-        extra={applyGst && itcEligible && inr.taxTotal > 0 && <div className="flex justify-between text-green-700 text-xs"><span>ITC claimable (₹)</span><span>{fmtAmt(inr.taxTotal)}</span></div>} />
+
+      <NotesTotals
+        left={<>
+          <Field label="Notes"><textarea value={narration} onChange={e => setNarration(e.target.value)} className={`${formInputCls} h-20 resize-none`} placeholder="Optional note" /></Field>
+          <TdsBlock raw={raw} vendor={vendor} date={date} base={inr.subTotal} tds={tds} setTds={setTds} fy={date ? `${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0)).slice(2)}-${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0) + 1).slice(2)}` : ''}
+            partyId={vendor?.id} currentDocId={initial?.id} />
+          <AttachmentPanel entityType="purchase" entityId={initial?.id} company={company} draft={draft} label="Attach file(s) to this bill" />
+        </>}
+        right={<TotalsBox totals={totals} rcm={rcm} tds={fx.isFc ? null : tdsFinal} symbol={fx.symbol} inr={fx.isFc ? inr : null}
+          extra={applyGst && itcEligible && inr.taxTotal > 0 && <div className="flex justify-between text-green-700 text-xs"><span>ITC claimable (₹)</span><span>{fmtAmt(inr.taxTotal)}</span></div>} />} />
     </FormShell>
   )
 }

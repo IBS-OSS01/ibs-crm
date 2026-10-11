@@ -15,6 +15,7 @@ const TABS = [
   { key: 'invoices', label: 'Sales invoices', type: 'TI', match: i => !['SO', 'PI'].includes(i.invoiceType), blurb: 'Tax invoices — these post to the books' },
   { key: 'orders', label: 'Sales orders', type: 'SO', match: i => i.invoiceType === 'SO', blurb: 'Orders received from customers — no accounting entry until you convert one to an invoice' },
   { key: 'proforma', label: 'Pro-forma', type: 'PI', match: i => i.invoiceType === 'PI', blurb: 'Pro-forma invoices — advance / quotation documents, not booked' },
+  { key: 'creditnotes', label: 'Credit notes', type: 'CN', match: () => false, blurb: 'Credit notes — sales returns and post-sale discounts; each reduces the invoice it refers to' },
 ]
 const TERMS_OPTS = ['Due on Receipt', 'Net 15', 'Net 30', 'Net 45', 'Net 60']
 const UNITS = ['pcs', 'nos', 'set', 'kg', 'ltr', 'mtr', 'sqft', 'hours', 'days', 'lot']
@@ -37,7 +38,7 @@ import { assertNotLocked, getBooksLockDate } from '../utils/voucherService.js'
 import { openBillMap, payStatus } from '../utils/outstanding.js'
 const today = todayStr   // local date (toISOString would be a day behind in India early morning)
 const getFY = () => { const d = new Date(); const y = d.getFullYear(); const m = d.getMonth() + 1; const s = m >= 4 ? y : y - 1; return `${String(s).slice(2)}-${String(s+1).slice(2)}` }
-const newItem = () => ({ description: '', hsnCode: '', qty: 1, unit: 'pcs', rate: '', gstRate: 18, stockItemId: '', sku: '' })
+const newItem = () => ({ description: '', hsnCode: '', qty: 1, unit: 'pcs', rate: '', discountPct: '', gstRate: 18, stockItemId: '', sku: '' })
 
 const emptyForm = {
   company: 'UIPL', invoiceType: 'TI', invoiceDate: today(), dueDate: today(),
@@ -47,7 +48,7 @@ const emptyForm = {
   shipToName: '', shipToAddress: '', shipToCity: '', shipToState: '', shipToPincode: '', shipToGstin: '',
   posState: '', posStateCode: '', applyGst: true,
   interCompany: null, isExport: false, exportType: 'WOPAY', shippingBillNo: '', shippingBillDate: '', portCode: '',
-  notes: '', termsAndConditions: '',
+  notes: '', termsAndConditions: '', subject: '',
 }
 
 const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -62,7 +63,7 @@ function buildPrintHtml({ inv, items, seller, gstLines, subTotal, roundOff, tota
   const shipAddr = inv.sameShipTo ? billAddr : [inv.shipToAddress, inv.shipToCity, inv.shipToState, inv.shipToPincode].filter(Boolean).join(', ')
   const typeLbl = INVOICE_TYPES.find(t => t.code === inv.invoiceType)?.label || 'Invoice'
   const rows = items.map((it, i) => {
-    const amt = (Number(it.qty) || 0) * (Number(it.rate) || 0)
+    const amt = lineBase(it)
     return `<tr>
       <td style="padding:6px 8px;border-bottom:1px solid #eee">${i+1}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #eee">${it.description || ''}<br/><span style="color:#888;font-size:11px">${it.hsnCode ? `HSN/SAC: ${it.hsnCode}` : ''}</span></td>
@@ -142,13 +143,15 @@ function buildPrintHtml({ inv, items, seller, gstLines, subTotal, roundOff, tota
 }
 
 // ── Compute totals ────────────────────────────────────────────────────────────
+// a line's taxable value: quantity × rate, less the line discount
+const lineBase = (it) => (Number(it.qty) || 0) * (Number(it.rate) || 0) * (1 - Math.min(100, Math.max(0, Number(it.discountPct) || 0)) / 100)
 function computeTotals(items, posStateCode, sellerStateCode, applyGst) {
-  const subTotal = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0), 0)
+  const subTotal = items.reduce((s, it) => s + lineBase(it), 0)
   const gstLines = []
   if (applyGst) {
     const rateMap = {}
     items.forEach(it => {
-      const base = (Number(it.qty) || 0) * (Number(it.rate) || 0)
+      const base = lineBase(it)
       const r = Number(it.gstRate) || 0
       if (r > 0) rateMap[r] = (rateMap[r] || 0) + base
     })
@@ -436,6 +439,8 @@ export default function Invoices() {
   } })
 
   const seller = sellers[form.company] || {}
+  // credit notes are vouchers (finance_vouchers); they are listed here so the Sales tabs look and behave the same
+  const cnRows = (fd.raw?.vouchers || []).filter(v => v.voucherType === 'credit_note' && v.status !== 'cancelled').sort((a, b) => (b.date || '').localeCompare(a.date || '') || String(b.voucherNumber).localeCompare(String(a.voucherNumber)))
   const fx = useFx({ fxRates }, form.invoiceDate)
   // Export under LUT = zero-rated: no GST. Export with payment of IGST is always an inter-state (IGST) supply.
   const exportNoTax = form.isExport && form.exportType === 'WOPAY'
@@ -455,7 +460,7 @@ export default function Invoices() {
 
   // ── FORM VIEW ──────────────────────────────────────────────────────────────
   if (view === 'form') return (
-    <div className="p-4 max-w-4xl space-y-4">
+    <div className="p-4 max-w-5xl space-y-4">
       <div className="flex items-center gap-3">
         <button onClick={() => { setEditingId(''); setForm(emptyForm); setItems([newItem()]); setView('list') }} className="text-slate-500 hover:text-slate-700">← Back</button>
         <h2 className="text-xl font-bold text-slate-900 tracking-tight">{editingId ? `Edit ${INVOICE_TYPES.find(t => t.code === form.invoiceType)?.label || 'Invoice'} — ${invoices.find(i => i.id === editingId)?.invoiceNumber || ''}` : `New ${INVOICE_TYPES.find(t => t.code === form.invoiceType)?.label || 'Invoice'}`}</h2>
@@ -463,207 +468,131 @@ export default function Invoices() {
       {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
       <form onSubmit={handleSave} className="space-y-4">
 
-        {/* Header row */}
-        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-4 grid grid-cols-4 gap-4">
-          <div>
-            <label className={lbl}>Entity</label>
-            <select className={inp} value={form.company} onChange={e => handleCompanyChange(e.target.value)}>
-              <option>UIPL</option>
-            </select>
+        {/* 1 · Customer and their details */}
+        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-5 grid md:grid-cols-[1fr_1.2fr] gap-6">
+          <div className="space-y-3">
+            <div>
+              <label className={lbl}>Customer name *</label>
+              <SearchSelect className={inp} value={form.customerId} onChange={handleCustomerChange} placeholder="Select or type to search a customer…" options={customers.map(c => ({ value: c.id, label: c.shopName }))} />
+            </div>
+            <div><label className={lbl}>Billing name *</label><input className={inp} value={form.billToName} onChange={e => setForm(p => ({ ...p, billToName: e.target.value }))} required /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className={lbl}>Document type</label>
+                <select className={inp} value={form.invoiceType} onChange={e => setForm(p => ({ ...p, invoiceType: e.target.value }))}>{INVOICE_TYPES.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}</select></div>
+              <div className="flex items-end pb-2"><label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer"><input type="checkbox" checked={form.applyGst} onChange={e => setForm(p => ({ ...p, applyGst: e.target.checked }))} />Apply GST</label></div>
+            </div>
+            <CurrencyBar fx={fx} date={form.invoiceDate} totalFc={total} label="Currency" />
           </div>
-          <div>
-            <label className={lbl}>Invoice Type</label>
-            <select className={inp} value={form.invoiceType} onChange={e => setForm(p => ({ ...p, invoiceType: e.target.value }))}>
-              {INVOICE_TYPES.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className={lbl}>Invoice Date</label>
-            <input type="date" className={inp} value={form.invoiceDate} onChange={e => setForm(p => ({ ...p, invoiceDate: e.target.value }))} />
-          </div>
-          <div>
-            <label className={lbl}>Due Date</label>
-            <input type="date" className={inp} value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} />
-          </div>
-          <div>
-            <label className={lbl}>Terms</label>
-            <select className={inp} value={form.terms} onChange={e => setForm(p => ({ ...p, terms: e.target.value }))}>
-              {TERMS_OPTS.map(t => <option key={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className={lbl}>P.O. / Ref #</label>
-            <input className={inp} value={form.poNumber} onChange={e => setForm(p => ({ ...p, poNumber: e.target.value }))} />
-          </div>
-          <div className="col-span-2 flex items-end gap-3">
-            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-              <input type="checkbox" checked={form.applyGst} onChange={e => setForm(p => ({ ...p, applyGst: e.target.checked }))} />
-              Apply GST
-            </label>
+          <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-3">
+            <p className="text-sm font-semibold text-slate-800">{form.billToName ? `${form.billToName}'s details` : 'Customer details'}</p>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Billing address</p>
+                <input className={inp} value={form.billToAddress} onChange={e => setForm(p => ({ ...p, billToAddress: e.target.value }))} placeholder="Street address" />
+                <div className="grid grid-cols-2 gap-2"><input className={inp} value={form.billToCity} onChange={e => setForm(p => ({ ...p, billToCity: e.target.value }))} placeholder="City" /><input className={inp} value={form.billToPincode} onChange={e => setForm(p => ({ ...p, billToPincode: e.target.value }))} placeholder="Pincode" /></div>
+                <p className="text-xs text-slate-400">{[form.billToState, form.billToGstin ? 'GSTIN ' + form.billToGstin : ''].filter(Boolean).join(' · ')}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Shipping address</p>
+                <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer"><input type="checkbox" checked={form.sameShipTo} onChange={e => setForm(p => ({ ...p, sameShipTo: e.target.checked }))} />Same as billing address</label>
+                {!form.sameShipTo && <>
+                  <input className={inp} value={form.shipToAddress} onChange={e => setForm(p => ({ ...p, shipToAddress: e.target.value }))} placeholder="Street address" />
+                  <div className="grid grid-cols-2 gap-2"><input className={inp} value={form.shipToCity} onChange={e => setForm(p => ({ ...p, shipToCity: e.target.value }))} placeholder="City" /><input className={inp} value={form.shipToPincode} onChange={e => setForm(p => ({ ...p, shipToPincode: e.target.value }))} placeholder="Pincode" /></div>
+                </>}
+              </div>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4 pt-1 border-t border-slate-200">
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Billing recipient GST details</p>
+                <p className="text-xs text-slate-600">GST treatment: <b>{form.isExport ? 'Overseas' : form.billToGstin ? 'Registered business' : 'Unregistered business'}</b></p>
+                <input className={inp} value={form.billToGstin} maxLength={15} onChange={e => setForm(p => ({ ...p, billToGstin: e.target.value.toUpperCase() }))} placeholder="GSTIN" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Shipping recipient GST details</p>
+                <input className={inp} value={form.shipToGstin} maxLength={15} disabled={form.sameShipTo} onChange={e => setForm(p => ({ ...p, shipToGstin: e.target.value.toUpperCase() }))} placeholder={form.sameShipTo ? 'Same as billing' : 'GSTIN'} />
+                <input className={inp} value={form.shipToName} disabled={form.sameShipTo} onChange={e => setForm(p => ({ ...p, shipToName: e.target.value }))} placeholder="Business legal name" />
+              </div>
+            </div>
           </div>
         </div>
 
-        <CurrencyBar fx={fx} date={form.invoiceDate} totalFc={total} label="Invoice currency" />
-
-        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-4 space-y-3">
-          <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer font-medium">
-            <input type="checkbox" checked={form.isExport} onChange={e => setForm(p => ({ ...p, isExport: e.target.checked }))} />
-            Export supply (goods or services to a customer outside India)
-          </label>
+        {/* 2 · Place of supply / source of supply (+ export) */}
+        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-5 space-y-3">
+          <div className="grid md:grid-cols-3 gap-4 items-end">
+            <div><label className={lbl}>Place of supply *</label>
+              <select className={inp} value={form.posState} onChange={e => handlePosChange(e.target.value)}><option value="">— select state —</option>{INDIA_STATES.map(s => <option key={s.code} value={s.name}>{s.name} ({s.code})</option>)}</select></div>
+            <div><label className={lbl}>Source of supply</label><div className="px-3 py-2 bg-slate-100 rounded-lg text-sm text-slate-700">{seller.state || '—'}{seller.stateCode ? ` (${seller.stateCode})` : ''}</div></div>
+            {form.applyGst && form.posStateCode && seller.stateCode && (
+              <div className={`text-xs px-3 py-2 rounded-lg font-medium ${form.posStateCode === seller.stateCode ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'}`}>{form.posStateCode === seller.stateCode ? '✓ Intra-state supply → CGST + SGST' : '↗ Inter-state supply → IGST'}</div>)}
+          </div>
+          <p className="text-xs text-slate-400">{[seller.legalName || form.company, seller.gstin && `GSTIN ${seller.gstin}`].filter(Boolean).join(' · ')}{!seller.legalName && ' — ⚠ configure seller details in Finance → Company Settings'}</p>
+          <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer font-medium"><input type="checkbox" checked={form.isExport} onChange={e => setForm(p => ({ ...p, isExport: e.target.checked }))} />Export supply (goods or services to a customer outside India)</label>
           {form.isExport && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="col-span-2"><label className={lbl}>Tax treatment</label>
-                <select className={inp} value={form.exportType} onChange={e => setForm(p => ({ ...p, exportType: e.target.value }))}>
-                  <option value="WOPAY">Zero-rated under LUT — no GST charged</option>
-                  <option value="WPAY">With payment of IGST (refund claimed later)</option>
-                </select></div>
+                <select className={inp} value={form.exportType} onChange={e => setForm(p => ({ ...p, exportType: e.target.value }))}><option value="WOPAY">Zero-rated under LUT — no GST charged</option><option value="WPAY">With payment of IGST (refund claimed later)</option></select></div>
               <div><label className={lbl}>Shipping bill no.</label><input className={inp} value={form.shippingBillNo} onChange={e => setForm(p => ({ ...p, shippingBillNo: e.target.value }))} /></div>
               <div><label className={lbl}>Shipping bill date</label><input type="date" className={inp} value={form.shippingBillDate} onChange={e => setForm(p => ({ ...p, shippingBillDate: e.target.value }))} /></div>
               <div><label className={lbl}>Port code</label><input className={inp} value={form.portCode} maxLength={6} onChange={e => setForm(p => ({ ...p, portCode: e.target.value.toUpperCase() }))} /></div>
               <p className="col-span-full text-xs text-slate-400">Exports appear in GSTR-1 table 6A. The shipping bill details can be added later by your CA on the portal; leave blank for services.</p>
-            </div>
-          )}
+            </div>)}
         </div>
 
-        {false && form.company === 'UIPL' && sellers.Wayzim && (
-          <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-4">
-            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer font-medium">
-              <input type="checkbox" checked={form.interCompany === 'Wayzim'} onChange={e => {
-                const on = e.target.checked, w = sellers.Wayzim || {}
-                setForm(p => on
-                  ? { ...p, interCompany: 'Wayzim', isExport: true, billToName: w.legalName || 'Wayzim Technology Co Ltd', billToAddress: w.address || '', billToCity: w.city || '', billToState: w.state || '', billToPincode: w.pincode || '', billToGstin: '', customerId: '', posState: 'Other Country', posStateCode: '96' }
-                  : { ...p, interCompany: null })
-              }} />
-              This is UIPL's service fee / commission to Wayzim
-            </label>
-            <p className="text-xs text-slate-400 mt-1">Fills in Wayzim as the customer and treats it as an export of services. The same invoice then appears in Wayzim's books as a cost and a payable to UIPL — no second entry needed.</p>
-          </div>
-        )}
-
-        {/* Seller info */}
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm">
-          <p className="font-bold text-blue-800">{seller.legalName || form.company}</p>
-          <p className="text-blue-700">{[seller.address, seller.city, seller.state, seller.pincode].filter(Boolean).join(', ')}</p>
-          <p className="text-blue-700">GSTIN: {seller.gstin || '—'} · State: {seller.state || '—'} ({seller.stateCode || '—'})</p>
-          {!seller.legalName && <p className="text-amber-600 text-xs mt-1">⚠ Configure seller details in Finance → Company Settings</p>}
+        {/* 3 · Invoice details */}
+        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-5 grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div><label className={lbl}>{INVOICE_TYPES.find(t => t.code === form.invoiceType)?.label || 'Invoice'} #</label><div className="px-3 py-2 bg-slate-100 rounded-lg text-sm font-mono text-slate-700">{editingId ? (invoices.find(i => i.id === editingId)?.invoiceNumber || '') : 'Assigned when saved'}</div></div>
+          <div><label className={lbl}>Order number</label><input className={inp} value={form.poNumber} onChange={e => setForm(p => ({ ...p, poNumber: e.target.value }))} /></div>
+          <div><label className={lbl}>Invoice date</label><input type="date" className={inp} value={form.invoiceDate} onChange={e => setForm(p => ({ ...p, invoiceDate: e.target.value }))} /></div>
+          <div><label className={lbl}>Terms</label><select className={inp} value={form.terms} onChange={e => setForm(p => ({ ...p, terms: e.target.value }))}>{TERMS_OPTS.map(t => <option key={t}>{t}</option>)}</select></div>
+          <div><label className={lbl}>Due date</label><input type="date" className={inp} value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} /></div>
+          <div className="col-span-2 md:col-span-3"><label className={lbl}>Subject</label><input className={inp} value={form.subject || ''} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} placeholder="Let your customer know what this invoice is for" /></div>
         </div>
 
-        {/* Bill To + POS */}
-        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-4 grid grid-cols-2 gap-4">
-          <div className="space-y-3">
-            <p className="text-xs font-bold uppercase text-blue-600 border-b pb-1">Bill To</p>
-            <div>
-              <label className={lbl}>Select Customer</label>
-              <SearchSelect className={inp} value={form.customerId} onChange={handleCustomerChange} placeholder="Type to search customer…" options={customers.map(c => ({ value: c.id, label: c.shopName }))} />
-            </div>
-            <div><label className={lbl}>Name *</label><input className={inp} value={form.billToName} onChange={e => setForm(p => ({ ...p, billToName: e.target.value }))} required /></div>
-            <div><label className={lbl}>Address</label><input className={inp} value={form.billToAddress} onChange={e => setForm(p => ({ ...p, billToAddress: e.target.value }))} /></div>
-            <div className="grid grid-cols-2 gap-2">
-              <div><label className={lbl}>City</label><input className={inp} value={form.billToCity} onChange={e => setForm(p => ({ ...p, billToCity: e.target.value }))} /></div>
-              <div><label className={lbl}>Pincode</label><input className={inp} value={form.billToPincode} onChange={e => setForm(p => ({ ...p, billToPincode: e.target.value }))} /></div>
-            </div>
-            <div><label className={lbl}>GSTIN</label><input className={inp} value={form.billToGstin} maxLength={15} onChange={e => setForm(p => ({ ...p, billToGstin: e.target.value }))} /></div>
-          </div>
-          <div className="space-y-3">
-            <p className="text-xs font-bold uppercase text-blue-600 border-b pb-1">Ship To &amp; Place of Supply</p>
-            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-              <input type="checkbox" checked={form.sameShipTo} onChange={e => setForm(p => ({ ...p, sameShipTo: e.target.checked }))} />
-              Same as Bill To
-            </label>
-            {!form.sameShipTo && <>
-              <div><label className={lbl}>Ship To Name</label><input className={inp} value={form.shipToName} onChange={e => setForm(p => ({ ...p, shipToName: e.target.value }))} /></div>
-              <div><label className={lbl}>Ship To Address</label><input className={inp} value={form.shipToAddress} onChange={e => setForm(p => ({ ...p, shipToAddress: e.target.value }))} /></div>
-              <div><label className={lbl}>Ship To GSTIN</label><input className={inp} value={form.shipToGstin} maxLength={15} onChange={e => setForm(p => ({ ...p, shipToGstin: e.target.value }))} /></div>
-            </>}
-            <div>
-              <label className={lbl}>Place of Supply (State) *</label>
-              <select className={inp} value={form.posState} onChange={e => handlePosChange(e.target.value)}>
-                <option value="">— select state —</option>
-                {INDIA_STATES.map(s => <option key={s.code} value={s.name}>{s.name} ({s.code})</option>)}
-              </select>
-            </div>
-            {form.applyGst && form.posStateCode && seller.stateCode && (
-              <div className={`text-xs px-3 py-2 rounded-lg font-medium ${form.posStateCode === seller.stateCode ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'}`}>
-                {form.posStateCode === seller.stateCode
-                  ? '✓ Intra-state supply → CGST + SGST'
-                  : '↗ Inter-state supply → IGST'}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Line Items */}
+        {/* 4 · Item table */}
         <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 overflow-hidden">
-          <div className="px-4 py-2 bg-slate-50 border-b flex items-center justify-between">
-            <p className="text-xs font-bold uppercase text-slate-600">Line Items</p>
-            <button type="button" onClick={() => setItems(p => [...p, newItem()])}
-              className="text-blue-600 hover:text-blue-700 text-sm font-medium">+ Add Row</button>
-          </div>
+          <div className="px-4 py-2 bg-slate-50 border-b flex items-center justify-between"><p className="text-xs font-bold uppercase text-slate-600">Item table</p><button type="button" onClick={() => setItems(p => [...p, newItem()])} className="text-blue-600 hover:text-blue-700 text-sm font-medium">+ Add new row</button></div>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider">
-              <tr>
-                <th className="px-3 py-2 text-left" style={{width:'34%'}}>Description</th>
-                <th className="px-3 py-2" style={{width:'12%'}}>HSN/SAC</th>
-                <th className="px-3 py-2" style={{width:'8%'}}>Qty</th>
-                <th className="px-3 py-2" style={{width:'8%'}}>Unit</th>
-                <th className="px-3 py-2" style={{width:'12%'}}>Rate ({fx.isFc ? fx.symbol : '₹'})</th>
-                <th className="px-3 py-2" style={{width:'8%'}}>GST %</th>
-                <th className="px-3 py-2 text-right" style={{width:'12%'}}>Amount</th>
-                <th className="px-3 py-2" style={{width:'6%'}}></th>
-              </tr>
+              <tr><th className="px-3 py-2 text-left" style={{ width: '38%' }}>Item details</th><th className="px-3 py-2 text-left" style={{ width: '14%' }}>Quantity</th><th className="px-3 py-2 text-left" style={{ width: '12%' }}>Rate ({fx.isFc ? fx.symbol : '₹'})</th><th className="px-3 py-2 text-left" style={{ width: '9%' }}>Discount %</th><th className="px-3 py-2 text-left" style={{ width: '9%' }}>Tax %</th><th className="px-3 py-2 text-right" style={{ width: '14%' }}>Amount</th><th style={{ width: '4%' }} /></tr>
             </thead>
             <tbody>
               {items.map((it, idx) => {
-                const amt = (Number(it.qty) || 0) * (Number(it.rate) || 0)
+                const amt = lineBase(it)
                 return (
-                  <tr key={idx} className="border-t border-slate-100">
-                    <td className="px-2 py-1">
+                  <tr key={idx} className="border-t border-slate-100 align-top">
+                    <td className="px-2 py-2 space-y-1">
                       {stockItems.length > 0 && (
-                        <select className={`${inp} mb-1 text-xs text-slate-500`} value={it.stockItemId || ''} onChange={e => pickStockItem(idx, e.target.value)}>
-                          <option value="">Not a stock item (service / free text)</option>
-                          {stockItems.map(x => <option key={x.id} value={x.id}>{x.sku ? `${x.sku} · ` : ''}{x.name}</option>)}
-                        </select>
-                      )}
+                        <select className={`${inp} text-xs text-slate-500`} value={it.stockItemId || ''} onChange={e => pickStockItem(idx, e.target.value)}><option value="">Type or click to select an item (or free text below)</option>{stockItems.map(x => <option key={x.id} value={x.id}>{x.sku ? `${x.sku} · ` : ''}{x.name}</option>)}</select>)}
                       <input className={inp} value={it.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Item description" />
+                      <input className={`${inp} text-xs`} value={it.hsnCode} onChange={e => { updateItem(idx, 'hsnCode', e.target.value); handleHsnLookup(idx, e.target.value) }} placeholder="HSN / SAC" />
                     </td>
-                    <td className="px-2 py-1"><input className={inp} value={it.hsnCode} onChange={e => { updateItem(idx, 'hsnCode', e.target.value); handleHsnLookup(idx, e.target.value) }} placeholder="85444929" /></td>
-                    <td className="px-2 py-1"><input type="number" className={inp} value={it.qty} min={0} onChange={e => updateItem(idx, 'qty', e.target.value)} /></td>
-                    <td className="px-2 py-1">
-                      <select className={inp} value={it.unit} onChange={e => updateItem(idx, 'unit', e.target.value)}>
-                        {UNITS.map(u => <option key={u}>{u}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-2 py-1"><input type="number" className={inp} value={it.rate} min={0} onChange={e => updateItem(idx, 'rate', e.target.value)} /></td>
-                    <td className="px-2 py-1"><input type="number" className={inp} value={it.gstRate} min={0} max={40} onChange={e => updateItem(idx, 'gstRate', e.target.value)} /></td>
-                    <td className="px-2 py-1 text-right font-medium">{sym}{amt.toLocaleString('en-IN')}</td>
-                    <td className="px-2 py-1 text-center">
-                      {items.length > 1 && <button type="button" onClick={() => setItems(p => p.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 text-lg">×</button>}
-                    </td>
-                  </tr>
-                )
+                    <td className="px-2 py-2"><div className="flex gap-1"><input type="number" className={inp} value={it.qty} min={0} onChange={e => updateItem(idx, 'qty', e.target.value)} /><select className={`${inp} w-20`} value={it.unit} onChange={e => updateItem(idx, 'unit', e.target.value)}>{UNITS.map(u => <option key={u}>{u}</option>)}</select></div></td>
+                    <td className="px-2 py-2"><input type="number" className={inp} value={it.rate} min={0} onChange={e => updateItem(idx, 'rate', e.target.value)} /></td>
+                    <td className="px-2 py-2"><input type="number" className={inp} value={it.discountPct ?? ''} min={0} max={100} onChange={e => updateItem(idx, 'discountPct', e.target.value)} placeholder="0" /></td>
+                    <td className="px-2 py-2"><input type="number" className={inp} value={it.gstRate} min={0} max={40} onChange={e => updateItem(idx, 'gstRate', e.target.value)} /></td>
+                    <td className="px-2 py-2 text-right font-medium">{sym}{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    <td className="px-2 py-2 text-center">{items.length > 1 && <button type="button" onClick={() => setItems(p => p.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 text-lg">×</button>}</td>
+                  </tr>)
               })}
             </tbody>
           </table>
-          {/* Totals */}
-          <div className="px-4 py-3 bg-slate-50 border-t text-sm">
-            <div className="flex justify-end">
-              <div className="w-64 space-y-1">
-                <div className="flex justify-between"><span className="text-slate-500">Sub Total</span><span>{sym}{subTotal.toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>
-                {gstLines.map((g, i) => (
-                  <div key={i} className="flex justify-between text-slate-600"><span>{g.label}</span><span>{sym}{g.amount.toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>
-                ))}
-                {roundOff !== 0 && <div className="flex justify-between text-slate-500"><span>Rounding</span><span>{roundOff.toFixed(2)}</span></div>}
-                <div className="flex justify-between font-bold text-base border-t pt-1"><span>Total</span><span>{sym}{total.toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>
-                {booked && <div className="flex justify-between text-xs text-amber-800 bg-amber-50 rounded px-2 py-1"><span>Booked in accounts as</span><span className="font-semibold">₹{booked.total.toLocaleString('en-IN', {minimumFractionDigits:2})}</span></div>}
-              </div>
-            </div>
           </div>
         </div>
 
-        {/* Notes + T&C */}
-        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-4 grid grid-cols-2 gap-4">
-          <div><label className={lbl}>Notes</label><textarea className={`${inp} h-20 resize-none`} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /></div>
-          <div><label className={lbl}>Terms &amp; Conditions</label><textarea className={`${inp} h-20 resize-none`} value={form.termsAndConditions} onChange={e => setForm(p => ({ ...p, termsAndConditions: e.target.value }))} /></div>
+        {/* 5 · Notes, terms and totals */}
+        <div className="grid md:grid-cols-[1.3fr_1fr] gap-4">
+          <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-5 space-y-3">
+            <div><label className={lbl}>Customer notes</label><textarea className={`${inp} h-20 resize-none`} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Thanks for your business." /><p className="text-xs text-slate-400 mt-1">Will be displayed on the invoice</p></div>
+            <div><label className={lbl}>Terms &amp; conditions</label><textarea className={`${inp} h-24 resize-none`} value={form.termsAndConditions} onChange={e => setForm(p => ({ ...p, termsAndConditions: e.target.value }))} /></div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm space-y-1.5 self-start">
+            <div className="flex justify-between"><span className="text-slate-500">Sub total</span><span className="font-medium">{sym}{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+            {gstLines.map((g, i) => <div key={i} className="flex justify-between text-slate-600"><span>{g.label}</span><span>{sym}{g.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
+            <div className="flex justify-between text-slate-500"><span>Round off</span><span>{roundOff.toFixed(2)}</span></div>
+            <div className="flex justify-between font-bold text-base border-t border-slate-300 pt-2 mt-1"><span>Total ({sym.trim()})</span><span>{sym}{total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+            {booked && <div className="flex justify-between text-xs text-amber-800 bg-amber-50 rounded px-2 py-1"><span>Booked in accounts as</span><span className="font-semibold">₹{booked.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>}
+          </div>
         </div>
 
         <div className="flex gap-3">
@@ -692,17 +621,17 @@ export default function Invoices() {
         {params.get('zoho') === '1' && tab.key === 'invoices' && <button onClick={() => setShowCnImport(true)} className="ml-auto px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Credit notes</button>}
         {params.get('zoho') === '1' && tab.key === 'invoices' && <button onClick={() => setShowImport(true)} className="ml-auto mr-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Import from Zoho</button>}
         <button onClick={() => {
+          if (tab.key === 'creditnotes') { navigate('/finance/vouchers/credit_note?new=1'); return }
           const s = sellers['UIPL'] || {}
-          setForm({ ...emptyForm, invoiceType: tab.type, termsAndConditions: s.termsAndConditions || '' })
+          setForm({ ...emptyForm, invoiceType: tab.type, notes: 'Thanks for your business.', termsAndConditions: s.termsAndConditions || '' })
           setItems([newItem()]); setView('form')
         }}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
-          + Create {tab.key === 'orders' ? 'Sales Order' : tab.key === 'proforma' ? 'Pro-forma' : 'Invoice'}
+          + Create {tab.key === 'orders' ? 'Sales Order' : tab.key === 'proforma' ? 'Pro-forma' : tab.key === 'creditnotes' ? 'Credit Note' : 'Invoice'}
         </button>
       </div>
       <div className="flex gap-1 border-b border-slate-200">
-        {TABS.map(t => <button key={t.key} onClick={() => setParams(t.key === 'invoices' ? {} : { tab: t.key })} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${t.key === tab.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{t.label} <span className="text-xs text-slate-400">{invoices.filter(t.match).length}</span></button>)}
-        <button onClick={() => navigate('/finance/vouchers/credit_note')} className="px-4 py-2 text-sm font-medium -mb-px border-b-2 border-transparent text-slate-500 hover:text-slate-700">Credit notes <span className="text-xs text-slate-400">{(fd.raw?.vouchers || []).filter(v => v.voucherType === 'credit_note' && v.status !== 'cancelled').length}</span></button>
+        {TABS.map(t => <button key={t.key} onClick={() => setParams(t.key === 'invoices' ? {} : { tab: t.key })} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${t.key === tab.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{t.label} <span className="text-xs text-slate-400">{t.key === 'creditnotes' ? cnRows.length : invoices.filter(t.match).length}</span></button>)}
       </div>
       {docModal}
       {convertFor && <ConvertOrderModal order={convertFor} sellerStateCode={(sellers[convertFor.company] || {}).stateCode} onClose={() => setConvertFor(null)} onConfirm={(r) => createFromOrder(convertFor, r)} />}
@@ -710,6 +639,42 @@ export default function Invoices() {
       {showCnImport && <CreditNotesImport onClose={() => setShowCnImport(false)} onDone={() => { invalidateFinanceCache(); fd.reload() }} />}
       {showImport && <InvoicesImport onClose={() => { setShowImport(false); loadAll() }} />}
 
+      {tab.key === 'creditnotes' ? (
+      <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider">
+            <tr>
+              <th className="text-left px-4 py-3">Credit note #</th>
+              <th className="text-left px-4 py-3">Type</th>
+              <th className="text-left px-4 py-3">Date</th>
+              <th className="text-left px-4 py-3">Customer</th>
+              <th className="text-left px-4 py-3">Against invoice</th>
+              <th className="text-right px-4 py-3">Amount</th>
+              <th className="text-left px-4 py-3">Reason</th>
+              <th className="text-right px-4 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {cnRows.map(v => (
+              <tr key={v.id} onClick={() => openKey(`credit_note:${v.id}`)} className="hover:bg-blue-50/40 cursor-pointer" title="Open this document">
+                <td className="px-4 py-3 font-mono font-bold text-blue-700">{v.voucherNumber}{v.refNumber && <span className="block text-[10px] font-normal text-slate-400">{v.refNumber}</span>}</td>
+                <td className="px-4 py-3"><span className="px-2 py-0.5 rounded-lg text-xs font-bold bg-indigo-100 text-indigo-700">Credit Note</span></td>
+                <td className="px-4 py-3 text-slate-600">{v.date}</td>
+                <td className="px-4 py-3 text-slate-800">{v.partyName || '—'}</td>
+                <td className="px-4 py-3 text-slate-500">{v.refInvoiceNumber || '—'}</td>
+                <td className="px-4 py-3 text-right font-medium">₹{(v.total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                <td className="px-4 py-3 text-slate-500">{v.reason || '—'}</td>
+                <td className="px-4 py-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => navigate(`/finance/vouchers/credit_note?edit=${v.id}`)} className="text-blue-600 hover:text-blue-700 font-medium mr-3">✏️ Edit</button>
+                  <button onClick={() => navigate(`/finance/vouchers/credit_note?clone=${v.id}`)} title="Start a new one from this" className="text-blue-600 hover:text-blue-700 font-medium">⧉ Clone</button>
+                </td>
+              </tr>
+            ))}
+            {cnRows.length === 0 && <tr><td colSpan={8} className="text-center py-10 text-slate-400">No credit notes yet. Click “Create Credit Note” to record a sales return or discount.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      ) : (
       <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider">
@@ -755,6 +720,7 @@ export default function Invoices() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   )
 }

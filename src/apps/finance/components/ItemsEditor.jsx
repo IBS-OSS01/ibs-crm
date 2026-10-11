@@ -30,12 +30,11 @@ export default function ItemsEditor({ items, onChange, computed = [], date, stoc
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm min-w-[860px]">
+      <table className="w-full text-sm min-w-[820px]">
         <thead className="text-xs text-slate-500 uppercase tracking-wide">
           <tr>
-            <th className={`${cell} text-left w-44`}>Stock item</th><th className={`${cell} text-left`}>Description</th><th className={`${cell} text-left w-24`}>HSN/SAC</th>
-            <th className={`${cell} text-right w-20`}>Qty</th><th className={`${cell} text-left w-20`}>Unit</th><th className={`${cell} text-right w-28`}>Rate{symbol && symbol !== '₹' ? ` (${symbol})` : ''}</th>
-            <th className={`${cell} text-right w-16`}>Disc %</th><th className={`${cell} text-right w-20`}>GST %</th>
+            <th className={`${cell} text-left`}>Item details</th><th className={`${cell} text-left w-40`}>Quantity</th><th className={`${cell} text-right w-28`}>Rate{symbol && symbol !== '₹' ? ` (${symbol})` : ''}</th>
+            <th className={`${cell} text-right w-20`}>Discount %</th><th className={`${cell} text-right w-24`}>Tax %</th>
             {accounts.length > 0 && <th className={`${cell} text-left w-40`}>{accountLabel}</th>}
             <th className={`${cell} text-right w-28`}>Amount</th><th className="w-8" />
           </tr>
@@ -43,16 +42,16 @@ export default function ItemsEditor({ items, onChange, computed = [], date, stoc
         <tbody>
           {items.map((it, i) => (
             <tr key={i} className="border-t border-slate-100 align-top">
-              <td className={cell}>
+              <td className={`${cell} space-y-1`}>
                 <select disabled={readOnly} value={it.stockItemId || ''} onChange={e => pickStock(i, e.target.value)} className={mini}>
-                  <option value="">— free text —</option>
+                  <option value="">Select an item, or type free text below</option>
                   {stockItems.map(s => <option key={s.id} value={s.id}>{s.sku ? `${s.sku} · ` : ''}{s.name || s.itemName}</option>)}
                 </select>
+                <input disabled={readOnly} value={it.description} onChange={e => update(i, { description: e.target.value })} className={mini} placeholder="Description" />
+                <input disabled={readOnly} value={it.hsnCode} onChange={e => onHsn(i, e.target.value)} list="hsn-list" className={`${mini} text-xs`} placeholder="HSN / SAC" />
               </td>
-              <td className={cell}><input disabled={readOnly} value={it.description} onChange={e => update(i, { description: e.target.value })} className={mini} placeholder="Description" /></td>
-              <td className={cell}><input disabled={readOnly} value={it.hsnCode} onChange={e => onHsn(i, e.target.value)} list="hsn-list" className={mini} /></td>
-              <td className={cell}><input disabled={readOnly} type="number" min="0" step="any" value={it.qty} onChange={e => update(i, { qty: e.target.value })} className={`${mini} text-right`} /></td>
-              <td className={cell}><select disabled={readOnly} value={it.unit} onChange={e => update(i, { unit: e.target.value })} className={mini}>{[...new Set([...UNITS, it.unit].filter(Boolean))].map(u => <option key={u}>{u}</option>)}</select></td>
+              <td className={cell}><div className="flex gap-1"><input disabled={readOnly} type="number" min="0" step="any" value={it.qty} onChange={e => update(i, { qty: e.target.value })} className={`${mini} text-right`} />
+                <select disabled={readOnly} value={it.unit} onChange={e => update(i, { unit: e.target.value })} className={`${mini} w-20`}>{[...new Set([...UNITS, it.unit].filter(Boolean))].map(u => <option key={u}>{u}</option>)}</select></div></td>
               <td className={cell}><input disabled={readOnly} type="number" min="0" step="any" value={it.rate} onChange={e => update(i, { rate: e.target.value })} className={`${mini} text-right`} /></td>
               <td className={cell}><input disabled={readOnly} type="number" min="0" max="100" step="any" value={it.discountPct} onChange={e => update(i, { discountPct: e.target.value })} className={`${mini} text-right`} /></td>
               <td className={cell}>
@@ -74,7 +73,7 @@ export default function ItemsEditor({ items, onChange, computed = [], date, stoc
         </tbody>
       </table>
       <datalist id="hsn-list">{hsnCodes.map(h => <option key={h.id || h.code} value={h.code}>{h.description}</option>)}</datalist>
-      {!readOnly && <button type="button" onClick={() => onChange([...items, newLine()])} className="mt-2 text-sm text-blue-600 hover:underline">+ Add line</button>}
+      {!readOnly && <button type="button" onClick={() => onChange([...items, newLine()])} className="mt-2 text-sm text-blue-600 hover:underline">+ Add new row</button>}
     </div>
   )
 }
