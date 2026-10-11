@@ -4,6 +4,7 @@ import { useAuth } from '../../../context/AuthContext'
 import { createVoucher, updateVoucher, getBooksLockDate, VoucherError } from '../utils/voucherService.js'
 import { uploadAttachments } from '../utils/attachments.js'
 import { CURRENCIES, rateOn, fetchMarketRate, symbolOf, fmtFc } from '../utils/fx.js'
+import { useAllowedCompanies } from './FinanceUI.jsx'
 import { COMPANIES, todayStr, fmtAmt, num, normName } from '../utils/financeConstants.js'
 import { INDIA_STATES, gstinToStateCode } from '../utils/indiaConstants.js'
 import { DEFAULT_TDS_SECTIONS, tdsRateFor, thresholdCrossed, ldcFor } from '../utils/tdsMaster.js'
@@ -149,7 +150,7 @@ export function HeaderFields({ company, setCompany, date, setDate, locked, extra
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       <Field label="Company">
-        <select value={company} onChange={e => setCompany(e.target.value)} disabled={locked} className={formInputCls}>{COMPANIES.map(c => <option key={c}>{c}</option>)}</select>
+        <select value={company} onChange={e => setCompany(e.target.value)} disabled={locked} className={formInputCls}>{useAllowedCompanies().map(c => <option key={c}>{c}</option>)}</select>
       </Field>
       <Field label="Date"><input type="date" value={date} onChange={e => setDate(e.target.value)} className={formInputCls} required /></Field>
       {extra}

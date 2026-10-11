@@ -1,6 +1,7 @@
 // Small shared UI pieces for the finance pages, so every report has the same
 // look, the same company switch, the same date presets and the same export bar.
-import React from 'react'
+import React, { useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAuth, usePermissions } from '../../../context/AuthContext'
 import { COMPANIES, currentFY, fyRange, fmtAmt, drCr } from '../utils/financeConstants.js'
 
@@ -21,10 +22,21 @@ export function useFinancePerms() {
   return { isAdmin, canWrite: isAdmin || canEdit('FINANCE') }
 }
 
+// Wayzim only sells (UIPL buys, pays, holds stock, runs payroll and files GST / TDS on its behalf), so every
+// purchase-side, stock, tax and payroll screen offers UIPL alone. Sales-side screens offer both.
+const UIPL_ONLY = [/\/vouchers\/(purchase|payment|debit_note|purchase_order|stock_journal|payroll)/, /\/stock/, /\/tds\//, /\/gst\//, /\/gst-filing/, /\/payroll\//, /\/einvoice/,
+  /\/registers\/(purchase|debit_note|payment)/, /\/outstanding\/payables/, /\/analysis\/purchase/, /\/fx\/revaluation/, /\/bank-recon/]
+export const companiesForPath = (pathname) => (UIPL_ONLY.some(re => re.test(pathname)) ? COMPANIES.filter(c => c === 'UIPL') : COMPANIES)
+export const useAllowedCompanies = () => companiesForPath(useLocation().pathname)
+
 export function CompanyToggle({ value, onChange }) {
+  const allowed = useAllowedCompanies()
+  // if the page you were on had Wayzim selected and you moved to a UIPL-only screen, fall back to UIPL
+  useEffect(() => { if (!allowed.includes(value)) onChange(allowed[0]) }, [allowed.join('|'), value]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (allowed.length < 2) return <span className="px-4 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium" title="Wayzim only sells — UIPL handles this on its behalf">UIPL</span>
   return (
     <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm">
-      {COMPANIES.map(co => (
+      {allowed.map(co => (
         <button key={co} onClick={() => onChange(co)}
           className={`px-4 py-1.5 font-medium transition ${value === co ? (co === 'UIPL' ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white') : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
           {co}

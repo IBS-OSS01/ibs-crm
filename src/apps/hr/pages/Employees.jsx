@@ -9,7 +9,7 @@ const DEPARTMENTS = ['Sales', 'Delivery', 'Warehouse', 'Admin', 'Accounts', 'Man
 const emptyForm = {
   name: '', designation: '', department: 'Sales', phone: '', email: '',
   address: '', emergencyContact: '', joinDate: '', salary: '', active: true,
-  basicSalary: '', payrollCompany: 'UIPL', pfApplicable: false, pfOnActual: false, uan: '', pfMemberId: '', esicApplicable: false, esicIpNumber: '',
+  basicSalary: '', servesCompany: 'UIPL', pfApplicable: false, pfOnActual: false, uan: '', pfMemberId: '', esicApplicable: false, esicIpNumber: '',
 }
 
 export default function Employees() {
@@ -55,7 +55,7 @@ export default function Employees() {
       phone: e.phone || '', email: e.email || '', address: e.address || '',
       emergencyContact: e.emergencyContact || '', joinDate: e.joinDate || '',
       salary: e.salary ?? '', active: e.active !== false,
-      basicSalary: e.basicSalary ?? '', payrollCompany: e.payrollCompany || 'UIPL', pfApplicable: e.pfApplicable === true, pfOnActual: e.pfOnActual === true, uan: e.uan || '', pfMemberId: e.pfMemberId || '',
+      basicSalary: e.basicSalary ?? '', servesCompany: e.servesCompany || 'UIPL', pfApplicable: e.pfApplicable === true, pfOnActual: e.pfOnActual === true, uan: e.uan || '', pfMemberId: e.pfMemberId || '',
       esicApplicable: e.esicApplicable === true, esicIpNumber: e.esicIpNumber || '',
     })
     setShowForm(true)
@@ -190,8 +190,9 @@ export default function Employees() {
                 <div><label className="block text-sm font-medium text-slate-700 mb-1">Basic salary (₹ / month)</label>
                   <input type="number" min="0" value={form.basicSalary} onChange={e => set('basicSalary', e.target.value)} placeholder="blank = 50% of gross"
                     className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
-                <div><label className="block text-sm font-medium text-slate-700 mb-1">Salary is booked in</label>
-                  <select value={form.payrollCompany} onChange={e => set('payrollCompany', e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm"><option>UIPL</option><option>Wayzim</option></select></div>
+                <div><label className="block text-sm font-medium text-slate-700 mb-1">Works for</label>
+                  <select value={form.servesCompany} onChange={e => set('servesCompany', e.target.value)} className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm"><option value="UIPL">UIPL</option><option value="Wayzim">Wayzim (employed by UIPL)</option><option value="Both">Both</option></select>
+                  <p className="text-xs text-slate-400 mt-1">Salary, PF and ESIC are always UIPL's — it is the employer.</p></div>
                 <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={form.pfApplicable} onChange={e => set('pfApplicable', e.target.checked)} />Provident Fund (PF) applies</label>
                 <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={form.esicApplicable} onChange={e => set('esicApplicable', e.target.checked)} />ESIC applies <span className="text-xs text-slate-400">(only while gross ≤ ₹21,000)</span></label>
                 {form.pfApplicable && <>

@@ -76,6 +76,7 @@ export default function FinanceDashboard() {
     { label: 'TDS to deposit', value: m.tds, icon: '🏛️', color: m.tds > 0 ? 'text-amber-600' : 'text-slate-700', path: '/finance/tds/dashboard' },
     { label: 'GST payable (net of ITC)', value: m.gst, icon: '🧮', color: m.gst > 0 ? 'text-amber-600' : 'text-slate-700', path: '/finance/gst/gstr3b', sub: m.gst < 0 ? 'credit available' : null },
   ]
+  const wayzim = company === 'Wayzim'
   const net = m.month.netProfit
 
   return (
@@ -88,7 +89,7 @@ export default function FinanceDashboard() {
         <CompanyToggle value={company} onChange={setCompany} />
       </div>
 
-      {setupDone < setup.length && !hideSetup && (
+      {!wayzim && setupDone < setup.length && !hideSetup && (
         <div className={`${cardCls} p-4`}>
           <div className="flex items-center justify-between gap-3 mb-2">
             <div><p className="font-semibold text-slate-800">Get set up <span className="text-slate-400 font-normal">· {setupDone} of {setup.length} done</span></p>
@@ -106,7 +107,7 @@ export default function FinanceDashboard() {
         </div>
       )}
 
-      {alerts.length > 0 && (
+      {!wayzim && alerts.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Needs your attention</p>
           {alerts.map(x => (
@@ -119,7 +120,7 @@ export default function FinanceDashboard() {
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {cards.map(c => (
+        {cards.filter(c => !wayzim || ['Cash & bank', 'Receivables outstanding', 'Collected this month', 'Sales this month'].includes(c.label)).map(c => (
           <button key={c.label} onClick={() => navigate(c.path)} className={`${cardCls} p-4 text-left hover:border-blue-300 transition`}>
             <p className="text-2xl mb-1">{c.icon}</p>
             <p className={`text-lg font-bold ${c.color || 'text-slate-800'}`}>₹{fmtAmt(Math.abs(c.value))}{c.value < 0 ? ' Cr' : ''}</p>
@@ -142,8 +143,9 @@ export default function FinanceDashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          ['Receipt (F6)', '/finance/vouchers/receipt', '💰'], ['Payment (F5)', '/finance/vouchers/payment', '💸'], ['Purchase (F9)', '/finance/vouchers/purchase', '🛒'], ['Sales Invoice', '/finance/invoices', '🧾'],
-          ['Day Book', '/finance/daybook', '📒'], ['GSTR-1 / 3B', '/finance/gst/gstr1', '🧮'], ['Stock Summary', '/finance/stock/summary', '📦'], ['All reports', '/finance/reports', '🗂️'],
+          ['Receipt (F6)', '/finance/vouchers/receipt', '💰'], ['Sales Invoice', '/finance/invoices', '🧾'], ['Credit note', '/finance/vouchers/credit_note', '↩️'], ['Day Book', '/finance/daybook', '📒'],
+          ...(wayzim ? [['Who owes me', '/finance/outstanding/receivables', '📥'], ['Sales analysis', '/finance/analysis/sales-party', '🧮'], ['Profit & loss', '/finance/statements/trading', '📈'], ['All reports', '/finance/reports', '🗂️']]
+            : [['Payment (F5)', '/finance/vouchers/payment', '💸'], ['Purchase (F9)', '/finance/vouchers/purchase', '🛒'], ['GSTR-1 / 3B', '/finance/gst/gstr1', '🧮'], ['Stock Summary', '/finance/stock/summary', '📦']]),
         ].map(([label, path, icon]) => (
           <button key={label} onClick={() => navigate(path)} className={`${cardCls} p-3 text-sm text-slate-700 hover:border-blue-300 transition flex items-center gap-2`}><span>{icon}</span> {label}</button>
         ))}

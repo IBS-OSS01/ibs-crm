@@ -35,13 +35,13 @@ export default function Payroll() {
 
   const S = useMemo(() => mergeStatutory(raw?.companySettings?.[company]?.statutory), [raw, company])
   const empById = useMemo(() => Object.fromEntries((raw?.hrEmployees || []).map(e => [e.id, e])), [raw])
-  const slips = useMemo(() => (raw?.hrSlips || []).filter(x => x.month === month && (empById[x.employeeId]?.payrollCompany || 'UIPL') === company), [raw, month, company, empById])
+  const slips = useMemo(() => (raw?.hrSlips || []).filter(x => x.month === month && true), [raw, month, company, empById])   // UIPL is the employer of everyone, including staff who serve Wayzim
   const t = useMemo(() => payrollTotals(slips, S), [slips, S])
   const posted = (raw?.vouchers || []).find(v => v.voucherType === 'payroll' && v.company === company && v.month === month && v.status !== 'cancelled')
   const banks = useMemo(() => raw ? cashBankOptions(raw, company) : [], [raw, company])
 
   const missingUan = slips.filter(x => (x.pfEmployee || 0) > 0 && !/^\d{12}$/.test(String(empById[x.employeeId]?.uan || '')))
-  const activeNoSlip = (raw?.hrEmployees || []).filter(e => e.active !== false && (e.payrollCompany || 'UIPL') === company && !slips.some(x => x.employeeId === e.id))
+  const activeNoSlip = (raw?.hrEmployees || []).filter(e => e.active !== false && !slips.some(x => x.employeeId === e.id))
 
   const post = async () => {
     setMsg(''); setBusy(true)
@@ -114,7 +114,7 @@ export default function Payroll() {
 
       {tab === 'post' && (
         <>
-          {slips.length === 0 && <Empty>No salary slips for {company} in {ml(month)}. Generate them in HR → Salary first (employees are assigned to a company in HR → Employees).</Empty>}
+          {slips.length === 0 && <Empty>No salary slips for {company} in {ml(month)}. Generate them in HR → Salary first (UIPL is the employer of all staff, including those who serve Wayzim).</Empty>}
           {slips.length > 0 && (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
