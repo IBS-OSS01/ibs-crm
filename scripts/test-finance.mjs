@@ -613,6 +613,21 @@ section('Zoho expenses → tied to bank payments or new entries')
   ok(Math.abs(sumBy(lines, '1200', 'credit') - 16638000) < 0.01 && lines.find(l => l.accountCode === '1200')?.allocatesTo === billKey('invoice', 'i4') && balanced(lines), 'credit notes: reverses sales and output tax, credits the receivable against that invoice, balanced')
 }
 
+// ── YES Bank statement PDF: ISO dates, centred headings, "Transaction / Date" on two lines, letterhead repeated on every page
+{
+  const W = (x, y, s) => ({ x, y, s })
+  const head = (y) => [W(32, y, 'Transaction'), W(81, y, 'Value Date'), W(162, y, 'Description'), W(258, y, 'Reference Number'), W(365, y, 'Withdrawals'), W(446, y, 'Deposits'), W(501, y, 'Running Balance'), W(44, y - 12, 'Date')]
+  const letter = (y) => [W(223, y, 'Statement of account :'), W(305, y, '147227000000084'), W(29, y - 12, 'Customer Name :'), W(94, y - 12, 'UDISHTHA INNOVATIONS')]
+  const tx = (y, d1, d2, desc, ref, wd, dep, bal) => [W(30, y, d1), W(78, y, d2), W(134, y, desc), W(256, y, ref), ...(wd ? [W(365, y, wd)] : []), ...(dep ? [W(441, y, dep)] : []), W(507, y, bal)]
+  const page1 = [...letter(800), ...head(600), ...tx(580, '2026-06-30', '2026-06-30', 'RTGS Cr-HSBC0400002', 'YES0R618195143', '', '300,000.00', '543,074.00'), W(257, 568, '8200'), W(134, 568, '-UDISHTHA INNOVATIO'),
+    ...tx(540, '2026-06-30', '2026-06-30', 'RTGS Cr-ICIC0001967-SAN', 'YES0R618195099', '', '200,000.00', '243,074.00'), W(257, 528, '1400')]
+  const page2 = [...letter(800), ...head(600), ...tx(580, '2026-06-24', '2026-06-24', '551BG03261750001-COM', '551BG03261750', '17,700.00', '', '43,074.00')]
+  const r = parseStatementPages([page1, page2])
+  ok(!r.error && r.lines.length === 3 && r.meta.balanceBreaks === 0 && r.meta.newestFirst, 'YES Bank PDF: three lines read, newest-first, balances chain')
+  ok(r.lines[0].date === '2026-06-24' && r.lines[0].debit === 17700 && r.lines[1].credit === 200000 && r.lines[2].credit === 300000 && r.lines[2].balance === 543074, 'YES Bank PDF: withdrawals and deposits land in their own columns')
+  ok(r.lines[2].ref === 'YES0R6181951438200' && !r.lines.some(l => /Statement of account|Customer Name/.test(l.description)), 'YES Bank PDF: wrapped reference rejoined, repeated page letterhead not mixed into narrations')
+}
+
 // ── Fixed deposits: sweep-out / sweep-in are transfers to the FD, interest is income
 {
   const ctx = { customers: [], vendors: [], banks: [{ id: 'y', name: 'YES BANK', accountNumber: '147227000000084' }], fds: [{ id: 'fd1', name: 'YES sweep FD', accountNumber: '147240600000031' }], thisBankId: 'y', employees: [] }
