@@ -15,6 +15,7 @@ import { todayStr } from '../utils/financeConstants.js'
 import { computeVoucherTotals } from '../utils/taxCalc.js'
 import { convertTotals, fmtFc, symbolOf } from '../utils/fx.js'
 import { useFx, CurrencyBar } from '../components/formShared.jsx'
+import InvoicesImport from '../components/InvoicesImport.jsx'
 const today = todayStr   // local date (toISOString would be a day behind in India early morning)
 const getFY = () => { const d = new Date(); const y = d.getFullYear(); const m = d.getMonth() + 1; const s = m >= 4 ? y : y - 1; return `${String(s).slice(2)}-${String(s+1).slice(2)}` }
 const newItem = () => ({ description: '', hsnCode: '', qty: 1, unit: 'pcs', rate: '', gstRate: 18, stockItemId: '', sku: '' })
@@ -158,6 +159,7 @@ export default function Invoices() {
   const [loading, setLoading] = useState(true)
   const [sellers, setSellers] = useState({})
   const [customers, setCustomers] = useState([])
+  const [showImport, setShowImport] = useState(false)
   const [hsnCodes, setHsnCodes] = useState([])
   const [fxRates, setFxRates] = useState([])
   const [stockItems, setStockItems] = useState([])   // optional link: picking a stock item makes the sale reduce inventory and book cost of goods
@@ -567,6 +569,7 @@ export default function Invoices() {
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Invoices</h2>
           <p className="text-slate-500 text-sm">{invoices.length} invoices · Tax &amp; Pro-forma</p>
         </div>
+        <button onClick={() => setShowImport(true)} className="ml-auto mr-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Import from Zoho</button>
         <button onClick={() => {
           const s = sellers['UIPL'] || {}
           setForm({ ...emptyForm, termsAndConditions: s.termsAndConditions || '' })
@@ -576,6 +579,7 @@ export default function Invoices() {
           + Create Invoice
         </button>
       </div>
+      {showImport && <InvoicesImport onClose={() => { setShowImport(false); loadAll() }} />}
 
       <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 overflow-hidden">
         <table className="w-full text-sm">

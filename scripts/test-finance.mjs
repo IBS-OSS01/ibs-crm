@@ -13,6 +13,7 @@ import { deductionRows, monthlyPosition, depositDueDate, monthsLate, lateFee, re
 import { tradingPL, cashFlow, ratios, costCentreSummary, budgetVsActual, balanceUpTo } from '../src/apps/finance/utils/financialStatements.js'
 import { parseBankStatement, bookEntries, autoMatch, reconciliation } from '../src/apps/finance/utils/bankRecon.js'
 import { parseStatementPages } from '../src/apps/finance/utils/bankPdf.js'
+import { parseZohoInvoices, toInvoiceDoc, matchReceipts } from '../src/apps/finance/utils/zohoSales.js'
 import { parseScannedStatement, parseScanDate } from '../src/apps/finance/utils/bankOcr.js'
 import { suggestEntry, buildVoucher, bankLineKey } from '../src/apps/finance/utils/bankEntries.js'
 import { tallyVouchers, tallyMasters } from '../src/apps/finance/utils/tallyExport.js'
@@ -508,6 +509,24 @@ section('bank statement PDF → entries')
   const ct = { id: 'VC', voucherNumber: 'T/2', ...buildVoucher({ kind: 'contra', otherBank: { id: 'b2', name: 'HDFC' } }, { id: 'L4', date: '2026-09-22', credit: 0, debit: 600000, description: 'FD' }, { company: 'UIPL', bank: { id: 'b1', name: 'HSBC' } }) }
   const cl = deriveVoucherLines(ct, accs)
   ok(balanced(cl) && bookEntries(cl, { company: 'UIPL', bankAccountId: 'b1' })[0].key === bankLineKey('contra', 'VC', { credit: 0, debit: 600000 }) && bookEntries(cl, { company: 'UIPL', bankAccountId: 'b2' })[0].debit === 600000, 'contra: leaves HSBC, lands in HDFC, and matches the statement line')
+}
+
+section('Zoho sales invoices → invoices, receipts linked with TDS')
+{
+  const custs = [{ id: 'c1', shopName: 'INSTAKART SERVICES PRIVATE LIMITED', gstin: '36AADCI8374D1ZH', state: 'Telangana' }, { id: 'c2', shopName: 'INSTAKART SERVICES PRIVATE LIMITED', gstin: '27AADCI8374D1ZG', state: 'Maharashtra' }, { id: 'c3', shopName: 'Wayzim Technology Co.,Ltd.', gstin: '', state: '' }]
+  const row = (o) => ({ 'Invoice Number': 'UI/SL/26-27/10', 'Invoice Date': '2026-08-25', 'Due Date': '2026-08-25', 'Customer Name': 'INSTAKART SERVICES PRIVATE LIMITED', 'GST Identification Number (GSTIN)': '36AADCI8374D1ZH', 'Place of Supply(With State Code)': '36-Telangana', 'Invoice Status': 'Closed', Total: '606702.90', Balance: '0.00', Adjustment: '0.00', Quantity: '1', 'Item Name': 'CMC', 'Item Total': '514155.00', 'HSN/SAC': '998717', 'Item Tax %': '18', CGST: '0', SGST: '0', IGST: '92547.90', ...o })
+  const inv = parseZohoInvoices([row({}), row({ 'Invoice Number': 'W1', 'Invoice Date': '2026-08-26', 'Customer Name': 'Wayzim Technology Co.,Ltd.', 'GST Identification Number (GSTIN)': '', 'Place of Supply(With State Code)': '27-Maharashtra', Total: '1180.00', 'Item Total': '1000.00', IGST: '0', CGST: '90', SGST: '90' })], { customers: custs })
+  ok(inv[0].customer.id === 'c1' && inv[0].posStateCode === '36', 'invoices: the customer record is chosen by GSTIN when a customer has several')
+  ok(inv[0].gstLines.length === 1 && inv[0].gstLines[0].label === 'IGST 18%' && inv[0].total === 606702.9 && Math.abs(inv[0].roundOff) < 0.01, 'invoices: inter-state IGST line and exact Zoho total')
+  ok(inv[1].gstLines.length === 2 && inv[1].gstLines[0].label === 'CGST 9%' && inv[1].interCompany === 'Wayzim', 'invoices: intra-state CGST + SGST; Wayzim is flagged inter-company')
+  const d = toInvoiceDoc(inv[0], { seller: { gstin: '27AADCU8036C1ZF', stateCode: '27' } })
+  const idoc = { ...d, id: 'I1' }
+  ok(deriveAllLines({ invoices: [idoc], payments: [], orders: [], expenses: [], payables: [], accounts, vouchers: [] }).reduce((s, l) => s + l.debit - l.credit, 0) < 0.005, 'invoices: the imported invoice posts a balanced entry')
+  const m = matchReceipts([{ number: 'A', date: '2026-01-01', total: 606702.9, subTotal: 514155, customerName: 'INSTAKART SERVICES PRIVATE LIMITED', zohoBalance: 0 }, { number: 'B', date: '2026-02-01', total: 606702.9, subTotal: 514155, customerName: 'INSTAKART SERVICES PRIVATE LIMITED', zohoBalance: 0 }],
+    [{ id: 'r1', date: '2026-01-13', partyName: 'INSTAKART SERVICES PVT L', cash: 596419.8 }, { id: 'r2', date: '2026-02-24', partyName: 'INSTAKART SERVICES PRIVATE LIMITED', cash: 596419.8 }])
+  ok(m.matches.length === 2 && m.matches[0].allocations[0].number === 'A' && Math.abs(m.matches[0].tds - 10283.1) < 0.01 && m.matches[0].tdsSection === '194C' && m.matches[1].allocations[0].number === 'B', 'receipts: matched to invoices oldest first, 2% TDS recognised')
+  const part = matchReceipts([{ number: 'R', date: '2025-07-07', total: 1000, subTotal: 1000, customerName: 'RUTVI ENTERPRISES', zohoBalance: 0 }], [{ id: 'p1', date: '2025-06-01', partyName: 'RUTVI ENTERPRISES', cash: 300 }, { id: 'p2', date: '2025-08-01', partyName: 'RUTVI ENTERPRISES', cash: 700 }])
+  ok(part.matches.length === 2 && part.remaining.length === 0, 'receipts: part payments and an advance are applied to the invoice')
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
