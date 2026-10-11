@@ -465,6 +465,11 @@ section('bank statement PDF → entries')
   ok(sg('UDISHTHA INNOVATIONS PVT LTD, 37967BE00IJT, /99900024242427', 0, 600000).otherBankId === 'b2' && sg('UDISHTHA INNOVATIONS PVT LTD, 37967BE00IJT, /99900024242427', 0, 1).kind === 'contra', 'rules: transfer to own account number = contra to that bank')
   ok(sg('MH CGST : 9.0000, GS25357', 0, 262.4, 'TFR- TAX').accountCode === '1301' && sg('Bank Charges, 01AUG2026', 0, 12.98, 'TFR- SVC').accountCode === '5170', 'rules: GST on charges → input CGST, charges → bank charges')
   ok(sg('SALARY NOV -2025 · ALOK JAYRAM PATOLE', 0, 5).accountCode === '5110' && sg('AUTOPAY OUT AAI, BatchSalSept2026', 0, 5).accountCode === '5110', 'rules: salaries')
+  ok(suggestEntry({ date: '2025-10-01', description: 'TAX MH CGST @ 9.00000000 (GS25272 805879K00LYO', credit: 0, debit: 20.43 }, ctx).accountCode === '1301', 'rules: GST on charges recognised on a scanned statement (no transaction type)')
+  const ctxE = { ...ctx, employees: ['Kunal Sanjay Zope', 'Amandeep Singh'] }
+  const emp = suggestEntry({ date: '2025-05-30', description: 'NONREF 596276C00HKZ LP BOMNOL63WIRN AMANDEEP SINGH', credit: 0, debit: 104409 }, ctxE)
+  ok(emp.accountCode === '5110' && !emp.review && suggestEntry({ date: '2025-10-27', description: 'HQ VISIT 42207AI00MAK KUNAL SANJAY ZOPE', credit: 0, debit: 94738 }, ctxE).review, 'rules: payment to an HR employee = salary, a visit / meal / advance is flagged')
+  ok(suggestEntry({ date: '2025-05-07', description: 'TDS 453275P000FC LP BOMNNX6KQIRN SANDEEP KHARBANDA', credit: 0, debit: 110073 }, ctx).accountCode === '2500' && suggestEntry({ date: '2025-05-07', description: 'TDS REFUND 5775 SANDEEP KHARBANDA', credit: 0, debit: 3400 }, ctx).accountCode === '2900', 'rules: TDS paid to government vs a TDS refund to a director')
   const unk = sg('SOMEBODY UNKNOWN', 5, 0)
   ok(unk.review && unk.accountCode === '2900' && sg('SOMEBODY UNKNOWN', 0, 5).accountCode === '5900', 'rules: unidentified lines are parked and flagged')
 

@@ -22,7 +22,7 @@ export default function BankRecon() {
   const navigate = useNavigate()
   const { canWrite } = useFinancePerms()
   const { user } = useAuth()
-  const { raw, allLines, accounts, loading, reload } = useFinanceData(['bankStatements'])
+  const { raw, allLines, accounts, loading, reload } = useFinanceData(['bankStatements', 'hrEmployees'])
   const [company, setCompany] = useState('UIPL')
   const [bankId, setBankId] = useState('')
   const [asOf, setAsOf] = useState(todayStr())
@@ -175,7 +175,7 @@ export default function BankRecon() {
         </div>
       )}
       {showEntries && <BankEntriesModal lines={statement.filter(s => !s.matchedKey)} company={company} bank={{ id: bankId, name: bankName }} banks={banks} raw={raw} accounts={accounts}
-        onClose={() => setShowEntries(false)} onDone={() => { invalidateFinanceCache(); reload() }} />}
+        onClose={() => { setShowEntries(false); invalidateFinanceCache(); reload() }} onDone={() => invalidateFinanceCache()} />}
 
       <div className={`${cardCls} p-5 max-w-2xl`}>
         <p className="text-xs font-bold uppercase tracking-wider text-blue-600 mb-3">Reconciliation statement — {bankName} as of {asOf}</p>

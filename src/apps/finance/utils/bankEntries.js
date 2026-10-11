@@ -60,7 +60,7 @@ export function suggestEntry(line, ctx) {
   }
   // 2. GST charged on bank charges → input tax
   const gst = /\b(CGST|SGST|IGST)\b/i.exec(d)
-  if (gst && /TAX/i.test(line.trnType || '') && !isCredit) {
+  if (gst && !isCredit && (/TAX/i.test(line.trnType || '') || /^(TAX\s+)?MH\s+(CGST|SGST|IGST)\b/i.test(d))) {
     const head = gst[1].toLowerCase()
     return out({ accountCode: INPUT_GST_CODE[head], reason: `Input ${gst[1].toUpperCase()} on bank charges` })
   }
@@ -69,9 +69,14 @@ export function suggestEntry(line, ctx) {
   // 4. salaries
   if (!isCredit && /\bSALARY\b|SAL DIFF|AUTOPAY OUT/i.test(d)) return out({ accountCode: '5110', reason: /AUTOPAY/i.test(d) ? 'Salary batch' : 'Salary' })
   // 4b. statutory dues paid through net banking (the narrative names the person who made the payment, so check this before the directors rule)
-  if (!isCredit && /\bGST TAX PAYMENT\b|\bGST PAYMENT\b/i.test(d)) return out({ accountCode: '2400', reason: 'GST paid to the government — check the heads (CGST / SGST / IGST)', review: true })
-  if (!isCredit && /\bTDS\b/i.test(d) && !/REFUND/i.test(d)) return out({ accountCode: '2500', reason: 'TDS paid to the government', review: true })
-  if (!isCredit && /\bPTRC\b|PROFESSIONAL TAX/i.test(d)) return out({ accountCode: '2630', reason: 'Professional tax paid', review: true })
+  if (!isCredit && /\bGST TAX PAYMENT\b|\bGST PAYMENT\b/i.test(d)) return out({ accountCode: '2400', reason: 'GST paid to the government (split into CGST / SGST / IGST when you file)' })
+  if (!isCredit && /\bTDS\b/i.test(d) && !/REFUND|DEBT/i.test(d)) return out({ accountCode: '2500', reason: 'TDS paid to the government' })
+  if (!isCredit && /\bPTRC\b|PROFESSIONAL TAX/i.test(d)) return out({ accountCode: '2630', reason: 'Professional tax paid' })
+  // 4c. staff (HR employees): salary or a reimbursement, even when the narrative does not say SALARY
+  if (!isCredit && (ctx.employees || []).length && !DIRECTORS.test(d)) {
+    const emp = bestParty(d, ctx.employees.map(n => ({ id: n, name: n })))
+    if (emp) return out({ accountCode: '5110', reason: `Paid to employee ${emp.name}`, review: /CONSULT|VISIT|MEAL|FOOD|TKT|TRAVEL|ADVANCE|LOAN/i.test(d) })
+  }
   // 5. directors / promoters' own money
   if (DIRECTORS.test(d)) return out({ accountCode: '2900', reason: isCredit ? 'Money from a director / promoter — loan or capital?' : 'Paid to a director / promoter — advance, reimbursement or loan repayment?', review: true })
   // 6. known counter-parties
@@ -81,7 +86,7 @@ export function suggestEntry(line, ctx) {
   const party = byAlias || bestParty(d, pool)
   if (party) return out({ partyType: isCredit ? 'customer' : 'vendor', partyId: party.id, partyName: party.name, reason: `${isCredit ? 'Received from' : 'Paid to'} ${party.name}` })
   // 7. rent
-  if (!isCredit && /RENT\b|RONAK DEVIDAS LONKAR/i.test(d)) return out({ accountCode: /DEPOSIT/i.test(d) ? '1900' : '5100', reason: /DEPOSIT/i.test(d) ? 'Godown deposit' : 'Rent', review: !/RENT\b/i.test(d) })
+  if (!isCredit && /RENT\b|RONAK DEVIDAS LONKAR/i.test(d)) return out({ accountCode: /DEPOSIT/i.test(d) ? '1900' : '5100', reason: /DEPOSIT/i.test(d) ? 'Godown deposit' : 'Rent (godown landlord)' })
   // 8. unidentified
   return out({ accountCode: isCredit ? '2900' : '5900', reason: isCredit ? 'Unidentified receipt — parked in Other Current Liabilities until you classify it' : 'Unidentified payment — parked in Miscellaneous Expenses until you classify it', review: true })
 }
