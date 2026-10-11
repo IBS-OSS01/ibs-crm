@@ -72,7 +72,9 @@ export function parseContacts(rows, kind) {
     } else {
       Object.assign(row, { shipTo: [s(r['Shipping Address']), s(r['Shipping Street2']), s(r['Shipping City']), s(r['Shipping State']), s(r['Shipping Code'])].filter(Boolean).join(', '), creditLimit: Number(r['Credit Limit']) || 0 })
     }
-    row.include = !row.duplicateInFile && !statutory && !looksLikePerson
+    // individuals (Zoho "consumer", no GSTIN) are usually staff / walk-ins, not trade parties — left for the user to tick
+    row.looksLikePerson = looksLikePerson || (/consumer/i.test(row.gstTreatment) && !gstin)
+    row.include = !row.duplicateInFile && !statutory && !row.looksLikePerson
     out.push(row)
   })
   return out
@@ -80,9 +82,13 @@ export function parseContacts(rows, kind) {
 
 export function matchParty(row, existing, kind) {
   const nameOf = (x) => (kind === 'vendor' ? x.vendorName : x.shopName)
-  return existing.find(x => norm(nameOf(x)) === norm(row.name))
-    || (row.gstin ? existing.find(x => String(x.gstin || '').toUpperCase() === row.gstin && norm(nameOf(x)).split(' ')[0] === norm(row.name).split(' ')[0]) : null)
-    || null
+  const gst = (x) => String(x.gstin || '').toUpperCase()
+  // same GSTIN = same party; a different GSTIN under the same name is another branch (its own record), never an overwrite
+  if (row.gstin) {
+    const byGstin = existing.find(x => gst(x) === row.gstin)
+    if (byGstin) return byGstin
+  }
+  return existing.find(x => norm(nameOf(x)) === norm(row.name) && !(row.gstin && gst(x) && gst(x) !== row.gstin)) || null
 }
 
 // → the document body for crm_customers / finance_vendors

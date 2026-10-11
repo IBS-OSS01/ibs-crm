@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { collection, doc, writeBatch } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
+import { readSheetFile } from '../utils/readSheetFile.js'
 import { parseContacts, matchParty, toDoc } from '../utils/partiesImport.js'
 import { btnPrimary, btnGhost, cardCls, Badge } from './FinanceUI.jsx'
 
@@ -21,10 +22,15 @@ export default function PartiesSheetImport({ kind, existing, onClose, onDone }) 
     const f = e.target.files?.[0]; if (!f) return
     setErr(''); setResult(''); setFileName(f.name)
     try {
-      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', raw: false })
+      const wb = await readSheetFile(f)
       const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false })
       if (!data.length || !('Display Name' in data[0] || 'Contact Name' in data[0])) return setErr('This does not look like a contacts export — expected a “Display Name” column.')
-      setRows(parseContacts(data, kind).map(r => ({ ...r, existing: matchParty(r, existing, kind) })))
+      const taken = new Set()               // one saved record can absorb only one row of the file (branches stay separate)
+      setRows(parseContacts(data, kind).map(r => {
+        const hit = matchParty(r, existing.filter(x => !taken.has(x.id)), kind)
+        if (hit) taken.add(hit.id)
+        return { ...r, existing: hit }
+      }))
     } catch (ex) { setErr('Could not read that file: ' + ex.message) }
   }
   const toggle = (i) => setRows(rs => rs.map((r, n) => n === i ? { ...r, include: !r.include } : r))

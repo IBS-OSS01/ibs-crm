@@ -152,6 +152,7 @@ service cloud.firestore {
     match /finance_gst_challans/{id}       { allow read, write: if isProvisioned(); }
     match /finance_gstr2b_imports/{id}     { allow read, write: if isProvisioned(); }
     match /finance_bank_statement_lines/{id} { allow read, write: if isProvisioned(); }
+    match /finance_bank_statement_files/{id} { allow read, write: if isProvisioned(); }
     match /finance_cost_centres/{id}       { allow read, write: if isProvisioned(); }
     match /finance_budgets/{id}            { allow read, write: if isProvisioned(); }
     match /finance_attachments/{id}        { allow read, write: if isProvisioned(); }

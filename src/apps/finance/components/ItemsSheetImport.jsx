@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx'
 import { collection, doc, writeBatch } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
+import { readSheetFile } from '../utils/readSheetFile.js'
 import { parseItemsSheet, assignSkus, matchExisting } from '../utils/itemsImport.js'
 import { fmtAmt, todayStr } from '../utils/financeConstants.js'
 import { btnPrimary, btnGhost, cardCls, formInputCls, Badge } from './FinanceUI.jsx'
@@ -24,7 +25,7 @@ export default function ItemsSheetImport({ items, warehouses, stockLevels, onClo
     const f = e.target.files?.[0]; if (!f) return
     setErr(''); setResult(''); setFileName(f.name)
     try {
-      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' })
+      const wb = await readSheetFile(f)
       const sheet = wb.Sheets[wb.SheetNames.find(n => /item/i.test(n)) || wb.SheetNames[0]]
       const { rows: r, error } = parseItemsSheet(XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }))
       if (error) return setErr(error)

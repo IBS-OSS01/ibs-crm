@@ -17,7 +17,7 @@ const ALIASES = {
 
 export const parseMoney = (v) => {
   if (typeof v === 'number') return v
-  const n = Number(String(v ?? '').replace(/[₹$,\s]/g, ''))
+  const n = Number(String(v ?? '').replace(/[^0-9.\-]/g, ''))     // ₹, $, commas (also lakh grouping), spaces, stray bytes
   return Number.isFinite(n) ? n : 0
 }
 

@@ -8,6 +8,9 @@ import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { parseBankStatement, bookEntries, autoMatch, reconciliation, stmtSig } from '../utils/bankRecon.js'
+import { readPdfPages, parseStatementPages } from '../utils/bankPdf.js'
+import { saveStatementFile, listStatementFiles, downloadStatementFile, deleteStatementFile } from '../utils/statementFiles.js'
+import BankEntriesModal from '../components/BankEntriesModal.jsx'
 import { fmtAmt, todayStr } from '../utils/financeConstants.js'
 import { downloadXlsx } from '../utils/exportUtils.js'
 import { ReportShell, CompanyToggle, ExportBar, Badge, Empty, cardCls, inputCls, thCls, btnPrimary, btnGhost, useFinancePerms } from '../components/FinanceUI.jsx'
@@ -18,13 +21,17 @@ export default function BankRecon() {
   const navigate = useNavigate()
   const { canWrite } = useFinancePerms()
   const { user } = useAuth()
-  const { raw, allLines, loading, reload } = useFinanceData(['bankStatements'])
+  const { raw, allLines, accounts, loading, reload } = useFinanceData(['bankStatements'])
   const [company, setCompany] = useState('UIPL')
   const [bankId, setBankId] = useState('')
   const [asOf, setAsOf] = useState(todayStr())
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [pick, setPick] = useState('')
+  const [showEntries, setShowEntries] = useState(false)
+  const [files, setFiles] = useState([])
+  const loadFiles = () => listStatementFiles(company).then(setFiles).catch(() => setFiles([]))
+  useEffect(() => { loadFiles() }, [company]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const banks = (raw?.bankAccounts || []).filter(b => b.company === company && b.type !== 'cash' && b.active !== false)
   const hasUnassigned = useMemo(() => allLines.some(l => l.accountCode === '1100' && l.company === company && !l.bankAccountId && l.sourceType !== 'opening'), [allLines, company])
@@ -54,9 +61,13 @@ export default function BankRecon() {
     const f = e.target.files?.[0]; if (!f) return
     setMsg(''); setBusy(true)
     try {
-      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true })
-      const matrix = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: false, dateNF: 'yyyy-mm-dd' })
-      const { lines, error } = parseBankStatement(matrix)
+      let parsed
+      if (/\.pdf$/i.test(f.name)) parsed = parseStatementPages(await readPdfPages(f))
+      else {
+        const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true })
+        parsed = parseBankStatement(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: false, dateNF: 'yyyy-mm-dd' }))
+      }
+      const { lines, error, meta } = parsed
       if (error) { setMsg(error); return }
       const have = new Set(statement.map(stmtSig))
       const fresh = lines.filter(l => !have.has(stmtSig(l)))
@@ -66,8 +77,15 @@ export default function BankRecon() {
         if (++n % 400 === 0) { await batch.commit(); batch = writeBatch(db) }
       }
       if (n % 400) await batch.commit()
+      // keep the original file so it can be downloaded again later to confirm a line
+      let kept = ''
+      if (files.some(x => x.fileName === f.name && x.size === f.size && (x.bankAccountId || '') === bankId)) kept = ' A copy of this file is already stored.'
+      else {
+        try { await saveStatementFile(f, { company, bankAccountId: bankId, bankName, from: lines[0]?.date, to: lines[lines.length - 1]?.date, lineCount: lines.length, user }); kept = ' A copy of the file is kept below.'; loadFiles() }
+        catch (err) { kept = ` (Could not keep a copy of the file: ${err.message})` }
+      }
       invalidateFinanceCache(); reload()
-      setMsg(`Imported ${fresh.length} line(s)${lines.length - fresh.length ? `, skipped ${lines.length - fresh.length} already imported` : ''}.`)
+      setMsg(`Imported ${fresh.length} line(s)${lines.length - fresh.length ? `, skipped ${lines.length - fresh.length} already imported` : ''}.${meta ? (meta.balanceBreaks === 0 ? ' Every running balance in the statement checks out.' : ` ⚠ ${meta.balanceBreaks} running balance(s) do not add up — check the lines against the PDF.`) : ''}${kept}`)
     } catch (err) { setMsg('Could not import: ' + err.message) }
     finally { setBusy(false); e.target.value = '' }
   }
@@ -128,12 +146,29 @@ export default function BankRecon() {
       {msg && <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-sm flex justify-between"><span>{msg}</span><button onClick={() => setMsg('')}>✕</button></div>}
       {canWrite && (
         <div className={`${cardCls} p-3 flex gap-3 items-center flex-wrap text-sm`}>
-          <label className={`${btnGhost} cursor-pointer`}>{busy ? 'Working…' : '⬆ Import statement (Excel / CSV)'}<input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onFile} disabled={busy} /></label>
+          <label className={`${btnGhost} cursor-pointer`}>{busy ? 'Working…' : '⬆ Import statement (PDF / Excel / CSV)'}<input type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={onFile} disabled={busy} /></label>
           <button className={btnPrimary} onClick={runAuto} disabled={busy || !statement.some(s => !s.matchedKey)}>Auto-match</button>
+          <button className={btnGhost} onClick={() => setShowEntries(true)} disabled={busy || !statement.some(s => !s.matchedKey)}>Create entries for {statement.filter(s => !s.matchedKey).length} unmatched line(s)</button>
           {statement.length > 0 && <button className="text-red-500 hover:underline text-xs" onClick={clearStatement}>Clear imported statement</button>}
-          <span className="text-xs text-slate-400">Needs columns for Date, Narration/Description, Withdrawal/Debit and Deposit/Credit (and Balance, for the final check).</span>
+          <span className="text-xs text-slate-400">PDF (HSBC “Statement details”, or any PDF with a Date / Debit / Credit table), Excel or CSV with Date, Narration, Withdrawal / Debit, Deposit / Credit (and Balance, for the final check).</span>
         </div>
       )}
+      {files.length > 0 && (
+        <div className={`${cardCls} p-4`}>
+          <p className="font-semibold text-slate-800 text-sm mb-2">Statement files kept <span className="text-slate-400 font-normal">· the original of every import — download it whenever you need to confirm a line</span></p>
+          <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
+            {files.map(x => (
+              <tr key={x.id}>
+                <td className="py-1.5 pr-3">{x.fileName}</td><td className="pr-3 text-slate-500 text-xs">{x.bankName || 'Bank'}</td><td className="pr-3 text-slate-500 text-xs">{x.from} → {x.to} · {x.lineCount} lines</td>
+                <td className="pr-3 text-slate-400 text-xs">{Math.round(x.size / 1024)} KB · imported {String(x.importedAt || '').slice(0, 10)}</td>
+                <td className="text-right whitespace-nowrap"><button className="text-blue-600 hover:underline text-xs mr-3" onClick={() => downloadStatementFile(x).catch(err => setMsg('Could not download: ' + err.message))}>⬇ Download</button>
+                  {canWrite && <button className="text-red-500 hover:underline text-xs" onClick={async () => { if (window.confirm(`Remove the stored copy of “${x.fileName}”? (Imported lines and entries stay.)`)) { await deleteStatementFile(x); loadFiles() } }}>remove</button>}</td>
+              </tr>))}
+          </tbody></table>
+        </div>
+      )}
+      {showEntries && <BankEntriesModal lines={statement.filter(s => !s.matchedKey)} company={company} bank={{ id: bankId, name: bankName }} banks={banks} raw={raw} accounts={accounts}
+        onClose={() => setShowEntries(false)} onDone={() => { invalidateFinanceCache(); reload() }} />}
 
       <div className={`${cardCls} p-5 max-w-2xl`}>
         <p className="text-xs font-bold uppercase tracking-wider text-blue-600 mb-3">Reconciliation statement — {bankName} as of {asOf}</p>

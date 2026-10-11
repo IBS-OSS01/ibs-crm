@@ -12,6 +12,8 @@ import { collectMovements, valueMovements, deriveStockLines, computeStock } from
 import { deductionRows, monthlyPosition, depositDueDate, monthsLate, lateFee, returnDueDate, quarterData, receivableRows, deducteeSummary } from '../src/apps/finance/utils/tdsReports.js'
 import { tradingPL, cashFlow, ratios, costCentreSummary, budgetVsActual, balanceUpTo } from '../src/apps/finance/utils/financialStatements.js'
 import { parseBankStatement, bookEntries, autoMatch, reconciliation } from '../src/apps/finance/utils/bankRecon.js'
+import { parseStatementPages } from '../src/apps/finance/utils/bankPdf.js'
+import { suggestEntry, buildVoucher, bankLineKey } from '../src/apps/finance/utils/bankEntries.js'
 import { tallyVouchers, tallyMasters } from '../src/apps/finance/utils/tallyExport.js'
 import { buildEInvoice, buildEwayBill, invoiceProblems, ewayProblems, gstr3bJson } from '../src/apps/finance/utils/einvoice.js'
 import { convertTotals, rateOn, revaluation, fmtFc } from '../src/apps/finance/utils/fx.js'
@@ -434,6 +436,51 @@ ok(computeOutstanding(icL.filter(l => l.company === 'Wayzim'), { kind: 'payable'
 const wzOpen = computeOutstanding(deriveAllLines({ invoices: [icInv], payments: [], orders: [], expenses: [], payables: [], accounts, vouchers: [] }).filter(l => l.company === 'Wayzim'), { kind: 'payable', company: 'Wayzim', asOf: '2026-12-31' })
 ok(wzOpen.parties[0]?.name === 'UIPL' && wzOpen.parties[0].bills[0].fcPending === 1000, 'unpaid service fee is a USD 1,000 payable to UIPL in Wayzim\'s books')
 ok(deriveInterCompanyLines({ invoices: [{ ...icInv, interCompany: null }], vouchers: [], accounts }).length === 0, 'ordinary invoices are not mirrored')
+
+section('bank statement PDF → entries')
+{
+  const H = [{ x: 36, y: 700, s: 'Bank reference' }, { x: 122, y: 700, s: 'Customer reference' }, { x: 209, y: 700, s: 'TRN type' }, { x: 296, y: 700, s: 'Value Date' }, { x: 383, y: 700, s: 'Credit amount' }, { x: 469, y: 700, s: 'Debit amount' }, { x: 556, y: 700, s: 'Balance' }, { x: 643, y: 700, s: 'Time' }, { x: 730, y: 700, s: 'Post Date' }]
+  const tx = (y, ref, cust, typ, date, cr, dr, bal) => [{ x: 36, y, s: ref }, { x: 122, y, s: cust }, { x: 209, y, s: typ }, { x: 296, y, s: date }, ...(cr ? [{ x: 383, y, s: cr }] : []), ...(dr ? [{ x: 469, y, s: dr }] : []), { x: 556, y, s: bal }, { x: 643, y, s: '10:00' }, { x: 730, y, s: date }]
+  const narr = (y, t) => [{ x: 36, y, s: 'Narrative' }, { x: 137, y, s: t }]
+  const page1 = [...H, ...tx(650, 'HSBCN5202609', 'NONREF', 'TFR-', '30 Sep 2026', '', '-1,000.00', '4,000.00'), { x: 36, y: 640, s: '51763' }, ...narr(630, 'PLUXEE, 01897JW004P5, /0007351003'),
+    ...tx(600, 'NONREF', 'NONREF', 'TFR+', '29 Sep 2026', '2,500.00', '', '5,000.00'), ...narr(590, 'NEFT FROM DEUTSCHE BANK, DEUTN520')]
+  const page2 = [...H, ...narr(650, 'KHARBANDA S'), ...tx(620, 'NONREF', 'NONREF', 'TFR-', '28 Sep 2026', '', '-500.00', '2,500.00'), ...narr(610, 'Bank Charges, 01AUG2026 TO 31AUG2026')]
+  const r = parseStatementPages([page1, page2])
+  ok(!r.error && r.lines.length === 3, 'PDF: three transactions found')
+  ok(r.meta.newestFirst && r.lines[0].date === '2026-09-28' && r.lines[2].date === '2026-09-30', 'PDF: newest-first statement is stored oldest first')
+  ok(r.meta.balanceBreaks === 0, 'PDF: running balances chain')
+  ok(r.lines[2].ref === 'HSBCN520260951763' && r.lines[2].debit === 1000, 'PDF: wrapped bank reference rejoined, debit sign dropped')
+  ok(/DEUTSCHE BANK.*KHARBANDA S/.test(r.lines[1].description) && /Bank Charges/.test(r.lines[0].description), 'PDF: narrative that continues on the next page stays with its transaction')
+  ok(parseStatementPages([[{ x: 1, y: 1, s: '' }]]).error?.includes('no readable text'), 'PDF: a scanned statement is refused with advice')
+
+  const ctx = { customers: [{ id: 'c1', name: 'Wayzim Technology Co.,Ltd.' }, { id: 'c2', name: 'INSTAKART SERVICES PRIVATE LIMITED' }], vendors: [{ id: 'v1', name: 'PLUXEE INDIA PRIVATE LIMITED' }, { id: 'v2', name: 'Agile Engineering Solutions' }, { id: 'v3', name: 'S.R. ENGINEERING' }, { id: 'v4', name: 'JAFERANI STEEL YARD' }],
+    banks: [{ id: 'b1', name: 'HSBC', accountNumber: '105-012819-001' }, { id: 'b2', name: 'HDFC', accountNumber: '99900024242427' }], thisBankId: 'b1' }
+  const sg = (description, credit, debit, trnType = '') => suggestEntry({ date: '2026-09-01', description, credit, debit, trnType }, ctx)
+  ok(sg('NEFT FROM DEUTSCHE BANK, DEUTN52026012701020065', 100, 0).partyId === 'c1', 'rules: Deutsche Bank remittance = Wayzim receipt')
+  ok(sg('TFR+ INSTAKART SERVICES PVT L, BL//', 100, 0).partyId === 'c2', 'rules: customer matched from a shortened name')
+  ok(sg('PLUXEE, 01897JW004P5, /0007351003', 0, 100).partyId === 'v1', 'rules: vendor matched')
+  ok(sg('AGILE ENGINEERING SOLUTIONS, 5178', 0, 100).partyId === 'v2' && sg('S.R. ENGINEERING, 51227', 0, 100).partyId === 'v3', 'rules: similar names resolve to the right vendor')
+  ok(sg('JAFRANI STEEL YARD, 14177', 0, 100).partyId === 'v4', 'rules: one-letter spelling difference tolerated')
+  ok(sg('UDISHTHA INNOVATIONS PVT LTD, 37967BE00IJT, /99900024242427', 0, 600000).otherBankId === 'b2' && sg('UDISHTHA INNOVATIONS PVT LTD, 37967BE00IJT, /99900024242427', 0, 1).kind === 'contra', 'rules: transfer to own account number = contra to that bank')
+  ok(sg('MH CGST : 9.0000, GS25357', 0, 262.4, 'TFR- TAX').accountCode === '1301' && sg('Bank Charges, 01AUG2026', 0, 12.98, 'TFR- SVC').accountCode === '5170', 'rules: GST on charges → input CGST, charges → bank charges')
+  ok(sg('SALARY NOV -2025 · ALOK JAYRAM PATOLE', 0, 5).accountCode === '5110' && sg('AUTOPAY OUT AAI, BatchSalSept2026', 0, 5).accountCode === '5110', 'rules: salaries')
+  const unk = sg('SOMEBODY UNKNOWN', 5, 0)
+  ok(unk.review && unk.accountCode === '2900' && sg('SOMEBODY UNKNOWN', 0, 5).accountCode === '5900', 'rules: unidentified lines are parked and flagged')
+
+  const accs = SEED_ACCOUNTS.map(a => ({ ...a, id: a.code }))
+  for (const [line, sug] of [[{ id: 'L1', date: '2026-09-22', description: 'x', ref: 'R1', credit: 1388738.74, debit: 0 }, { kind: 'receipt', partyType: 'customer', partyId: 'c1', partyName: 'Wayzim Technology Co.,Ltd.' }],
+    [{ id: 'L2', date: '2026-09-22', description: 'y', ref: '', credit: 0, debit: 125373 }, { kind: 'payment', partyType: 'vendor', partyId: 'v1', partyName: 'PLUXEE' }],
+    [{ id: 'L3', date: '2026-09-22', description: 'z', ref: '', credit: 0, debit: 12.98 }, { kind: 'payment', accountCode: '5170', reason: 'Bank charges' }]]) {
+    const v = { id: 'V' + line.id, voucherNumber: 'T/1', ...buildVoucher({ ...sug }, line, { company: 'UIPL', bank: { id: 'b1', name: 'HSBC' } }) }
+    const dl = deriveVoucherLines(v, accs)
+    ok(balanced(dl), `entry from statement line ${line.id} balances`)
+    const be = bookEntries(dl, { company: 'UIPL', bankAccountId: 'b1' })
+    ok(be.length === 1 && be[0].key === bankLineKey(v.voucherType, v.id, line), `statement line ${line.id} is matched straight to its entry (key ${be[0]?.key})`)
+  }
+  const ct = { id: 'VC', voucherNumber: 'T/2', ...buildVoucher({ kind: 'contra', otherBank: { id: 'b2', name: 'HDFC' } }, { id: 'L4', date: '2026-09-22', credit: 0, debit: 600000, description: 'FD' }, { company: 'UIPL', bank: { id: 'b1', name: 'HSBC' } }) }
+  const cl = deriveVoucherLines(ct, accs)
+  ok(balanced(cl) && bookEntries(cl, { company: 'UIPL', bankAccountId: 'b1' })[0].key === bankLineKey('contra', 'VC', { credit: 0, debit: 600000 }) && bookEntries(cl, { company: 'UIPL', bankAccountId: 'b2' })[0].debit === 600000, 'contra: leaves HSBC, lands in HDFC, and matches the statement line')
+}
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
