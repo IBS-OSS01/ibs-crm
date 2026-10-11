@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { useFinanceData } from '../hooks/useFinanceData.js'
+import { useVoucherModal } from '../components/useVoucherModal.jsx'
 
 const SOURCE_LABELS = {
   invoice: '🧾 Sales Invoice', receipt: '💰 Receipt', payment: '💸 Payment', expense: '📤 Expense', payable: '🧾 Payable', manual: '📝 Journal',
@@ -12,7 +13,8 @@ export default function GeneralLedger() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
 
-  const { raw, loading, allLines } = useFinanceData()
+  const { raw, loading, allLines, reload } = useFinanceData()
+  const { openKey, modal } = useVoucherModal({ raw, allLines, reload })
 
   const account = raw?.accounts.find(a => a.code === accountCode)
 
@@ -43,7 +45,7 @@ export default function GeneralLedger() {
 
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm">
-          {['UIPL', 'Wayzim'].map(co => (
+          {['UIPL'].map(co => (
             <button key={co} onClick={() => setCompany(co)}
               className={`px-4 py-1.5 font-medium transition ${company === co ? (co === 'UIPL' ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white') : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
               {co}
@@ -81,7 +83,7 @@ export default function GeneralLedger() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((r, i) => (
-                <tr key={i}>
+                <tr key={i} onClick={() => openKey(`${r.sourceType}:${r.sourceId}`)} className="cursor-pointer hover:bg-blue-50/40" title="Open this document">
                   <td className="px-4 py-3 text-slate-500">{r.date}</td>
                   <td className="px-4 py-3 text-slate-600">
                     {SOURCE_LABELS[r.sourceType] || r.sourceType}
@@ -101,6 +103,7 @@ export default function GeneralLedger() {
           </table>
         </div>
       )}
+      {modal}
     </div>
   )
 }

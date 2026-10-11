@@ -173,6 +173,7 @@ export function deriveVoucherLines(v, accounts) {
       const rest = r2(partyAmt - allocated)
       if (rest > 0.004) lines.push(line(accounts, '2100', rest, 0, { ...party, partyType: 'vendor', billRef: v.voucherNumber, onAccount: true,
         ...(isFc(v) && num(v.onAccountFc) ? { currency: v.currency, fcAmount: num(v.onAccountFc), fxRate: num(v.fxRate) } : {}) }))
+      else if (rest < -0.004 && rest >= -2) lines.push(line(accounts, '4950', 0, -rest, { description: 'Rounding on settlement' }))
     }
     accLines.forEach(l => lines.push(line(accounts, l.accountCode, num(l.amount), 0, { description: l.description || '' })))
     lines.push(line(accounts, bankCode, 0, bankPaid, isCashBank(bankCode) && v.bankAccountId ? { bankAccountId: v.bankAccountId } : {}))
@@ -205,6 +206,8 @@ export function deriveVoucherLines(v, accounts) {
       const rest = r2(partyAmt - allocated)
       if (rest > 0.004) lines.push(line(accounts, '1200', 0, rest, { ...party, partyType: 'customer', billRef: v.voucherNumber, onAccount: true,
         ...(isFc(v) && num(v.onAccountFc) ? { currency: v.currency, fcAmount: num(v.onAccountFc), fxRate: num(v.fxRate) } : {}) }))
+      // settling invoices by a few paise more than was received (bank / TDS rounding): written off as rounding, so the entry still balances
+      else if (rest < -0.004 && rest >= -2) lines.push(line(accounts, '5950', -rest, 0, { description: 'Rounding on settlement' }))
     }
     accLines.forEach(l => lines.push(line(accounts, l.accountCode, 0, num(l.amount), { description: l.description || '' })))
     if (fxDiff > 0.004) lines.push(line(accounts, '4925', 0, fxDiff, { description: 'Exchange gain on settlement' }))

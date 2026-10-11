@@ -42,7 +42,7 @@ function printVoucher(entry, voucher, lines, seller) {
   w.document.write(html); w.document.close(); setTimeout(() => w.print(), 400)
 }
 
-export default function VoucherDetail({ entry, voucher, lines, seller, stockItems = [], onClose, onChanged }) {
+export default function VoucherDetail({ entry, voucher, lines, seller, stockItems = [], extraActions = [], onClose, onChanged }) {
   const itemName = (id) => stockItems.find(i => i.id === id)?.name || id
   const navigate = useNavigate()
   const { user, userProfile } = useAuth()
@@ -155,7 +155,8 @@ export default function VoucherDetail({ entry, voucher, lines, seller, stockItem
             </>
           )}
           {isNewVoucher && isAdmin && cancelled && <button onClick={doDelete} disabled={busy} className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg disabled:opacity-50">Delete permanently</button>}
-          {legacy && <button onClick={() => { onClose(); navigate(legacy[0]) }} className={btnGhost}>Open in {legacy[1]} →</button>}
+          {extraActions.map(a => <button key={a.label} onClick={() => { onClose(); a.onClick() }} className={a.primary ? btnPrimary : btnGhost}>{a.label}</button>)}
+          {legacy && !extraActions.length && <button onClick={() => { onClose(); navigate(legacy[0]) }} className={btnGhost}>Open in {legacy[1]} →</button>}
           <button onClick={onClose} className={`${btnGhost} ml-auto`}>Close</button>
         </div>
       </div>

@@ -4,7 +4,7 @@ import { SEED_ACCOUNTS, deriveAllLines, mergeRequiredAccounts, computeAccountBal
 import { isValidGstin, isValidPan, fyOf, fyRange, gstRatesFor } from '../src/apps/finance/utils/financeConstants.js'
 import { computeVoucherTotals, computeTds } from '../src/apps/finance/utils/taxCalc.js'
 import { deriveVoucherLines, billKey } from '../src/apps/finance/utils/voucherEngine.js'
-import { computeOutstanding } from '../src/apps/finance/utils/outstanding.js'
+import { computeOutstanding, openBillMap, payStatus } from '../src/apps/finance/utils/outstanding.js'
 import { ledgerStatement } from '../src/apps/finance/utils/statements.js'
 import { normalizeTaxDocs, rateWiseFromGstLines } from '../src/apps/finance/utils/taxDocs.js'
 import { buildVoucherIndex } from '../src/apps/finance/utils/voucherIndex.js'
@@ -14,6 +14,8 @@ import { tradingPL, cashFlow, ratios, costCentreSummary, budgetVsActual, balance
 import { parseBankStatement, bookEntries, autoMatch, reconciliation } from '../src/apps/finance/utils/bankRecon.js'
 import { parseStatementPages } from '../src/apps/finance/utils/bankPdf.js'
 import { parseZohoInvoices, toInvoiceDoc, matchReceipts } from '../src/apps/finance/utils/zohoSales.js'
+import { parseZohoBills, toPurchaseVoucher, matchPayments } from '../src/apps/finance/utils/zohoPurchases.js'
+import { parseZohoExpenses, matchExpenses, reclassify, toExpenseVoucher } from '../src/apps/finance/utils/zohoExpenses.js'
 import { parseScannedStatement, parseScanDate } from '../src/apps/finance/utils/bankOcr.js'
 import { suggestEntry, buildVoucher, bankLineKey } from '../src/apps/finance/utils/bankEntries.js'
 import { tallyVouchers, tallyMasters } from '../src/apps/finance/utils/tallyExport.js'
@@ -527,6 +529,56 @@ section('Zoho sales invoices → invoices, receipts linked with TDS')
   ok(m.matches.length === 2 && m.matches[0].allocations[0].number === 'A' && Math.abs(m.matches[0].tds - 10283.1) < 0.01 && m.matches[0].tdsSection === '194C' && m.matches[1].allocations[0].number === 'B', 'receipts: matched to invoices oldest first, 2% TDS recognised')
   const part = matchReceipts([{ number: 'R', date: '2025-07-07', total: 1000, subTotal: 1000, customerName: 'RUTVI ENTERPRISES', zohoBalance: 0 }], [{ id: 'p1', date: '2025-06-01', partyName: 'RUTVI ENTERPRISES', cash: 300 }, { id: 'p2', date: '2025-08-01', partyName: 'RUTVI ENTERPRISES', cash: 700 }])
   ok(part.matches.length === 2 && part.remaining.length === 0, 'receipts: part payments and an advance are applied to the invoice')
+}
+
+section('Zoho purchase bills → purchase vouchers, payments linked')
+{
+  const vend = [{ id: 'v1', vendorName: 'COMPLYHAPPY FINSERV PRIVATE LIMITED', gstin: '27AAICC9261G1ZF' }, { id: 'v2', vendorName: 'Wayzim Technology co ltd', gstin: '' }]
+  const brow = (o) => ({ 'Bill Date': '2025-12-24', 'Due Date': '2025-12-24', 'Bill ID': 'B1', 'Vendor Name': 'COMPLYHAPPY FINSERV PRIVATE LIMITED', 'Bill Number': 'CHG-1', Total: '5850.36', 'TDS Amount': '541.70', 'TDS Name': '10% TDS 194J', 'TDS Percentage': '10', 'Bill Status': 'Paid', Balance: '0.00', 'Source of Supply': 'MH', 'Destination of Supply': 'MH', 'GST Identification Number (GSTIN)': '27AAICC9261G1ZF', Quantity: '1', Rate: '5417', 'Item Total': '5417', 'Tax Percentage': '18', Account: 'Professional Feee', 'Item Name': 'Fee', ...o })
+  const bills = parseZohoBills([brow({}), brow({ 'Bill ID': 'B2', 'Bill Number': 'H1', 'Vendor Name': 'THE HONGKONG & SHANGHAI BANKING CORPORATION LTD', Total: '1770', 'TDS Amount': '0', 'TDS Name': '', 'Item Total': '1500', Rate: '1500', Account: 'Bank Fees and Charges' })], { vendors: vend })
+  ok(bills[0].vendor.id === 'v1' && bills[0].supplyType === 'intra' && bills[0].gstLines.length === 2 && bills[0].tds.section === '194J-P', 'bills: vendor, intra-state GST and TDS section read')
+  ok(Math.abs(bills[0].total - 6392.06) < 0.01 && Math.abs(bills[0].net - 5850.36) < 0.01 && bills[0].items.length === 1 + 0, 'bills: Zoho total is net of TDS, so gross = total + TDS')
+  ok(bills[1].skip && /bank statement/i.test(bills[1].skip), 'bills: HSBC bank-charge bills are skipped (booked from the statement)')
+  const vv = { id: 'P1', voucherNumber: 'UIPL/PUR/25-26/001', ...toPurchaseVoucher(bills[0]) }
+  const pl = deriveVoucherLines(vv, accounts)
+  ok(balanced(pl) && Math.abs(sumBy(pl, '2100', 'credit') - 5850.36) < 0.01 && Math.abs(sumBy(pl, '2500', 'credit') - 541.7) < 0.01 && Math.abs(sumBy(pl, '5190', 'debit') - 5417) < 0.01, 'bills: posts balanced — vendor owed 5,850.36, TDS payable 541.70, professional fees 5,417')
+  const pm = matchPayments([{ key: 'k1', number: 'A', date: '2025-12-24', net: 6050.36, vendorName: 'COMPLYHAPPY FINSERV PRIVATE LIMITED', zohoBalance: 0 }, { key: 'k2', number: 'B', date: '2025-12-24', net: 2700, vendorName: 'COMPLYHAPPY FINSERV PRIVATE LIMITED', zohoBalance: 0 }],
+    [{ id: 'p1', date: '2025-12-30', cash: 6050.36, partyName: 'COMPLYHAPPY FINSERV PRIVATE LIMITED', text: '' }, { id: 'p2', date: '2025-12-31', cash: 2700, partyName: '', text: 'NONREF COMPLYHAPPY FINSERV 8381' }])
+  ok(pm.matches.length === 2 && pm.matches.every(m => m.exact) && pm.remaining.length === 0, 'payments: matched by amount to the vendor — also a payment that was booked straight to an expense (matched on its narration)')
+  const fxm = matchPayments([{ key: 'w', number: 'W1', date: '2025-12-22', net: 118810.45, vendorName: 'Wayzim Technology co ltd', zohoBalance: 0 }], [{ id: 'q', date: '2025-12-22', cash: 121000, partyName: 'Wayzim Technology co ltd', text: '' }], { fxVendors: ['Wayzim Technology co ltd'] })
+  ok(fxm.matches.length === 1 && Math.abs(fxm.matches[0].fxDiff - 2189.55) < 0.01, 'payments: a foreign vendor is paid a different rupee amount — the exchange difference is carried')
+}
+
+{
+  // a receipt that settles an invoice by a few paise more than cash + TDS still balances
+  const rv = { id: 'RR', voucherNumber: 'R1', voucherType: 'receipt', company: 'UIPL', date: '2026-08-12', partyType: 'customer', partyName: 'X', partyAmount: 158674.6, amount: 158540.13, allocations: [{ billKey: 'invoice:I1', docNumber: 'I1', amount: 158675 }], tdsReceivable: { applicable: true, section: '194O', amount: 134.47 }, bankAccountCode: '1100' }
+  ok(balanced(deriveVoucherLines(rv, accounts)), 'receipt: settling an invoice a few paise beyond cash + TDS balances (rounding)')
+}
+{
+  const inv = (id, total) => ({ id, company: 'UIPL', invoiceType: 'TI', invoiceNumber: id, invoiceDate: '2026-01-01', dueDate: '2026-01-31', billToName: 'Cust', total, subTotal: total, items: [], gstLines: [], roundOff: 0 })
+  const rc = { id: 'R9', voucherNumber: 'RC', voucherType: 'receipt', company: 'UIPL', date: '2026-02-01', partyType: 'customer', partyName: 'Cust', partyAmount: 400, amount: 400, bankAccountCode: '1100', allocations: [{ billKey: 'invoice:I1', docNumber: 'I1', amount: 400 }] }
+  const rc2 = { ...rc, id: 'R10', partyAmount: 500, amount: 500, allocations: [{ billKey: 'invoice:I2', docNumber: 'I2', amount: 500 }] }
+  const ls = deriveAllLines({ invoices: [inv('I1', 1000), inv('I2', 500), inv('I3', 700)], payments: [], orders: [], expenses: [], payables: [], accounts, vouchers: [rc, rc2] })
+  const om = openBillMap(ls, { kind: 'receivable', company: 'UIPL', asOf: '2026-03-01' })
+  ok(payStatus(om, 'invoice:I1', 1000).state === 'part' && Math.abs(payStatus(om, 'invoice:I1', 1000).pending - 600) < 0.01 && payStatus(om, 'invoice:I2', 500).state === 'paid' && payStatus(om, 'invoice:I3', 700).state === 'unpaid', 'status: invoice shows part paid (600 due), paid, unpaid')
+}
+
+section('Zoho expenses → tied to bank payments or new entries')
+{
+  const ex = parseZohoExpenses([
+    { 'Expense Date': '2026-04-18', 'Expense Account': 'Rent Expense', 'Paid Through': 'HSBC BANK', Vendor: 'Ronak devidas Lonkar', Total: '24000.000', 'Expense Amount': '24000', 'Expense Reference ID': 'E1' },
+    { 'Expense Date': '2026-05-02', 'Expense Account': 'Bank Fees and Charges', 'Paid Through': 'HDFC BANK', Total: '708', 'Tax Amount': '108', CGST: '54', SGST: '54', 'Expense Reference ID': 'E2' },
+    { 'Expense Date': '2026-06-24', 'Expense Account': 'Other Expenses', 'Paid Through': 'Debt', Total: '10000', 'Expense Reference ID': 'E3' }])
+  const bankIds = { hsbc: 'bh', hdfc: 'bd' }
+  const exist = [{ id: 'p1', date: '2026-04-17', cash: 24000, bankAccountId: 'bh', voucher: { id: 'p1', voucherType: 'payment', company: 'UIPL', date: '2026-04-17', accountLines: [{ accountCode: '5100', amount: 24000 }], partyAmount: 0, allocations: [], amount: 24000, bankAccountCode: '1100', bankAccountId: 'bh', narration: 'RONAK' } }]
+  const pl = matchExpenses(ex, exist, bankIds)
+  ok(pl.matches.length === 1 && pl.matches[0].paymentId === 'p1' && pl.fresh.length === 2 && pl.orphans.length === 0, 'expenses: the rent already in the books as a bank payment is tied to it; the others are new')
+  ok(matchExpenses([{ ...ex[0], idx: 9, total: 777, via: { bank: 'hsbc' } }], exist, bankIds).orphans.length === 1, 'expenses: one paid through HSBC with no statement line is left out, not entered again')
+  const rc = reclassify(exist[0].voucher, ex[0])
+  ok(rc.data.expenseRef === 'E1' && /Zoho expense: Rent Expense/.test(rc.data.narration) && rc.data.accountLines[0].accountCode === '5100', 'expenses: the existing entry keeps its ledger and gains the Zoho narration')
+  const fresh = pl.fresh.map(e => ({ id: 'X' + e.refId, voucherNumber: 'T', ...toExpenseVoucher(e, { bankIds }) }))
+  const fl = fresh.flatMap(v => deriveVoucherLines(v, accounts))
+  ok(balanced(fl) && Math.abs(sumBy(fl, '5170', 'debit') - 600) < 0.01 && Math.abs(sumBy(fl, '1301', 'debit') - 54) < 0.01 && Math.abs(sumBy(fl, '2910', 'credit') - 10000) < 0.01, 'expenses: new entries post balanced — bank charges with input GST from the bank, the director-paid one from the directors account')
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)

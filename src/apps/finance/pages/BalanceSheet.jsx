@@ -41,7 +41,7 @@ export default function BalanceSheet() {
 
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm">
-          {['UIPL', 'Wayzim'].map(co => (
+          {['UIPL'].map(co => (
             <button key={co} onClick={() => setCompany(co)}
               className={`px-4 py-1.5 font-medium transition ${company === co ? (co === 'UIPL' ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white') : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
               {co}

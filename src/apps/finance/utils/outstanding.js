@@ -136,3 +136,18 @@ export function pendingBillsForParty(allLines, { kind, company, partyName, party
   const p = parties.find(x => x.key === key || (partyId && x.partyId === partyId) || normName(x.name) === normName(partyName))
   return p ? p.bills : []
 }
+
+// Payment status of single documents: which bills are still open (and by how much), as of a date.
+//   openBillMap(...).get(billKey) → { original, pending } while unpaid or part paid; absent once fully settled.
+export function openBillMap(allLines, { kind, company, asOf } = {}) {
+  const { parties } = computeOutstanding(allLines, { kind, company, asOf })
+  const m = new Map()
+  parties.forEach(p => p.bills.forEach(b => m.set(b.billKey, { original: b.original, pending: b.pending, dueDate: b.dueDate, daysOverdue: b.daysOverdue })))
+  return m
+}
+// → { state: 'paid' | 'part' | 'unpaid', pending, original }
+export function payStatus(openMap, billKey, total) {
+  const o = openMap.get(billKey)
+  if (!o) return { state: 'paid', pending: 0, original: num(total) }
+  return { state: o.pending < o.original - 0.005 ? 'part' : 'unpaid', pending: o.pending, original: o.original, dueDate: o.dueDate }
+}

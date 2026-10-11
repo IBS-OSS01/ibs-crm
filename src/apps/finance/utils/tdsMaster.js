@@ -22,7 +22,8 @@ export const DEFAULT_TDS_SECTIONS = [
   { code: '194Q',  name: 'Purchase of goods (buyer turnover > ₹10 cr)',        newRef: '', rateIndividual: 0.1, rateOthers: 0.1, singleLimit: 0,    annualLimit: 5000000 },
   { code: '194O',  name: 'E-commerce operator payments to participants',       newRef: '', rateIndividual: 0.1, rateOthers: 0.1, singleLimit: 0,    annualLimit: 500000 },
   { code: '194M',  name: 'Payment by individual/HUF (non-audit) to contractor/professional', newRef: '', rateIndividual: 2, rateOthers: 2, singleLimit: 0, annualLimit: 5000000 },
-  { code: '194T',  name: 'Payments to partners (salary, remuneration, interest)', newRef: '', rateIndividual: 10, rateOthers: 10, singleLimit: 0,   annualLimit: 20000 },
+  { code: '195',  name: 'Payments to non-residents (rate per DTAA / certificate)', newRef: '', rateIndividual: 10.4, rateOthers: 10.4, singleLimit: 0, annualLimit: 0 },
+  { code: '194T', name: 'Payments to partners (salary, remuneration, interest)', newRef: '', rateIndividual: 10, rateOthers: 10, singleLimit: 0,   annualLimit: 20000 },
   { code: '194R',  name: 'Benefits or perquisites in business/profession',     newRef: '', rateIndividual: 10,  rateOthers: 10, singleLimit: 0,     annualLimit: 20000 },
 ]
 

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react'
-import { collection, getDocs, addDoc, doc, getDoc } from 'firebase/firestore'
+import React, { useState, useEffect, useMemo } from 'react'
+import { collection, getDocs, addDoc, updateDoc, doc, getDoc } from 'firebase/firestore'
+import { useSearchParams } from 'react-router-dom'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { INDIA_STATES, amountInWords, gstType } from '../utils/indiaConstants.js'
@@ -9,6 +10,12 @@ const INVOICE_TYPES = [
   { code: 'TI', label: 'Tax Invoice' },
   { code: 'SO', label: 'Sales Order' },
 ]
+// Tabs of the Sales screen: tax invoices, sales orders (a commitment — no accounting entry until invoiced), pro-forma invoices
+const TABS = [
+  { key: 'invoices', label: 'Sales invoices', type: 'TI', match: i => !['SO', 'PI'].includes(i.invoiceType), blurb: 'Tax invoices — these post to the books' },
+  { key: 'orders', label: 'Sales orders', type: 'SO', match: i => i.invoiceType === 'SO', blurb: 'Orders received from customers — no accounting entry until you convert one to an invoice' },
+  { key: 'proforma', label: 'Pro-forma', type: 'PI', match: i => i.invoiceType === 'PI', blurb: 'Pro-forma invoices — advance / quotation documents, not booked' },
+]
 const TERMS_OPTS = ['Due on Receipt', 'Net 15', 'Net 30', 'Net 45', 'Net 60']
 const UNITS = ['pcs', 'nos', 'set', 'kg', 'ltr', 'mtr', 'sqft', 'hours', 'days', 'lot']
 import { todayStr } from '../utils/financeConstants.js'
@@ -16,6 +23,12 @@ import { computeVoucherTotals } from '../utils/taxCalc.js'
 import { convertTotals, fmtFc, symbolOf } from '../utils/fx.js'
 import { useFx, CurrencyBar } from '../components/formShared.jsx'
 import InvoicesImport from '../components/InvoicesImport.jsx'
+import PayStatus from '../components/PayStatus.jsx'
+import { buildInvoicePdf, downloadPdf } from '../utils/invoicePdf.js'
+import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
+import { useVoucherModal } from '../components/useVoucherModal.jsx'
+import { assertNotLocked, getBooksLockDate } from '../utils/voucherService.js'
+import { openBillMap, payStatus } from '../utils/outstanding.js'
 const today = todayStr   // local date (toISOString would be a day behind in India early morning)
 const getFY = () => { const d = new Date(); const y = d.getFullYear(); const m = d.getMonth() + 1; const s = m >= 4 ? y : y - 1; return `${String(s).slice(2)}-${String(s+1).slice(2)}` }
 const newItem = () => ({ description: '', hsnCode: '', qty: 1, unit: 'pcs', rate: '', gstRate: 18, stockItemId: '', sku: '' })
@@ -160,6 +173,12 @@ export default function Invoices() {
   const [sellers, setSellers] = useState({})
   const [customers, setCustomers] = useState([])
   const [showImport, setShowImport] = useState(false)
+  const fd = useFinanceData()
+  const ledgerLines = fd.allLines
+  const [params, setParams] = useSearchParams()
+  const tab = TABS.find(t => t.key === params.get('tab')) || TABS[0]
+  const [editingId, setEditingId] = useState('')
+  const openInv = useMemo(() => openBillMap(ledgerLines || [], { kind: 'receivable', asOf: todayStr() }), [ledgerLines])
   const [hsnCodes, setHsnCodes] = useState([])
   const [fxRates, setFxRates] = useState([])
   const [stockItems, setStockItems] = useState([])   // optional link: picking a stock item makes the sale reduce inventory and book cost of goods
@@ -265,7 +284,9 @@ export default function Invoices() {
     setSaving(true)
     try {
       const seller = sellers[form.company] || {}
-      const invoiceNumber = await getNextInvoiceNumber(form.company, form.invoiceType)
+      const prev = editingId ? invoices.find(i => i.id === editingId) : null
+      if (prev) { const lk = await getBooksLockDate(prev.company); assertNotLocked(prev.invoiceDate, lk); assertNotLocked(form.invoiceDate, lk) }
+      const invoiceNumber = prev ? prev.invoiceNumber : await getNextInvoiceNumber(form.company, form.invoiceType)
       const expNoTax = form.isExport && form.exportType === 'WOPAY'
       const applyGstNow = form.applyGst && !expNoTax
       const posCode = form.isExport && !expNoTax ? '96' : form.posStateCode
@@ -280,7 +301,7 @@ export default function Invoices() {
         fxDoc = { currency: fx.currency, rate: fx.rate, subTotal: f.subTotal, taxTotal: f.taxTotal, total: f.total, gstLines: f.gstLines }
       }
       const payload = {
-        ...form, applyGst: applyGstNow, ...(form.isExport ? { posStateCode: posCode, posState: posCode === '96' ? 'Other Country' : form.posState } : {}),
+        ...(prev || {}), ...form, applyGst: applyGstNow, ...(form.isExport ? { posStateCode: posCode, posState: posCode === '96' ? 'Other Country' : form.posState } : {}),
         currency: fx.currency, ...(fxDoc ? { fx: fxDoc } : {}),
         invoiceNumber,
         sellerName: seller.legalName || form.company,
@@ -290,16 +311,60 @@ export default function Invoices() {
         items: items.filter(it => it.description.trim()),
         subTotal, gstLines, roundOff, total,
         totalInWords: fxDoc ? `${fx.currency} ${fxDoc.total.toFixed(2)}` : amountInWords(total),
-        status: 'draft',
-        createdBy: user.uid,
-        createdAt: new Date().toISOString(),
+        status: prev ? prev.status : 'draft',
+        ...(prev ? { updatedBy: user.uid, updatedAt: new Date().toISOString() } : { createdBy: user.uid, createdAt: new Date().toISOString() }),
       }
-      const ref = await addDoc(collection(db, 'finance_invoices'), payload)
-      setInvoices(prev => [{ id: ref.id, ...payload }, ...prev])
-      setView('list')
+      if (prev) {
+        const { id: _id, ...body } = payload
+        await updateDoc(doc(db, 'finance_invoices', editingId), JSON.parse(JSON.stringify(body)))
+        setInvoices(list => list.map(i => i.id === editingId ? { ...i, ...body } : i))
+        addDoc(collection(db, 'finance_audit_log'), JSON.parse(JSON.stringify({ at: new Date().toISOString(), by: user.uid, byName: userProfile?.name || user.email || '', action: 'edit', voucherType: 'invoice', voucherNumber: prev.invoiceNumber, company: prev.company, date: form.invoiceDate, amount: total, before: JSON.stringify(prev).slice(0, 20000) }))).catch(() => {})
+      } else {
+        const ref = await addDoc(collection(db, 'finance_invoices'), payload)
+        setInvoices(list => [{ id: ref.id, ...payload }, ...list])
+      }
+      invalidateFinanceCache(); fd.reload()
+      setEditingId(''); setView('list')
       setForm(emptyForm); setItems([newItem()])
     } catch (err) { setError('Error: ' + err.message) }
     finally { setSaving(false) }
+  }
+
+  // open an existing document in the form (INR documents; a foreign-currency one is re-issued instead)
+  const startEdit = (inv) => {
+    if (inv.fx?.currency && inv.fx.currency !== 'INR') { alert('Foreign-currency documents cannot be edited here — cancel it and issue a new one.'); return }
+    setForm({ ...emptyForm, ...Object.fromEntries(Object.keys(emptyForm).map(k => [k, inv[k] ?? emptyForm[k]])), customerId: inv.customerId || '' })
+    setItems((inv.items || []).length ? inv.items.map(i => ({ ...newItem(), ...i })) : [newItem()])
+    setEditingId(inv.id); setError(''); setView('form')
+  }
+  // sales order → tax invoice: a new invoice with the same lines; the order is marked as invoiced
+  const convertOrder = async (so) => {
+    if (!window.confirm('Create a tax invoice from sales order ' + so.invoiceNumber + '? The order will be marked as invoiced.')) return
+    try {
+      const number = await getNextInvoiceNumber(so.company, 'TI')
+      const { id: _id, invoiceNumber: _n, status: _s, createdAt: _c, createdBy: _b, updatedAt: _u, updatedBy: _ub, invoicedAs: _ia, invoicedId: _ii, ...rest } = so
+      const body = JSON.parse(JSON.stringify({ ...rest, invoiceType: 'TI', invoiceNumber: number, invoiceDate: today(), dueDate: today(), status: 'draft', sourceOrderId: so.id, sourceOrderNumber: so.invoiceNumber, createdBy: user.uid, createdAt: new Date().toISOString() }))
+      const ref = await addDoc(collection(db, 'finance_invoices'), body)
+      await updateDoc(doc(db, 'finance_invoices', so.id), { status: 'invoiced', invoicedAs: number, invoicedId: ref.id })
+      setInvoices(list => [{ id: ref.id, ...body }, ...list.map(i => i.id === so.id ? { ...i, status: 'invoiced', invoicedAs: number, invoicedId: ref.id } : i)])
+      invalidateFinanceCache(); fd.reload(); setParams({})
+      alert('Invoice ' + number + ' created from ' + so.invoiceNumber + '. Review its date and terms from the Sales invoices tab.')
+    } catch (e) { alert('Could not convert: ' + e.message) }
+  }
+
+  // A4 PDF with an empty digital-signature field at "Authorised Signatory" — sign it with the DSC (token / certificate) in Adobe, then share it
+  const handlePdf = async (inv) => {
+    try {
+      const seller = { legalName: inv.sellerName, gstin: inv.sellerGstin, ...sellers[inv.company] }
+      const fcInv = inv.fx?.currency && inv.fx.currency !== 'INR'
+      const stored = !fcInv && Array.isArray(inv.gstLines) && inv.total !== undefined
+      const t = fcInv ? { subTotal: inv.fx.subTotal, gstLines: inv.fx.gstLines || [], total: inv.fx.total, roundOff: 0 }
+        : stored ? { subTotal: Number(inv.subTotal) || 0, gstLines: inv.gstLines, total: Number(inv.total) || 0, roundOff: Number(inv.roundOff) || 0 }
+        : computeTotals(inv.items || [], inv.posStateCode, inv.sellerStateCode, inv.applyGst !== false)
+      const bytes = await buildInvoicePdf({ inv, items: inv.items || [], seller, gstLines: t.gstLines, subTotal: t.subTotal, roundOff: t.roundOff, total: t.total,
+        typeLabel: INVOICE_TYPES.find(x => x.code === inv.invoiceType)?.label || 'Invoice', totalInWords: fcInv ? `${inv.fx.currency} ${t.total.toFixed(2)}` : amountInWords(t.total), symbol: fcInv ? inv.fx.currency : 'Rs.' })
+      downloadPdf(bytes, `${inv.invoiceNumber || 'invoice'}.pdf`)
+    } catch (e) { alert('Could not create the PDF: ' + e.message) }
   }
 
   const handlePrint = (inv) => {
@@ -312,6 +377,16 @@ export default function Invoices() {
     w.document.write(html); w.document.close()
     setTimeout(() => { w.print() }, 400)
   }
+
+  const { openKey, modal: docModal } = useVoucherModal({ raw: fd.raw, allLines: fd.allLines, reload: fd.reload, extraActions: (e) => {
+    const inv = e.collection === 'finance_invoices' ? invoices.find(i => i.id === e.id) : null
+    if (!inv) return []
+    return [
+      { label: '✏️ Edit', primary: true, onClick: () => startEdit(inv) },
+      ...(inv.invoiceType === 'SO' && inv.status !== 'invoiced' ? [{ label: '➜ Convert to invoice', onClick: () => convertOrder(inv) }] : []),
+      { label: '📄 PDF (for DSC)', onClick: () => handlePdf(inv) },
+    ]
+  } })
 
   const seller = sellers[form.company] || {}
   const fx = useFx({ fxRates }, form.invoiceDate)
@@ -335,8 +410,8 @@ export default function Invoices() {
   if (view === 'form') return (
     <div className="p-4 max-w-4xl space-y-4">
       <div className="flex items-center gap-3">
-        <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-700">← Back</button>
-        <h2 className="text-xl font-bold text-slate-900 tracking-tight">New Invoice</h2>
+        <button onClick={() => { setEditingId(''); setForm(emptyForm); setItems([newItem()]); setView('list') }} className="text-slate-500 hover:text-slate-700">← Back</button>
+        <h2 className="text-xl font-bold text-slate-900 tracking-tight">{editingId ? `Edit ${INVOICE_TYPES.find(t => t.code === form.invoiceType)?.label || 'Invoice'} — ${invoices.find(i => i.id === editingId)?.invoiceNumber || ''}` : `New ${INVOICE_TYPES.find(t => t.code === form.invoiceType)?.label || 'Invoice'}`}</h2>
       </div>
       {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
       <form onSubmit={handleSave} className="space-y-4">
@@ -346,7 +421,7 @@ export default function Invoices() {
           <div>
             <label className={lbl}>Entity</label>
             <select className={inp} value={form.company} onChange={e => handleCompanyChange(e.target.value)}>
-              <option>UIPL</option><option>Wayzim</option>
+              <option>UIPL</option>
             </select>
           </div>
           <div>
@@ -403,7 +478,7 @@ export default function Invoices() {
           )}
         </div>
 
-        {form.company === 'UIPL' && sellers.Wayzim && (
+        {false && form.company === 'UIPL' && sellers.Wayzim && (
           <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-4">
             <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer font-medium">
               <input type="checkbox" checked={form.interCompany === 'Wayzim'} onChange={e => {
@@ -550,9 +625,9 @@ export default function Invoices() {
         <div className="flex gap-3">
           <button type="submit" disabled={saving}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">
-            {saving ? 'Creating…' : 'Create Invoice'}
+            {saving ? 'Saving…' : editingId ? 'Save changes' : `Create ${INVOICE_TYPES.find(t => t.code === form.invoiceType)?.label || 'Invoice'}`}
           </button>
-          <button type="button" onClick={() => { setView('list'); setForm(emptyForm); setItems([newItem()]) }}
+          <button type="button" onClick={() => { setEditingId(''); setView('list'); setForm(emptyForm); setItems([newItem()]) }}
             className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg">
             Cancel
           </button>
@@ -566,19 +641,23 @@ export default function Invoices() {
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Invoices</h2>
-          <p className="text-slate-500 text-sm">{invoices.length} invoices · Tax &amp; Pro-forma</p>
+          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Sales</h2>
+          <p className="text-slate-500 text-sm">{tab.blurb}</p>
         </div>
-        <button onClick={() => setShowImport(true)} className="ml-auto mr-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Import from Zoho</button>
+        {tab.key === 'invoices' && <button onClick={() => setShowImport(true)} className="ml-auto mr-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Import from Zoho</button>}
         <button onClick={() => {
           const s = sellers['UIPL'] || {}
-          setForm({ ...emptyForm, termsAndConditions: s.termsAndConditions || '' })
+          setForm({ ...emptyForm, invoiceType: tab.type, termsAndConditions: s.termsAndConditions || '' })
           setItems([newItem()]); setView('form')
         }}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
-          + Create Invoice
+          + Create {tab.key === 'orders' ? 'Sales Order' : tab.key === 'proforma' ? 'Pro-forma' : 'Invoice'}
         </button>
       </div>
+      <div className="flex gap-1 border-b border-slate-200">
+        {TABS.map(t => <button key={t.key} onClick={() => setParams(t.key === 'invoices' ? {} : { tab: t.key })} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${t.key === tab.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{t.label} <span className="text-xs text-slate-400">{invoices.filter(t.match).length}</span></button>)}
+      </div>
+      {docModal}
       {showImport && <InvoicesImport onClose={() => { setShowImport(false); loadAll() }} />}
 
       <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 overflow-hidden">
@@ -591,12 +670,13 @@ export default function Invoices() {
               <th className="text-left px-4 py-3">Customer</th>
               <th className="text-left px-4 py-3">PO #</th>
               <th className="text-right px-4 py-3">Amount</th>
+              <th className="text-left px-4 py-3">{tab.key === 'orders' ? 'Status' : 'Payment'}</th>
               <th className="text-right px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {invoices.map(inv => (
-              <tr key={inv.id} className="hover:bg-slate-50">
+            {invoices.filter(tab.match).map(inv => (
+              <tr key={inv.id} onClick={() => openKey(`invoice:${inv.id}`)} className="hover:bg-blue-50/40 cursor-pointer" title="Open this document">
                 <td className="px-4 py-3 font-mono font-bold text-blue-700">{inv.invoiceNumber}</td>
                 <td className="px-4 py-3">
                   <span className="px-2 py-0.5 rounded-lg text-xs font-bold bg-indigo-100 text-indigo-700">
@@ -607,14 +687,19 @@ export default function Invoices() {
                 <td className="px-4 py-3 text-slate-800">{inv.billToName || '—'}</td>
                 <td className="px-4 py-3 text-slate-500">{inv.poNumber || '—'}</td>
                 <td className="px-4 py-3 text-right font-medium">₹{(inv.total || 0).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
-                <td className="px-4 py-3 text-right">
+                <td className="px-4 py-3">{inv.invoiceType === 'SO' ? (inv.status === 'invoiced' ? <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">Invoiced · {inv.invoicedAs}</span> : <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">Open</span>) : inv.invoiceType === 'PI' ? <span className="text-slate-300">—</span> : <PayStatus st={payStatus(openInv, `invoice:${inv.id}`, inv.total)} today={todayStr()} />}</td>
+                <td className="px-4 py-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                  {inv.invoiceType === 'SO' && inv.status !== 'invoiced' && <button onClick={() => convertOrder(inv)} className="text-green-700 hover:text-green-800 font-medium mr-3" title="Create a tax invoice from this order">➜ Invoice</button>}
+                  <button onClick={() => startEdit(inv)} className="text-blue-600 hover:text-blue-700 font-medium mr-3">✏️ Edit</button>
                   <button onClick={() => handlePrint(inv)}
                     className="text-blue-600 hover:text-blue-700 font-medium">🖨️ Print</button>
+                  <button onClick={() => handlePdf(inv)} title="PDF with a digital-signature field — sign it with your DSC, then share"
+                    className="text-blue-600 hover:text-blue-700 font-medium ml-3">📄 PDF</button>
                 </td>
               </tr>
             ))}
-            {invoices.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-10 text-slate-400">No invoices yet. Create your first invoice.</td></tr>
+            {invoices.filter(tab.match).length === 0 && (
+              <tr><td colSpan={8} className="text-center py-10 text-slate-400">No {tab.label.toLowerCase()} yet.</td></tr>
             )}
           </tbody>
         </table>

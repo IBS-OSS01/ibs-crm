@@ -12,6 +12,10 @@ import { PurchaseOrderForm, StockJournalForm } from '../components/InventoryForm
 import { pendingPoLines } from '../utils/purchaseOrders.js'
 import { creditDaysFromTerms } from '../components/formShared.jsx'
 import { useVoucherModal } from '../components/useVoucherModal.jsx'
+import BillsImport from '../components/BillsImport.jsx'
+import ExpensesImport from '../components/ExpensesImport.jsx'
+import PayStatus from '../components/PayStatus.jsx'
+import { openBillMap, payStatus } from '../utils/outstanding.js'
 import { ReportShell, CompanyToggle, Badge, Empty, cardCls, btnPrimary, btnGhost, inputCls, useFinancePerms } from '../components/FinanceUI.jsx'
 
 const EXTERNAL = { sales: '/finance/invoices', journal: '/finance/journal' }
@@ -28,6 +32,9 @@ export default function Vouchers() {
   const { open, modal } = useVoucherModal({ raw, allLines: data.allLines, reload })
   const [company, setCompany] = useState('UIPL')
   const [q, setQ] = useState('')
+  const today = new Date().toLocaleDateString('en-CA')
+  const openBills = useMemo(() => (type === 'purchase' && data.allLines ? openBillMap(data.allLines, { kind: 'payable', company, asOf: today }) : null), [data.allLines, type, company, today]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [showImport, setShowImport] = useState('')
 
   const editId = params.get('edit')
   const creating = params.get('new') === '1'
@@ -92,7 +99,7 @@ export default function Vouchers() {
   return (
     <ReportShell title={`${label} Vouchers`} loading={loading}
       subtitle="Record transactions the Tally way — every voucher posts balanced double entries and feeds GST, outstanding and the statements."
-      exportBar={canWrite && newType && !showForm ? <button onClick={() => setParams({ new: '1' })} className={btnPrimary}>+ New {label} <span className="opacity-60 text-xs ml-1">{VOUCHER_TYPES[type].fkey}</span></button> : null}
+      exportBar={canWrite && newType && !showForm ? <span className="flex gap-2">{type === 'purchase' && <button onClick={() => setShowImport('bills')} className={btnGhost}>⬆ Import bills from Zoho</button>}{type === 'payment' && <button onClick={() => setShowImport('expenses')} className={btnGhost}>⬆ Import expenses from Zoho</button>}<button onClick={() => setParams({ new: '1' })} className={btnPrimary}>+ New {label} <span className="opacity-60 text-xs ml-1">{VOUCHER_TYPES[type].fkey}</span></button></span> : null}
       filters={<>
         <CompanyToggle value={company} onChange={setCompany} />
         <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm flex-wrap">
@@ -102,11 +109,13 @@ export default function Vouchers() {
       </>}>
       {!canWrite && <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">You have view-only access to Finance — vouchers can be opened but not created or edited.</div>}
       {form}
+      {showImport === 'bills' && <BillsImport onClose={() => { setShowImport(''); invalidateFinanceCache(); reload() }} />}
+      {showImport === 'expenses' && <ExpensesImport onClose={() => { setShowImport(''); invalidateFinanceCache(); reload() }} />}
       <div className={`${cardCls} overflow-x-auto`}>
         <table className="w-full text-sm">
           <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider"><tr>
             <th className="text-left px-4 py-3">Date</th><th className="text-left px-4 py-3">Voucher #</th><th className="text-left px-4 py-3">Particulars</th>
-            <th className="text-left px-4 py-3">Narration</th><th className="text-right px-4 py-3">Amount</th></tr></thead>
+            <th className="text-left px-4 py-3">Narration</th><th className="text-right px-4 py-3">Amount</th>{type === 'purchase' && <th className="text-left px-4 py-3">Payment</th>}</tr></thead>
           <tbody className="divide-y divide-slate-100">
             {entries.map(e => (
               <tr key={e.key} onClick={() => open(e)} className="cursor-pointer hover:bg-blue-50/40">
@@ -115,6 +124,7 @@ export default function Vouchers() {
                 <td className="px-4 py-2.5 font-medium text-slate-800">{e.partyName || '—'}</td>
                 <td className="px-4 py-2.5 text-slate-500 truncate max-w-xs">{e.narration}</td>
                 <td className={`px-4 py-2.5 text-right font-medium ${e.cancelled ? 'line-through text-slate-300' : ''}`}>{fmtAmt(e.amount)}</td>
+                {type === 'purchase' && <td className="px-4 py-2.5">{e.cancelled || e.mirror ? <span className="text-slate-300">—</span> : <PayStatus st={payStatus(openBills || new Map(), e.lineKey, e.amount)} today={today} />}</td>}
               </tr>
             ))}
             {entries.length === 0 && <tr><td colSpan={5}><Empty>No {label.toLowerCase()} vouchers for {company} yet.{canWrite && newType ? ' Click “New” to record one.' : ''}</Empty></td></tr>}

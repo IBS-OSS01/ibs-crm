@@ -10,7 +10,7 @@ import { useFinanceData } from '../hooks/useFinanceData.js'
 const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01` }
 import { todayStr } from '../utils/financeConstants.js'
 const today = todayStr
-const COMPANIES = ['UIPL', 'Wayzim']
+const COMPANIES = ['UIPL']
 
 const OUTPUT_CODES = { '2401': 'CGST Payable', '2402': 'SGST Payable', '2403': 'IGST Payable' }
 const INPUT_CODES  = { '1301': 'Input CGST',    '1302': 'Input SGST',    '1303': 'Input IGST' }

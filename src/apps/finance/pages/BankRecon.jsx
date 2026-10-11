@@ -12,6 +12,7 @@ import { readPdfPages, parseStatementPages, hasTextLayer } from '../utils/bankPd
 import { parseScannedStatement, ocrPdfPages } from '../utils/bankOcr.js'
 import { saveStatementFile, listStatementFiles, downloadStatementFile, deleteStatementFile } from '../utils/statementFiles.js'
 import BankEntriesModal from '../components/BankEntriesModal.jsx'
+import { useVoucherModal } from '../components/useVoucherModal.jsx'
 import { fmtAmt, todayStr } from '../utils/financeConstants.js'
 import { downloadXlsx } from '../utils/exportUtils.js'
 import { ReportShell, CompanyToggle, ExportBar, Badge, Empty, cardCls, inputCls, thCls, btnPrimary, btnGhost, useFinancePerms } from '../components/FinanceUI.jsx'
@@ -23,6 +24,7 @@ export default function BankRecon() {
   const { canWrite } = useFinancePerms()
   const { user } = useAuth()
   const { raw, allLines, accounts, loading, reload } = useFinanceData(['bankStatements', 'hrEmployees'])
+  const { openKey, modal: docModal } = useVoucherModal({ raw, allLines, reload })
   const [company, setCompany] = useState('UIPL')
   const [bankId, setBankId] = useState('')
   const [asOf, setAsOf] = useState(todayStr())
@@ -31,6 +33,7 @@ export default function BankRecon() {
   const [pick, setPick] = useState('')
   const [showEntries, setShowEntries] = useState(false)
   const [files, setFiles] = useState([])
+  const [showFiles, setShowFiles] = useState(false)          // the stored statement files stay wrapped until asked for
   const loadFiles = () => listStatementFiles(company).then(setFiles).catch(() => setFiles([]))
   useEffect(() => { loadFiles() }, [company]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -160,18 +163,21 @@ export default function BankRecon() {
           <span className="text-xs text-slate-400">PDF (HSBC “Statement details”, or any PDF with a Date / Debit / Credit table), Excel or CSV with Date, Narration, Withdrawal / Debit, Deposit / Credit (and Balance, for the final check).</span>
         </div>
       )}
-      {files.length > 0 && (
+      {files.filter(x => (x.bankAccountId || '') === bankId).length > 0 && (
         <div className={`${cardCls} p-4`}>
-          <p className="font-semibold text-slate-800 text-sm mb-2">Statement files kept <span className="text-slate-400 font-normal">· the original of every import — download it whenever you need to confirm a line</span></p>
-          <table className="w-full text-sm"><tbody className="divide-y divide-slate-100">
-            {files.map(x => (
+          <button onClick={() => setShowFiles(v => !v)} className="w-full flex items-center justify-between text-left" aria-expanded={showFiles}>
+            <span className="font-semibold text-slate-800 text-sm">{showFiles ? '▾' : '▸'} Statement files — {bankName} <span className="text-slate-400 font-normal">· {files.filter(x => (x.bankAccountId || '') === bankId).length} file(s), the original of every import</span></span>
+            <span className="text-xs text-blue-600">{showFiles ? 'Wrap' : 'Unwrap to see the files'}</span>
+          </button>
+          {showFiles && <table className="w-full text-sm mt-2"><tbody className="divide-y divide-slate-100">
+            {files.filter(x => (x.bankAccountId || '') === bankId).map(x => (
               <tr key={x.id}>
                 <td className="py-1.5 pr-3">{x.fileName}</td><td className="pr-3 text-slate-500 text-xs">{x.bankName || 'Bank'}</td><td className="pr-3 text-slate-500 text-xs">{x.from} → {x.to} · {x.lineCount} lines</td>
                 <td className="pr-3 text-slate-400 text-xs">{Math.round(x.size / 1024)} KB · imported {String(x.importedAt || '').slice(0, 10)}</td>
                 <td className="text-right whitespace-nowrap"><button className="text-blue-600 hover:underline text-xs mr-3" onClick={() => downloadStatementFile(x).catch(err => setMsg('Could not download: ' + err.message))}>⬇ Download</button>
                   {canWrite && <button className="text-red-500 hover:underline text-xs" onClick={async () => { if (window.confirm(`Remove the stored copy of “${x.fileName}”? (Imported lines and entries stay.)`)) { await deleteStatementFile(x); loadFiles() } }}>remove</button>}</td>
               </tr>))}
-          </tbody></table>
+          </tbody></table>}
         </div>
       )}
       {showEntries && <BankEntriesModal lines={statement.filter(s => !s.matchedKey)} company={company} bank={{ id: bankId, name: bankName }} banks={banks} raw={raw} accounts={accounts}
@@ -198,7 +204,7 @@ export default function BankRecon() {
                   <td className="px-3 py-2 whitespace-nowrap">{s.date}</td><td className="px-3 py-2">{s.description}</td><td className="px-3 py-2 font-mono text-xs">{s.ref}</td>
                   <td className="px-3 py-2 text-right">{s.debit ? fmtAmt(s.debit) : ''}</td><td className="px-3 py-2 text-right">{s.credit ? fmtAmt(s.credit) : ''}</td>
                   <td className="px-3 py-2">
-                    {e ? <span className="text-green-700">{e.number} · {e.date} {canWrite && <button className="text-xs text-slate-400 hover:text-red-500 ml-1" onClick={() => match(s, '')}>unmatch</button>}</span>
+                    {e ? <span className="text-green-700"><button className="underline font-mono text-xs" title="Open this voucher" onClick={() => openKey(s.matchedKey.split('|')[0])}>{e.number}</button> · {e.date}{canWrite && <button className="text-xs text-slate-400 hover:text-red-500 ml-1" onClick={() => match(s, '')}>unmatch</button>}</span>
                       : s.matchedKey ? <span className="text-amber-600">entry changed — <button className="text-xs underline" onClick={() => match(s, '')}>unmatch</button></span>
                       : canWrite ? (
                         <span className="flex gap-1 items-center">
@@ -222,11 +228,12 @@ export default function BankRecon() {
       <div className={`${cardCls} overflow-x-auto`}>
         <table className="w-full text-sm"><thead className="bg-slate-50/80"><tr><Th>Date</Th><Th>Voucher</Th><Th>Particulars</Th><Th right>Deposit</Th><Th right>Payment</Th></tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {freeEntries.map(e => <tr key={e.key}><td className="px-3 py-2">{e.date}</td><td className="px-3 py-2 font-mono text-xs">{e.number}</td><td className="px-3 py-2">{e.party}</td><td className="px-3 py-2 text-right">{e.debit ? fmtAmt(e.debit) : ''}</td><td className="px-3 py-2 text-right">{e.credit ? fmtAmt(e.credit) : ''}</td></tr>)}
+            {freeEntries.map(e => <tr key={e.key} onClick={() => openKey(e.key.split('|')[0])} className="cursor-pointer hover:bg-blue-50/40" title="Open this voucher"><td className="px-3 py-2">{e.date}</td><td className="px-3 py-2 font-mono text-xs">{e.number}</td><td className="px-3 py-2">{e.party}</td><td className="px-3 py-2 text-right">{e.debit ? fmtAmt(e.debit) : ''}</td><td className="px-3 py-2 text-right">{e.credit ? fmtAmt(e.credit) : ''}</td></tr>)}
             {freeEntries.length === 0 && <tr><td colSpan={5}><Empty>Everything in the bank book is matched.</Empty></td></tr>}
           </tbody>
         </table>
       </div>
+      {docModal}
       <p className="text-xs text-slate-400">Entries from before the new voucher screens have no bank-account link, so they appear only under “Bank (default / unassigned)”. Pick the bank account on every new voucher for exact per-account reconciliation.</p>
     </ReportShell>
   )

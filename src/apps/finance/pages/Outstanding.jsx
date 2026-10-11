@@ -5,12 +5,14 @@ import { computeOutstanding, AGE_BUCKETS } from '../utils/outstanding.js'
 import { fmtAmt, normName, todayStr } from '../utils/financeConstants.js'
 import { downloadXlsx, downloadCsv, printReport } from '../utils/exportUtils.js'
 import { ReportShell, CompanyToggle, ExportBar, StatCard, Empty, inputCls, cardCls } from '../components/FinanceUI.jsx'
+import { useVoucherModal } from '../components/useVoucherModal.jsx'
 
 export default function Outstanding() {
   const { kind: kindParam } = useParams()
   const navigate = useNavigate()
   const kind = kindParam === 'payables' ? 'payable' : 'receivable'
-  const { raw, allLines, loading } = useFinanceData()
+  const { raw, allLines, loading, reload } = useFinanceData()
+  const { openKey, modal } = useVoucherModal({ raw, allLines, reload })
   const [company, setCompany] = useState('UIPL')
   const [asOf, setAsOf] = useState(todayStr())
   const [ageBy, setAgeBy] = useState('due')
@@ -105,7 +107,7 @@ export default function Outstanding() {
                       <table className="w-full text-xs">
                         <thead className="text-slate-400 uppercase"><tr><th className="text-left py-1">Bill</th><th className="text-left">Their ref</th><th className="text-left">Bill date</th><th className="text-left">Due date</th><th className="text-right">Original</th><th className="text-right">Pending</th><th className="text-right">Overdue</th></tr></thead>
                         <tbody>{p.bills.map(b => (
-                          <tr key={b.billKey} className="border-t border-slate-200/60">
+                          <tr key={b.billKey} onClick={() => openKey(b.billKey)} className="border-t border-slate-200/60 cursor-pointer hover:bg-blue-50/50" title="Open this document">
                             <td className="py-1 font-mono">{b.docNo}</td><td>{b.externalRef}</td><td>{b.date}</td><td>{b.dueDate}</td>
                             <td className="text-right">{fmtAmt(b.original)}</td><td className="text-right font-medium">{fmtAmt(b.pending)}{b.currency && <span className="block text-[10px] font-normal text-amber-700">{b.currency} {fmtAmt(b.fcPending)} @ {b.fxRate}</span>}</td>
                             <td className={`text-right ${b.daysOverdue > 0 ? 'text-red-600 font-medium' : 'text-slate-400'}`}>{b.daysOverdue > 0 ? `${b.daysOverdue} days` : 'not due'}</td>
@@ -125,6 +127,7 @@ export default function Outstanding() {
           )}
         </table>
       </div>
+      {modal}
     </ReportShell>
   )
 }

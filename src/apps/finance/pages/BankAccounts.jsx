@@ -17,7 +17,7 @@ import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.
 // natural next step, not done here.
 const today = () => new Date().toISOString().slice(0, 10)
 const TYPES = ['bank', 'cash']
-const COMPANIES = ['UIPL', 'Wayzim']
+const COMPANIES = ['UIPL']
 
 const empty = {
   name: '', type: 'bank', company: 'UIPL',
@@ -120,9 +120,9 @@ export default function BankAccounts() {
           <div key={co} className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-4">
             <p className="text-xs text-slate-400 uppercase tracking-wide">Total Bank &amp; Cash per books — {co}</p>
             <p className={`text-xl font-bold mt-1 ${glCashByCompany[co] >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
-              {co === 'UIPL' ? '₹' : '$'}{Math.abs(glCashByCompany[co] || 0).toLocaleString('en-IN')}
+              {(glCashByCompany[co] || 0) < 0 ? '−' : ''}₹{Math.abs(glCashByCompany[co] || 0).toLocaleString('en-IN')}
             </p>
-            <p className="text-xs text-slate-400 mt-1">From General Ledger accounts 1100+1110, as of today</p>
+            <p className="text-xs text-slate-400 mt-1">From General Ledger accounts 1100+1110, as of today{(glCashByCompany[co] || 0) < 0 ? ' — negative: more has gone out than is recorded as coming in (enter the opening balance / funding received)' : ''}</p>
           </div>
         ))}
       </div>

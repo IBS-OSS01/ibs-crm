@@ -2,7 +2,7 @@
 // Everything here is dependency-free so it can be unit-tested under plain Node
 // (see scripts/test-finance.mjs).
 
-export const COMPANIES = ['UIPL', 'Wayzim']
+export const COMPANIES = ['UIPL']          // Finance is kept for UIPL only (Wayzim is not a company in these books)
 
 // ── Financial year helpers (Indian FY: 1 Apr – 31 Mar, shown as 'yy-yy') ──────
 export const fyOf = (dateStr) => {

@@ -138,7 +138,7 @@ export default function JournalEntries() {
               <div>
                 <label className={lbl}>Entity</label>
                 <select className={inp} value={form.company} onChange={e => setForm(p => ({ ...p, company: e.target.value }))}>
-                  <option>UIPL</option><option>Wayzim</option>
+                  <option>UIPL</option>
                 </select>
               </div>
               <div>

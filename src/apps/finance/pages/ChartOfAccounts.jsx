@@ -164,7 +164,7 @@ export default function ChartOfAccounts() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Chart of Accounts</h2>
-          <p className="text-slate-500 text-sm">Shared across UIPL and Wayzim — individual transactions carry the company, not the account. Used by Trial Balance, General Ledger, and Balance Sheet.</p>
+          <p className="text-slate-500 text-sm">The accounts used by every report — Trial Balance, General Ledger and Balance Sheet. Used by Trial Balance, General Ledger, and Balance Sheet.</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={reseedMissing}

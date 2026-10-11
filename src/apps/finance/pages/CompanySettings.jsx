@@ -4,7 +4,7 @@ import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { INDIA_STATES } from '../utils/indiaConstants.js'
 
-const COMPANIES = ['UIPL', 'Wayzim']
+const COMPANIES = ['UIPL']
 const COMPANY_LABELS = { UIPL: 'UIPL', Wayzim: 'Wayzim Technology Co Ltd' }
 
 const UIPL_DEFAULTS = {
