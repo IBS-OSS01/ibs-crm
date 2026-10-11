@@ -5,7 +5,7 @@ import { fyOf } from '../utils/financeConstants.js'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
 import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
-  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar,
+  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar, groupFlag,
   cashBankOptions, customerOptions, vendorOptions, tdsSectionList,
   todayStr, normName, num, fmtAmt,
 } from './formShared.jsx'
@@ -270,7 +270,7 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
       const allocations = mode === 'customer' ? st.rows.map(r => ({ billKey: r.b.billKey, docNumber: r.b.docNo, amount: r.amount, ...(fx.isFc ? { fcAmount: r.fcAmount, billRate: r.billRate } : {}) })) : []
       if (tdsOn) { need(tdsSection, 'Choose the TDS section the customer deducted under.'); need(tdsAmt > 0, 'Enter the TDS amount deducted by the customer.'); need(tdsAmt < partyAmount + accSum, 'TDS cannot exceed the amount received.') }
       return {
-        voucherType: 'receipt', company, date, ...(customer ? { partyType: 'customer', partyId: customer.id, partyName: customer.name } : {}),
+        voucherType: 'receipt', company, date, ...(customer ? { partyType: 'customer', partyId: customer.id, partyName: customer.name } : {}), ...(company === 'UIPL' && customer ? groupFlag(raw, customer.name) : { interCompany: null }),
         partyAmount, allocations, accountLines: lines,
         tdsReceivable: tdsOn ? { applicable: true, section: tdsSection, amount: tdsAmt } : { applicable: false },
         bankAccountCode: bank.code, bankAccountId: bank.id, refNumber: refNumber.trim(), narration: narration.trim(), amount: bankAmt,

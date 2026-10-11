@@ -16,6 +16,7 @@ import { tallyVouchers, tallyMasters } from '../src/apps/finance/utils/tallyExpo
 import { buildEInvoice, buildEwayBill, invoiceProblems, ewayProblems, gstr3bJson } from '../src/apps/finance/utils/einvoice.js'
 import { convertTotals, rateOn, revaluation, fmtFc } from '../src/apps/finance/utils/fx.js'
 import { computeStatutory, mergeStatutory, payrollTotals, pfAdminCharge, buildEcr, esicRows, contributionDue } from '../src/apps/hr/utils/statutory.js'
+import { deriveInterCompanyLines } from '../src/apps/finance/utils/interCompany.js'
 import { buildGstr1, gstr1Json, buildGstr3b, setOff, hsnSummary, itcRegister, reconcile2b, parseGstr2bJson, normInvNo } from '../src/apps/finance/utils/gstReturns.js'
 
 let pass = 0, fail = 0
@@ -415,6 +416,24 @@ eq(sumBy(payL, '5115', 'debit') + sumBy(payL, '5116', 'debit') + sumBy(payL, '51
 const ecr = buildEcr(slipsP, { e1: { uan: '123456789012' }, e2: { uan: '' } }, SS)
 ok(ecr.text.split('\n')[0].startsWith('123456789012#~#ASHA RAO#~#40000#~#15000#~#15000#~#15000#~#1800#~#1250#~#550#~#0#~#0'), 'ECR line layout'); ok(ecr.problems.some(x => /Ravi/.test(x)), 'ECR flags a missing UAN')
 eq(esicRows(slipsP, {}).length, 1, 'ESIC template lists only ESIC members'); ok(contributionDue('2026-12') === '2027-01-15' && contributionDue('2026-09') === '2026-10-15', 'PF / ESIC due on the 15th of next month')
+
+section('UIPL ⇄ Wayzim service fee')
+const icInv = { id: 'ic1', invoiceType: 'TI', invoiceNumber: 'UIPL/TI/26-27/050', invoiceDate: '2026-07-31', dueDate: '2026-08-30', company: 'UIPL', billToName: 'Wayzim Technology Co Ltd', interCompany: 'Wayzim', applyGst: false, isExport: true,
+  subTotal: 83000, gstLines: [], total: 83000, roundOff: 0, fx: { currency: 'USD', rate: 83, total: 1000 } }
+const icRct = { id: 'icr1', voucherType: 'receipt', voucherNumber: 'UIPL/RCT/26-27/009', company: 'UIPL', date: '2026-08-20', partyName: 'Wayzim Technology Co Ltd', interCompany: 'Wayzim', bankAccountCode: '1100', currency: 'USD', fxRate: 85,
+  partyAmount: 83000, bankAmountInr: 85000, allocations: [{ billKey: 'invoice:ic1', docNumber: 'UIPL/TI/26-27/050', amount: 83000, fcAmount: 1000, billRate: 83 }] }
+const icL = deriveAllLines({ invoices: [icInv], payments: [], orders: [], expenses: [], payables: [], accounts, vouchers: [icRct] })
+const wz = icL.filter(l => l.company === 'Wayzim'), up = icL.filter(l => l.company === 'UIPL')
+ok(balanced(wz) && balanced(up), 'both companies stay balanced')
+eq(wz.filter(l => l.accountCode === '5200').reduce((s, l) => s + l.debit, 0), 83000, 'Wayzim books the service fee as a cost')
+eq(up.filter(l => l.accountCode === '4000').reduce((s, l) => s + l.credit, 0), 83000, 'UIPL books it as income')
+eq(wz.filter(l => l.accountCode === '1100').reduce((s, l) => s + l.credit, 0), 85000, 'Wayzim pays the rupee amount UIPL received')
+eq(wz.filter(l => l.accountCode === '5925').reduce((s, l) => s + l.debit, 0), 2000, 'Wayzim books the exchange loss UIPL books as a gain')
+eq(up.filter(l => l.accountCode === '4925').reduce((s, l) => s + l.credit, 0), 2000, 'UIPL books the exchange gain')
+ok(computeOutstanding(icL.filter(l => l.company === 'Wayzim'), { kind: 'payable', company: 'Wayzim', asOf: '2026-12-31' }).parties.length === 0, 'service fee fully paid leaves nothing owed to UIPL')
+const wzOpen = computeOutstanding(deriveAllLines({ invoices: [icInv], payments: [], orders: [], expenses: [], payables: [], accounts, vouchers: [] }).filter(l => l.company === 'Wayzim'), { kind: 'payable', company: 'Wayzim', asOf: '2026-12-31' })
+ok(wzOpen.parties[0]?.name === 'UIPL' && wzOpen.parties[0].bills[0].fcPending === 1000, 'unpaid service fee is a USD 1,000 payable to UIPL in Wayzim\'s books')
+ok(deriveInterCompanyLines({ invoices: [{ ...icInv, interCompany: null }], vouchers: [], accounts }).length === 0, 'ordinary invoices are not mirrored')
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

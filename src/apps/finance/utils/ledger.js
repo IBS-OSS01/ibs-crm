@@ -24,6 +24,7 @@
 // rather than silently misattributing them to a company.
 
 import { billKey, deriveVoucherLines, deriveOpeningLines } from './voucherEngine.js'
+import { deriveInterCompanyLines } from './interCompany.js'
 
 // ── Seed Chart of Accounts ───────────────────────────────────────────────────
 // Auto-seeded once (by an admin) if finance_accounts is empty — same pattern
@@ -68,6 +69,7 @@ export const SEED_ACCOUNTS = [
   { code: '5010', name: 'Stock Adjustment (Opening / Closing Stock)', type: 'expense', normalBalance: 'debit', isSystem: true },
   { code: '5100', name: 'Rent',                            type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Rent'] },
   { code: '5110', name: 'Salaries & Wages',                 type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Salaries'] },
+  { code: '5200', name: 'Service Fee to UIPL (inter-company)', type: 'expense',   normalBalance: 'debit',  isSystem: true },
   { code: '5115', name: 'Employer PF Contribution',        type: 'expense',   normalBalance: 'debit',  isSystem: true },
   { code: '5116', name: 'Employer ESIC Contribution',      type: 'expense',   normalBalance: 'debit',  isSystem: true },
   { code: '5117', name: 'PF Admin & EDLI Charges',         type: 'expense',   normalBalance: 'debit',  isSystem: true },
@@ -92,7 +94,7 @@ export const SEED_ACCOUNTS = [
 // `virtual:true`) instead of depending on someone having re-seeded the CoA.
 export const REQUIRED_ACCOUNT_CODES = [
   '1100', '1110', '1200', '1301', '1302', '1303', '1310', '1400',
-  '2100', '2150', '2401', '2402', '2403', '2404', '2500', '2610', '2620', '2630', '1950', '5110', '5115', '5116', '5117',
+  '2100', '2150', '2401', '2402', '2403', '2404', '2500', '2610', '2620', '2630', '1950', '5110', '5115', '5116', '5117', '5200',
   '3200', '4000', '4925', '4950', '5000', '5010', '5900', '5925', '5950',
 ]
 export const mergeRequiredAccounts = (dbAccounts = []) => {
@@ -279,6 +281,7 @@ export function deriveAllLines({
     ...payables.flatMap(d => derivePayableLines(d, accounts)),
     ...vouchers.flatMap(d => deriveVoucherLines(d, accounts)),
     ...deriveOpeningLines({ customers, vendors, bankAccounts, accounts }),
+    ...deriveInterCompanyLines({ invoices, vouchers, accounts }),   // Wayzim's side of UIPL's service-fee documents
   ]
 }
 

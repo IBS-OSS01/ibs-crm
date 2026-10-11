@@ -110,5 +110,6 @@ export const SOURCE_TO_KIND = {
   invoice: 'sales', receipt: 'receipt', payment: 'payment', payable: 'purchase', manual: 'journal',
   expense: 'expense', purchase: 'purchase', credit_note: 'credit_note', debit_note: 'debit_note', contra: 'contra',
   opening: 'opening', stock: 'stock', payroll: 'payroll',
+  icinvoice: 'purchase', iccn: 'debit_note', icpayment: 'payment',   // Wayzim's mirror of UIPL's service-fee documents
 }
 export const kindOfSource = (sourceType) => SOURCE_TO_KIND[sourceType] || sourceType

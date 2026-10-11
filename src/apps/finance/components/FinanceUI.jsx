@@ -25,7 +25,7 @@ export function useFinancePerms() {
 // Wayzim only sells (UIPL buys, pays, holds stock, runs payroll and files GST / TDS on its behalf), so every
 // purchase-side, stock, tax and payroll screen offers UIPL alone. Sales-side screens offer both.
 const UIPL_ONLY = [/\/vouchers\/(purchase|payment|debit_note|purchase_order|stock_journal|payroll)/, /\/stock/, /\/tds\//, /\/gst\//, /\/gst-filing/, /\/payroll\//, /\/einvoice/,
-  /\/registers\/(purchase|debit_note|payment)/, /\/outstanding\/payables/, /\/analysis\/purchase/, /\/fx\/revaluation/, /\/bank-recon/]
+  /\/registers\/(purchase|debit_note|payment)/, /\/analysis\/purchase/, /\/fx\/revaluation/, /\/bank-recon/]
 export const companiesForPath = (pathname) => (UIPL_ONLY.some(re => re.test(pathname)) ? COMPANIES.filter(c => c === 'UIPL') : COMPANIES)
 export const useAllowedCompanies = () => companiesForPath(useLocation().pathname)
 

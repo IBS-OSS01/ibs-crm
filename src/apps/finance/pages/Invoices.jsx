@@ -26,7 +26,7 @@ const emptyForm = {
   sameShipTo: true,
   shipToName: '', shipToAddress: '', shipToCity: '', shipToState: '', shipToPincode: '', shipToGstin: '',
   posState: '', posStateCode: '', applyGst: true,
-  isExport: false, exportType: 'WOPAY', shippingBillNo: '', shippingBillDate: '', portCode: '',
+  interCompany: null, isExport: false, exportType: 'WOPAY', shippingBillNo: '', shippingBillDate: '', portCode: '',
   notes: '', termsAndConditions: '',
 }
 
@@ -400,6 +400,21 @@ export default function Invoices() {
             </div>
           )}
         </div>
+
+        {form.company === 'UIPL' && sellers.Wayzim && (
+          <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-4">
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer font-medium">
+              <input type="checkbox" checked={form.interCompany === 'Wayzim'} onChange={e => {
+                const on = e.target.checked, w = sellers.Wayzim || {}
+                setForm(p => on
+                  ? { ...p, interCompany: 'Wayzim', isExport: true, billToName: w.legalName || 'Wayzim Technology Co Ltd', billToAddress: w.address || '', billToCity: w.city || '', billToState: w.state || '', billToPincode: w.pincode || '', billToGstin: '', customerId: '', posState: 'Other Country', posStateCode: '96' }
+                  : { ...p, interCompany: null })
+              }} />
+              This is UIPL's service fee / commission to Wayzim
+            </label>
+            <p className="text-xs text-slate-400 mt-1">Fills in Wayzim as the customer and treats it as an export of services. The same invoice then appears in Wayzim's books as a cost and a payable to UIPL — no second entry needed.</p>
+          </div>
+        )}
 
         {/* Seller info */}
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm">

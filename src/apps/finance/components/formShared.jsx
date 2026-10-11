@@ -11,6 +11,11 @@ import { DEFAULT_TDS_SECTIONS, tdsRateFor, thresholdCrossed, ldcFor } from '../u
 import { isValidPan } from '../utils/financeConstants.js'
 import { formInputCls, labelCls, cardCls, btnPrimary, btnGhost } from './FinanceUI.jsx'
 
+// UIPL's customer is Wayzim itself (service fee): the documents then also appear in Wayzim's books.
+export const groupFlag = (raw, partyName) => {
+  const n = (partyName || '').toLowerCase(); const legal = (raw?.companySettings?.Wayzim?.legalName || '').toLowerCase()
+  return n && (n.includes('wayzim') || (legal && n === legal)) ? { interCompany: 'Wayzim' } : { interCompany: null }
+}
 export const stateCodeFromName = (name) => INDIA_STATES.find(s => s.name === name)?.code || ''
 export const companyStateCode = (raw, company) => raw?.companySettings?.[company]?.stateCode || ''
 

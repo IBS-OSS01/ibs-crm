@@ -21,6 +21,20 @@ export function buildVoucherIndex({ invoices = [], payments = [], orders = [], e
     })
   })
 
+  // Wayzim's side of the UIPL service fee shows in its day book as a purchase / payment from UIPL
+  invoices.forEach(i => {
+    if (!i.interCompany || i.company === i.interCompany || !i.invoiceDate || !isAccountingInvoice(i)) return
+    out.push({ key: `icinvoice:${i.id}`, lineKey: `icinvoice:${i.id}`, kind: 'purchase', date: i.invoiceDate, number: i.invoiceNumber || i.id, partyName: 'UIPL (service fee)', amount: r2(num(i.total)), company: i.interCompany,
+      narration: 'Inter-company: UIPL service fee', collection: 'finance_invoices', id: i.id, legacy: true, status: i.status || '', mirror: true,
+      ...(i.fx?.currency && i.fx.currency !== 'INR' ? { fcNote: `${i.fx.currency} ${num(i.fx.total).toFixed(2)} @ ${i.fx.rate}` } : {}) })
+  })
+  vouchers.forEach(v => {
+    if (!v.interCompany || v.status === 'cancelled' || !v.date || !['receipt', 'credit_note'].includes(v.voucherType)) return
+    const isPay = v.voucherType === 'receipt'
+    out.push({ key: `ic${isPay ? 'payment' : 'cn'}:${v.id}`, lineKey: `ic${isPay ? 'payment' : 'cn'}:${v.id}`, kind: isPay ? 'payment' : 'debit_note', date: v.date, number: v.voucherNumber, partyName: 'UIPL',
+      amount: r2(num(isPay ? (v.bankAmountInr ?? v.partyAmount) : v.total)), company: v.interCompany, narration: 'Inter-company', collection: 'finance_vouchers', id: v.id, legacy: true, mirror: true })
+  })
+
   payments.forEach(p => {
     if (!p.date || !num(p.amount)) return
     const order = p.orderId ? orderById[p.orderId] : null

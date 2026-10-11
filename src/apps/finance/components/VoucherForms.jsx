@@ -8,7 +8,7 @@ import ItemsEditor, { newLine, TotalsBox } from './ItemsEditor.jsx'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
 import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
-  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar,
+  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar, groupFlag,
   vendorOptions, customerOptions, creditDaysFromTerms, companyStateCode, stateCodeFromName,
   todayStr, normName, num, gstinToStateCode, fmtAmt,
 } from './formShared.jsx'
@@ -198,6 +198,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
       if (original && isCredit && origTotal) need(tFc.total <= origTotal + 0.5, `Credit note (${fmtAmt(tFc.total)}) exceeds the original invoice (${fmtAmt(origTotal)}).`)
       return {
         voucherType: type, company, date, partyType: isCredit ? 'customer' : 'vendor', partyId: party.id, partyName: party.name, partyGstin: party.gstin,
+        ...(isCredit && company === 'UIPL' ? groupFlag(raw, party.name) : { interCompany: null }),
         ...(isCredit
           ? { refInvoiceId: original?.id || '', refInvoiceNumber: original?.invoiceNumber || '', refInvoiceDate: original?.invoiceDate || '', placeOfSupplyCode: original?.posStateCode || '' }
           : { refPurchaseId: original?.id || '', refInvoiceNumber: original?.refNumber || original?.voucherNumber || '', refInvoiceDate: original?.refDate || original?.date || '' }),

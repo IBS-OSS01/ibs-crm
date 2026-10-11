@@ -120,7 +120,7 @@ export default function FinanceDashboard() {
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {cards.filter(c => !wayzim || ['Cash & bank', 'Receivables outstanding', 'Collected this month', 'Sales this month'].includes(c.label)).map(c => (
+        {cards.filter(c => !wayzim || ['Cash & bank', 'Receivables outstanding', 'Payables outstanding', 'Collected this month', 'Sales this month'].includes(c.label)).map(c => (
           <button key={c.label} onClick={() => navigate(c.path)} className={`${cardCls} p-4 text-left hover:border-blue-300 transition`}>
             <p className="text-2xl mb-1">{c.icon}</p>
             <p className={`text-lg font-bold ${c.color || 'text-slate-800'}`}>₹{fmtAmt(Math.abs(c.value))}{c.value < 0 ? ' Cr' : ''}</p>
