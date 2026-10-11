@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { collection, getDocs, addDoc, updateDoc, doc, getDoc } from 'firebase/firestore'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { INDIA_STATES, amountInWords, gstType } from '../utils/indiaConstants.js'
@@ -25,6 +25,7 @@ import { useFx, CurrencyBar } from '../components/formShared.jsx'
 import InvoicesImport from '../components/InvoicesImport.jsx'
 import PayStatus from '../components/PayStatus.jsx'
 import SearchSelect from '../components/SearchSelect.jsx'
+import CreditNotesImport from '../components/CreditNotesImport.jsx'
 import { cloneInvoiceItems } from '../utils/cloneDoc.js'
 import ConvertOrderModal from '../components/ConvertOrderModal.jsx'
 import SalesOrdersImport from '../components/SalesOrdersImport.jsx'
@@ -193,10 +194,12 @@ export default function Invoices() {
   const fd = useFinanceData()
   const ledgerLines = fd.allLines
   const [params, setParams] = useSearchParams()
+  const navigate = useNavigate()
   const tab = TABS.find(t => t.key === params.get('tab')) || TABS[0]
   const [editingId, setEditingId] = useState('')
   const [convertFor, setConvertFor] = useState(null)        // the sales order being invoiced
   const [showOrdersImport, setShowOrdersImport] = useState(false)
+  const [showCnImport, setShowCnImport] = useState(false)
   const openInv = useMemo(() => openBillMap(ledgerLines || [], { kind: 'receivable', asOf: todayStr() }), [ledgerLines])
   const [hsnCodes, setHsnCodes] = useState([])
   const [fxRates, setFxRates] = useState([])
@@ -686,6 +689,7 @@ export default function Invoices() {
           <p className="text-slate-500 text-sm">{tab.blurb}</p>
         </div>
         {params.get('zoho') === '1' && tab.key === 'orders' && <button onClick={() => setShowOrdersImport(true)} className="ml-auto mr-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Import from Zoho</button>}
+        {params.get('zoho') === '1' && tab.key === 'invoices' && <button onClick={() => setShowCnImport(true)} className="ml-auto px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Credit notes</button>}
         {params.get('zoho') === '1' && tab.key === 'invoices' && <button onClick={() => setShowImport(true)} className="ml-auto mr-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Import from Zoho</button>}
         <button onClick={() => {
           const s = sellers['UIPL'] || {}
@@ -698,10 +702,12 @@ export default function Invoices() {
       </div>
       <div className="flex gap-1 border-b border-slate-200">
         {TABS.map(t => <button key={t.key} onClick={() => setParams(t.key === 'invoices' ? {} : { tab: t.key })} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${t.key === tab.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{t.label} <span className="text-xs text-slate-400">{invoices.filter(t.match).length}</span></button>)}
+        <button onClick={() => navigate('/finance/vouchers/credit_note')} className="px-4 py-2 text-sm font-medium -mb-px border-b-2 border-transparent text-slate-500 hover:text-slate-700">Credit notes <span className="text-xs text-slate-400">{(fd.raw?.vouchers || []).filter(v => v.voucherType === 'credit_note' && v.status !== 'cancelled').length}</span></button>
       </div>
       {docModal}
       {convertFor && <ConvertOrderModal order={convertFor} sellerStateCode={(sellers[convertFor.company] || {}).stateCode} onClose={() => setConvertFor(null)} onConfirm={(r) => createFromOrder(convertFor, r)} />}
       {showOrdersImport && <SalesOrdersImport onClose={() => { setShowOrdersImport(false); loadAll(); fd.reload() }} />}
+      {showCnImport && <CreditNotesImport onClose={() => setShowCnImport(false)} onDone={() => { invalidateFinanceCache(); fd.reload() }} />}
       {showImport && <InvoicesImport onClose={() => { setShowImport(false); loadAll() }} />}
 
       <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 overflow-hidden">

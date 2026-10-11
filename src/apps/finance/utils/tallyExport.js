@@ -52,7 +52,7 @@ export function tallyMasters({ accounts, lines, customers = [], vendors = [], ba
   const seen = new Set()
   const add = (name, parent, extra) => { const k = name.toLowerCase(); if (seen.has(k)) return; seen.add(k); out.push(ledgerXml(name, parent, extra)) }
   accounts.filter(a => !['1200', '2100'].includes(a.code)).forEach(a => add(a.name, groupFor(a)))
-  bankAccounts.filter(b => b.company === company).forEach(b => add(b.name, b.type === 'cash' ? 'Cash-in-Hand' : 'Bank Accounts'))
+  bankAccounts.filter(b => b.company === company).forEach(b => add(b.name, b.type === 'cash' ? 'Cash-in-Hand' : b.type === 'fd' ? 'Investments' : 'Bank Accounts'))
   customers.forEach(c => c.shopName && add(c.shopName, 'Sundry Debtors', c.gstin ? `<PARTYGSTIN>${esc(c.gstin)}</PARTYGSTIN>` : ''))
   vendors.forEach(v => v.vendorName && add(v.vendorName, 'Sundry Creditors', v.gstin ? `<PARTYGSTIN>${esc(v.gstin)}</PARTYGSTIN>` : ''))
   lines.forEach(l => { if (l.partyName && l.accountCode === '1200') add(l.partyName, 'Sundry Debtors'); if (l.partyName && l.accountCode === '2100') add(l.partyName, 'Sundry Creditors') })

@@ -4,7 +4,7 @@ import { useFinanceData } from '../hooks/useFinanceData.js'
 import { computeOutstanding, AGE_BUCKETS } from '../utils/outstanding.js'
 import { fmtAmt, normName, todayStr } from '../utils/financeConstants.js'
 import { downloadXlsx, downloadCsv, printReport } from '../utils/exportUtils.js'
-import { ReportShell, CompanyToggle, ExportBar, StatCard, Empty, inputCls, cardCls } from '../components/FinanceUI.jsx'
+import { ReportShell, CompanyToggle, ExportBar, StatCard, Empty, inputCls, cardCls, AsOfDate } from '../components/FinanceUI.jsx'
 import { useVoucherModal } from '../components/useVoucherModal.jsx'
 
 export default function Outstanding() {
@@ -62,7 +62,7 @@ export default function Outstanding() {
             <button key={k} onClick={() => navigate(`/finance/outstanding/${k}`)} className={`px-3 py-1.5 font-medium ${(kind === 'payable') === (k === 'payables') ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{l}</button>
           ))}
         </div>
-        <label className="flex items-center gap-2 text-sm text-slate-600">As on <input type="date" value={asOf} onChange={e => setAsOf(e.target.value)} className={inputCls} /></label>
+        <AsOfDate value={asOf} onChange={setAsOf} label="As on" />
         <select value={ageBy} onChange={e => setAgeBy(e.target.value)} className={inputCls}>
           <option value="due">Age by due date</option><option value="bill">Age by bill date</option>
         </select>

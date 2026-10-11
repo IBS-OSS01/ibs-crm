@@ -109,9 +109,14 @@ export default function Vouchers() {
       exportBar={canWrite && newType && !showForm ? <span className="flex gap-2">{params.get('zoho') === '1' && type === 'purchase' && <button onClick={() => setShowImport('bills')} className={btnGhost}>⬆ Import bills from Zoho</button>}{params.get('zoho') === '1' && type === 'payment' && <button onClick={() => setShowImport('expenses')} className={btnGhost}>⬆ Import expenses from Zoho</button>}<button onClick={() => setParams({ new: '1' })} className={btnPrimary}>+ New {label} <span className="opacity-60 text-xs ml-1">{VOUCHER_TYPES[type].fkey}</span></button></span> : null}
       filters={<>
         <CompanyToggle value={company} onChange={setCompany} />
-        <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm flex-wrap">
-          {NEW_VOUCHER_TYPES.map(t => <button key={t} onClick={() => navigate(`/finance/vouchers/${t}`)} className={`px-3 py-1.5 font-medium ${t === type ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{VOUCHER_TYPES[t].label}</button>)}
-        </div>
+        {type === 'credit_note' && (
+          <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm flex-wrap" title="Credit notes belong to Sales">
+            {[['Sales invoices', '/finance/invoices'], ['Sales orders', '/finance/invoices?tab=orders'], ['Pro-forma', '/finance/invoices?tab=proforma']].map(([l, p]) => <button key={l} onClick={() => navigate(p)} className="px-3 py-1.5 font-medium bg-white text-slate-600 hover:bg-slate-50">{l}</button>)}
+            <span className="px-3 py-1.5 font-medium bg-slate-800 text-white">Credit notes</span>
+          </div>)}
+        {type !== 'credit_note' && <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm flex-wrap">
+          {NEW_VOUCHER_TYPES.filter(t => t !== 'credit_note').map(t => <button key={t} onClick={() => navigate(`/finance/vouchers/${t}`)} className={`px-3 py-1.5 font-medium ${t === type ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{VOUCHER_TYPES[t].label}</button>)}
+        </div>}
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search…" className={`${inputCls} w-48`} />
       </>}>
       {!canWrite && <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">You have view-only access to Finance — vouchers can be opened but not created or edited.</div>}

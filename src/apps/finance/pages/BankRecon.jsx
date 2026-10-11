@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { collection, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore'
 import * as XLSX from 'xlsx'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
@@ -21,12 +21,13 @@ const Th = ({ children, right }) => <th className={`${thCls} ${right ? 'text-rig
 
 export default function BankRecon() {
   const navigate = useNavigate()
+  const [params] = useSearchParams()
   const { canWrite } = useFinancePerms()
   const { user } = useAuth()
   const { raw, allLines, accounts, loading, reload } = useFinanceData(['bankStatements', 'hrEmployees'])
   const { openKey, modal: docModal } = useVoucherModal({ raw, allLines, reload })
   const [company, setCompany] = useState('UIPL')
-  const [bankId, setBankId] = useState('')
+  const [bankId, setBankId] = useState(params.get('bank') || '')          // ?bank=<id> arrives from the Banking overview
   const [asOf, setAsOf] = useState(todayStr())
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
@@ -37,7 +38,7 @@ export default function BankRecon() {
   const loadFiles = () => listStatementFiles(company).then(setFiles).catch(() => setFiles([]))
   useEffect(() => { loadFiles() }, [company]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const banks = (raw?.bankAccounts || []).filter(b => b.company === company && b.type !== 'cash' && b.active !== false)
+  const banks = (raw?.bankAccounts || []).filter(b => b.company === company && b.type !== 'cash' && b.type !== 'fd' && b.active !== false)
   const hasUnassigned = useMemo(() => allLines.some(l => l.accountCode === '1100' && l.company === company && !l.bankAccountId && l.sourceType !== 'opening'), [allLines, company])
   const entries = useMemo(() => bookEntries(allLines, { company, bankAccountId: bankId }), [allLines, company, bankId])
   const statement = useMemo(() => (raw?.bankStatements || []).filter(s => s.company === company && (s.bankAccountId || '') === bankId).sort((a, b) => a.date.localeCompare(b.date) || (a.importedAt || '').localeCompare(b.importedAt || '') || (a.seq || 0) - (b.seq || 0)), [raw, company, bankId])
@@ -180,7 +181,7 @@ export default function BankRecon() {
           </tbody></table>}
         </div>
       )}
-      {showEntries && <BankEntriesModal lines={statement.filter(s => !s.matchedKey)} company={company} bank={{ id: bankId, name: bankName }} banks={banks} raw={raw} accounts={accounts}
+      {showEntries && <BankEntriesModal lines={statement.filter(s => !s.matchedKey)} company={company} bank={{ id: bankId, name: bankName }} banks={banks} fds={(raw?.bankAccounts || []).filter(b => b.type === 'fd' && b.company === company && b.active !== false)} raw={raw} accounts={accounts}
         onClose={() => { setShowEntries(false); invalidateFinanceCache(); reload() }} onDone={() => invalidateFinanceCache()} />}
 
       <div className={`${cardCls} p-5 max-w-2xl`}>

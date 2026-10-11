@@ -21,7 +21,7 @@ export const companyStateCode = (raw, company) => raw?.companySettings?.[company
 
 export function cashBankOptions(raw, company) {
   const accs = (raw?.bankAccounts || []).filter(b => b.company === company && b.active !== false)
-  const banks = accs.filter(b => b.type !== 'cash')
+  const banks = accs.filter(b => b.type !== 'cash' && b.type !== 'fd')
   const opts = []
   if (banks.length === 0) opts.push({ key: 'bank-default', label: 'Bank account (default)', code: '1100', id: '' })
   banks.forEach(b => opts.push({ key: `bank:${b.id}`, label: `${b.name}${b.accountNumber ? ` ••${String(b.accountNumber).slice(-4)}` : ''}`, code: '1100', id: b.id }))
@@ -30,6 +30,10 @@ export function cashBankOptions(raw, company) {
   cashAccs.forEach(b => opts.push({ key: `cash:${b.id}`, label: b.name, code: '1110', id: b.id }))
   return opts
 }
+
+// Fixed deposits (sweep FDs and term deposits) as pick-list options for transfers
+export const fdOptions = (raw, company) => (raw?.bankAccounts || []).filter(b => b.type === 'fd' && b.company === company && b.active !== false)
+  .map(b => ({ key: `fd:${b.id}`, label: `${b.name}${b.accountNumber ? ` ••${String(b.accountNumber).slice(-4)}` : ''} (FD)`, code: '1520', id: b.id }))
 
 // Customers (crm_customers) + vendors (finance_vendors) for pickers; the matching
 // name is what legacy records (free-text) join on.

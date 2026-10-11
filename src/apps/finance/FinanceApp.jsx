@@ -17,6 +17,7 @@ import GstFiling from './pages/GstFiling.jsx'
 import Vouchers from './pages/Vouchers.jsx'
 import { invalidateFinanceCache } from './hooks/useFinanceData.js'
 import { NAV_GROUPS, allNavItems } from './navConfig.js'
+import { recordVisit } from './utils/reportsCatalog.js'
 import { CommandPalette, QuickAddSheet } from './components/NavOverlays.jsx'
 import Parties from './pages/Parties.jsx'
 import GstReturns from './pages/GstReturns.jsx'
@@ -26,6 +27,7 @@ import Statements from './pages/Statements.jsx'
 import CostCentres from './pages/CostCentres.jsx'
 import Budgets from './pages/Budgets.jsx'
 import BankRecon from './pages/BankRecon.jsx'
+import BankingOverview from './pages/BankingOverview.jsx'
 import AuditTrail from './pages/AuditTrail.jsx'
 import DataExport from './pages/DataExport.jsx'
 import Analysis from './pages/Analysis.jsx'
@@ -80,6 +82,7 @@ export default function FinanceApp() {
   useLayoutEffect(() => {
     if (/^\/finance\/(invoices|journal|vendors|banking|settings|hsn|accounts|projectcosts)/.test(prevPath.current)) invalidateFinanceCache()
     prevPath.current = location.pathname
+    recordVisit(location.pathname)                 // feeds “last visited” in the Reports Center
   }, [location.pathname])
 
   const here = location.pathname + location.search
@@ -221,6 +224,7 @@ export default function FinanceApp() {
           <Route path="/cost-centres"    element={<CostCentres />} />
           <Route path="/budgets"         element={<Budgets />} />
           <Route path="/bank-recon"      element={<BankRecon />} />
+          <Route path="/bank-overview"   element={<BankingOverview />} />
           <Route path="/audit"           element={<AuditTrail />} />
           <Route path="/export"          element={<DataExport />} />
           <Route path="/tds/:tab"        element={<TdsCompliance />} />

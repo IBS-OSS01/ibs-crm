@@ -1,3 +1,4 @@
+import { AsOfDate } from '../components/FinanceUI.jsx'
 import React, { useState, useMemo } from 'react'
 import { useFinanceData } from '../hooks/useFinanceData.js'
 import { computeAccountBalances } from '../utils/ledger.js'
@@ -39,11 +40,7 @@ export default function TrialBalance() {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">As of:</label>
-          <input type="date" value={asOfDate} onChange={e => setAsOfDate(e.target.value)}
-            className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
+        <AsOfDate value={asOfDate} onChange={setAsOfDate} label="As of" />
       </div>
 
       <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 overflow-hidden">

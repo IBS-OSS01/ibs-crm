@@ -14,6 +14,7 @@ import { tradingPL, cashFlow, ratios, costCentreSummary, budgetVsActual, balance
 import { parseBankStatement, bookEntries, autoMatch, reconciliation } from '../src/apps/finance/utils/bankRecon.js'
 import { parseStatementPages } from '../src/apps/finance/utils/bankPdf.js'
 import { orderProgress, qtysForPercent, qtysForBalance, invoiceFromOrder, applyInvoicing, closeOrderItems } from '../src/apps/finance/utils/salesOrders.js'
+import { parseZohoCreditNotes, toCreditVoucher } from '../src/apps/finance/utils/zohoCreditNotes.js'
 import { parseZohoInvoices, toInvoiceDoc, matchReceipts } from '../src/apps/finance/utils/zohoSales.js'
 import { parseZohoBills, toPurchaseVoucher, matchPayments } from '../src/apps/finance/utils/zohoPurchases.js'
 import { parseZohoExpenses, matchExpenses, reclassify, toExpenseVoucher } from '../src/apps/finance/utils/zohoExpenses.js'
@@ -596,6 +597,33 @@ section('Zoho expenses → tied to bank payments or new entries')
   ok(threw, 'orders: cannot invoice more than what is left')
   ok(orderProgress({ ...so, items: applyInvoicing(so1, qtysForBalance(so1)) }).state === 'invoiced', 'orders: billing the balance completes the order')
   ok(orderProgress({ ...so, items: closeOrderItems(so1) }).state === 'closed', 'orders: closing cancels the unbilled balance')
+}
+
+// ── Zoho credit notes → credit-note vouchers settling the invoice
+{
+  const cust = [{ id: 'c1', shopName: 'RUTVI ENTERPRISES', gstin: '27AOGPM6935C1ZW' }]
+  const invs = [{ id: 'i4', invoiceType: 'TI', invoiceNumber: 'UI/SL/25-26/4', invoiceDate: '2025-07-07', billToName: 'RUTVI ENTERPRISES', customerId: 'c1', posStateCode: '27' }]
+  const row = { 'Credit Note Number': 'RINV/25-26/0001', 'CreditNotes ID': '99', 'Credit Note Date': '2025-07-30', Total: '16638000', 'Customer Name': 'RUTVI ENTERPRISES', 'Associated Invoice Number': 'UI/SL/25-26/4', Reason: 'Sales Return', 'Item Name': 'Fast Sorter', Quantity: '12', 'Item Total': '14100000', 'Item Tax %': '18', 'CGST Rate %': '9', CGST: '1269000', SGST: '1269000', IGST: '0' }
+  const cn = parseZohoCreditNotes([row, { 'Credit Note Number': 'RINV/25-26/0002', 'Credit Note Date': '2025-09-15', Total: '73700', 'Customer Name': 'RUTVI ENTERPRISES', 'Associated Invoice Number': 'NOPE/1', Reason: 'Deficiency in service', 'Item Desc': 'Transportion expense refund', Quantity: '1', 'Item Total': '73700' }], { customers: cust, invoices: invs })
+  ok(cn.length === 2 && cn[0].invoice?.id === 'i4' && cn[0].customer?.id === 'c1' && cn[0].warnings.length === 0, 'credit notes: customer and invoice found, totals agree with Zoho')
+  ok(cn[1].invoice === null && cn[1].applyGst === false && cn[1].calcTotal === 73700 && cn[1].warnings.some(w => /on account/.test(w)), 'credit notes: a note with no tax and no invoice in the books goes on account')
+  const v = toCreditVoucher(cn[0])
+  const lines = deriveVoucherLines({ ...v, id: 'cn1', voucherNumber: 'UIPL/CN/25-26/001', status: 'active' }, accounts)
+  ok(v.voucherType === 'credit_note' && v.total === 16638000 && v.refInvoiceId === 'i4' && v.reasonCode === '01', 'credit notes: voucher carries the original invoice and the sales-return reason')
+  ok(Math.abs(sumBy(lines, '1200', 'credit') - 16638000) < 0.01 && lines.find(l => l.accountCode === '1200')?.allocatesTo === billKey('invoice', 'i4') && balanced(lines), 'credit notes: reverses sales and output tax, credits the receivable against that invoice, balanced')
+}
+
+// ── Fixed deposits: sweep-out / sweep-in are transfers to the FD, interest is income
+{
+  const ctx = { customers: [], vendors: [], banks: [{ id: 'y', name: 'YES BANK', accountNumber: '147227000000084' }], fds: [{ id: 'fd1', name: 'YES sweep FD', accountNumber: '147240600000031' }], thisBankId: 'y', employees: [] }
+  const out = suggestEntry({ description: '* 147240600000031 CHBATCH009207 AUTO SWEEPOUT 96591', debit: 500000, credit: 0 }, ctx)
+  const back = suggestEntry({ description: 'SWEEP-IN CREDIT - 147240600000031 1375919', debit: 0, credit: 44618.84 }, ctx)
+  const intr = suggestEntry({ description: 'INT. ON SWCR ON -147240600000031 1375919', debit: 0, credit: 111 }, ctx)
+  ok(out.kind === 'contra' && out.otherBankId === 'fd1' && back.kind === 'contra' && back.otherBankId === 'fd1', 'FD: sweep-out and sweep-in become transfers to / from the fixed deposit')
+  ok(intr.kind === 'receipt' && intr.accountCode === '4910', 'FD: interest credited on the sweep is interest income')
+  const v = buildVoucher({ kind: 'contra', otherBank: { id: 'fd1', name: 'YES sweep FD (FD)', fd: true } }, { id: 'l1', date: '2026-08-28', debit: 500000, credit: 0, description: 'AUTO SWEEPOUT' }, { company: 'UIPL', bank: { id: 'y', name: 'YES BANK' } })
+  const ls = deriveVoucherLines({ ...v, id: 'ct1', voucherNumber: 'UIPL/CT/26-27/001', status: 'active' }, accounts)
+  ok(v.toAccountCode === '1520' && ls.find(l => l.accountCode === '1520')?.bankAccountId === 'fd1' && ls.find(l => l.accountCode === '1100')?.bankAccountId === 'y' && balanced(ls), 'FD: the transfer debits the FD sub-ledger and credits the current account, balanced')
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)

@@ -23,7 +23,7 @@ const line = (accounts, code, debit, credit, extra = {}) => ({
   debit: r2(debit), credit: r2(credit), ...extra,
 })
 
-const isCashBank = (code) => code === '1100' || code === '1110'
+const isCashBank = (code) => code === '1100' || code === '1110' || code === '1520'     // 1520 = Fixed Deposits, one sub-ledger per FD
 
 export const partyKeyOf = (partyId, partyName) => normName(partyName) || (partyId ? `id:${partyId}` : '')
 
@@ -301,7 +301,7 @@ export function deriveOpeningLines({ customers = [], vendors = [], bankAccounts 
 
   bankAccounts.forEach(b => {
     const amt = r2(num(b.openingBalance)); if (!amt) return
-    const code = b.type === 'cash' ? '1110' : '1100'
+    const code = b.type === 'cash' ? '1110' : b.type === 'fd' ? '1520' : '1100'
     const meta = { date: b.openingDate || defaultDate, company: b.company || 'UIPL', sourceId: `bank-${b.id}`, sourceDocNumber: 'Opening Balance', description: b.name }
     push([
       line(accounts, code, amt > 0 ? amt : 0, amt > 0 ? 0 : -amt, { bankAccountId: b.id }),

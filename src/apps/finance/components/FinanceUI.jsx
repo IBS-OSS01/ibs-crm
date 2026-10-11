@@ -52,34 +52,58 @@ const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate(
 export function periodPresets() {
   const now = new Date()
   const fy = fyRange(currentFY())
-  const lastFyStart = `${Number(fy.from.slice(0, 4)) - 1}-04-01`
-  const lastFyEnd = `${Number(fy.from.slice(0, 4))}-03-31`
+  const fyY = Number(fy.from.slice(0, 4))
   const mFrom = new Date(now.getFullYear(), now.getMonth(), 1)
   const lmFrom = new Date(now.getFullYear(), now.getMonth() - 1, 1)
   const lmTo = new Date(now.getFullYear(), now.getMonth(), 0)
   const qStartMonth = now.getMonth() - ((now.getMonth() - 3 + 12) % 3)   // FY quarters start Apr/Jul/Oct/Jan
   const qFrom = new Date(now.getFullYear(), qStartMonth, 1)
+  const lqFrom = new Date(now.getFullYear(), qStartMonth - 3, 1)
+  const lqTo = new Date(now.getFullYear(), qStartMonth, 0)
   return [
     { label: 'This month', from: ymd(mFrom), to: ymd(now) },
     { label: 'Last month', from: ymd(lmFrom), to: ymd(lmTo) },
     { label: 'This quarter', from: ymd(qFrom), to: ymd(now) },
-    { label: 'This FY', from: fy.from, to: fy.to },
-    { label: 'Last FY', from: lastFyStart, to: lastFyEnd },
+    { label: 'Last quarter', from: ymd(lqFrom), to: ymd(lqTo) },
+    { label: 'This year', from: fy.from, to: fy.to },
+    { label: 'Last year', from: `${fyY - 1}-04-01`, to: `${fyY}-03-31` },
   ]
 }
 
+// The period chooser every report shares: This month · Last month · This quarter · Last quarter · This year · Last year · Custom.
+// Quarters and years follow the financial year (April–March). Editing either date makes it a custom range.
 export function DateRange({ from, to, onChange, presets = true }) {
+  const list = periodPresets()
+  const hit = list.findIndex(p => p.from === from && p.to === to)
   return (
     <div className="flex items-center gap-2 flex-wrap">
+      {presets && (
+        <select value={hit >= 0 ? String(hit) : 'custom'} onChange={e => { const p = list[Number(e.target.value)]; if (p) onChange({ from: p.from, to: p.to }) }} className={inputCls} title="Period (quarters and years follow April–March)">
+          {list.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}
+          <option value="custom">Custom date</option>
+        </select>
+      )}
       <input type="date" value={from} onChange={e => onChange({ from: e.target.value, to })} className={inputCls} />
       <span className="text-slate-400 text-sm">to</span>
       <input type="date" value={to} onChange={e => onChange({ from, to: e.target.value })} className={inputCls} />
-      {presets && (
-        <select value="" onChange={e => { const p = periodPresets()[e.target.value]; if (p) onChange({ from: p.from, to: p.to }) }} className={inputCls}>
-          <option value="">Quick period…</option>
-          {periodPresets().map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}
-        </select>
-      )}
+    </div>
+  )
+}
+
+// For statements that are a position on one day (balance sheet, trial balance, outstanding): the same period chooser sets the
+// "as of" date — the end of the chosen period (up to today for the current one) — and the date can still be typed for a custom day.
+export function AsOfDate({ value, onChange, label = 'As of' }) {
+  const list = periodPresets(), today = ymd(new Date())
+  const ends = list.map(p => (p.to > today ? today : p.to))
+  const hit = ends.findIndex(e => e === value)
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <select value={hit >= 0 ? String(hit) : 'custom'} onChange={e => { const v = ends[Number(e.target.value)]; if (v) onChange(v) }} className={inputCls} title="Takes the end of the chosen period">
+        {list.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}
+        <option value="custom">Custom date</option>
+      </select>
+      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</label>
+      <input type="date" value={value} onChange={e => onChange(e.target.value)} className={inputCls} />
     </div>
   )
 }

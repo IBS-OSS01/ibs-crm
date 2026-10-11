@@ -1,104 +1,88 @@
-// Gateway-style index of every report and function in Finance.
-import React from 'react'
+// Reports Center — every report and function in Finance in one place: search, favourites, recently visited and categories.
+// Favourites and "last visited" are kept in this browser.
+import React, { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { CATALOG, CATEGORIES, getFavourites, toggleFavourite, getVisits, recordVisit } from '../utils/reportsCatalog.js'
 import { cardCls } from '../components/FinanceUI.jsx'
 
-const GROUPS = [
-  ['Vouchers', 'Enter transactions', [
-    ['Purchase (F9)', '/finance/vouchers/purchase', 'Vendor bills with input tax credit, RCM and TDS'],
-    ['Receipt (F6)', '/finance/vouchers/receipt', 'Customer receipts against invoices, advances, TDS deducted by customer'],
-    ['Payment (F5)', '/finance/vouchers/payment', 'Vendor payments and direct expenses, TDS deduction'],
-    ['Contra (F4)', '/finance/vouchers/contra', 'Cash deposits / withdrawals and bank transfers'],
-    ['Credit Note (Ctrl+F8)', '/finance/vouchers/credit_note', 'Sales returns and post-sale discounts'],
-    ['Debit Note (Ctrl+F9)', '/finance/vouchers/debit_note', 'Purchase returns and rate differences'],
-    ['Purchase Order (Ctrl+F5)', '/finance/vouchers/purchase_order', 'Order goods; track what is still pending'],
-    ['Stock Journal (Ctrl+F7)', '/finance/vouchers/stock_journal', 'Godown transfers, stock-take adjustments, manufacturing'],
-    ['Sales Invoices', '/finance/invoices', 'Tax invoice, pro-forma and sales orders'],
-    ['Journal Entries', '/finance/journal', 'Manual adjustments (admin)'],
-  ]],
-  ['Books', 'Day-to-day records', [
-    ['Day Book', '/finance/daybook', 'Every voucher by date'],
-    ['Ledger Statement', '/finance/ledger', 'Any account or party, with running balance'],
-    ['Cash / Bank Book', '/finance/cashbank', 'Receipts, payments and balances per account'],
-    ['General Ledger', '/finance/gl', 'All entries for an account'],
-    ['Sales Register', '/finance/registers/sales', 'Month-wise and voucher-wise with GST'],
-    ['Purchase Register', '/finance/registers/purchase', 'Month-wise and voucher-wise with ITC'],
-    ['Credit / Debit Note Registers', '/finance/registers/credit_note', ''],
-    ['Receipt / Payment / Contra / Journal Registers', '/finance/registers/receipt', ''],
-  ]],
-  ['Outstanding', 'Who owes whom', [
-    ['Receivables — bill-wise & ageing', '/finance/outstanding/receivables', 'Pending invoices by customer with ageing buckets'],
-    ['Payables — bill-wise & ageing', '/finance/outstanding/payables', 'Pending bills by vendor'],
-    ['Party Ledgers', '/finance/parties', 'Credit terms, default TDS, opening balances'],
-  ]],
-  ['Statements', 'Position and performance', [
-    ['Trial Balance', '/finance/trial-balance', ''],
-    ['Trading & Profit-and-Loss', '/finance/statements/trading', 'Gross profit, net profit, opening / closing stock'],
-    ['Balance Sheet', '/finance/balance-sheet', ''],
-    ['Cash Flow', '/finance/statements/cashflow', 'Where cash came from and went'],
-    ['Ratio Analysis', '/finance/statements/ratios', 'Liquidity, margins, working-capital days'],
-    ['Sales / Purchase Analysis', '/finance/analysis/sales-party', 'By party and by item'],
-    ['Cost Centres', '/finance/cost-centres', 'Income and expense per project / site'],
-    ['Budgets', '/finance/budgets', 'Budget vs actual'],
-    ['Forex revaluation', '/finance/fx/revaluation', 'Open foreign-currency bills at the closing rate'],
-  ]],
-  ['GST', 'Returns and credit', [
-    ['GSTR-1', '/finance/gst/gstr1', 'B2B, B2C, credit notes, HSN, documents + portal JSON'],
-    ['GSTR-3B', '/finance/gst/gstr3b', 'Liability, ITC and cash payable'],
-    ['HSN Summary', '/finance/gst/hsn', ''],
-    ['ITC Register', '/finance/gst/itc', 'Eligible, blocked and RCM credit'],
-    ['GSTR-2B Reconciliation', '/finance/gst/recon', 'Match supplier filings to your purchases'],
-    ['E-Invoice & E-Way Bill', '/finance/einvoice', 'Portal bulk-upload JSON; record IRN and e-way bill numbers'],
-    ['HSN / SAC master', '/finance/hsn', ''],
-  ]],
-  ['TDS', 'Tax deducted at source', [
-    ['Payroll — post to books', '/finance/payroll/post', 'Salary slips from HR → salary, PF and ESIC liabilities'],
-    ['PF & ESIC dues', '/finance/payroll/dues', 'Payable vs paid by month, record payments'],
-    ['TDS Dashboard', '/finance/tds/dashboard', 'Deducted vs deposited, due dates, interest estimate'],
-    ['Deduction Register', '/finance/tds/register', 'By voucher and by deductee'],
-    ['Challans', '/finance/tds/challans', 'Record deposits (and the bank payment)'],
-    ['Quarterly Statements', '/finance/tds/returns', 'Deductee & challan data for the return'],
-    ['Deductee Statements', '/finance/tds/certificates', 'Printable per-vendor summary'],
-    ['TDS Receivable', '/finance/tds/receivable', 'Tax customers deducted from you'],
-    ['Sections & Rates', '/finance/tds/sections', 'Edit rates and thresholds'],
-  ]],
-  ['Inventory', 'Stock in and out', [
-    ['Stock Items', '/finance/stock-items', 'HSN, rates, valuation, opening stock'],
-    ['Stock Summary', '/finance/stock/summary', 'Quantity and value per item / godown'],
-    ['Item Ledger (In / Out)', '/finance/stock/ledger', 'Every inward and outward movement with running balance'],
-    ['Movement Analysis', '/finance/stock/movement', 'Opening, in, out, closing for a period'],
-    ['Godown-wise Stock', '/finance/stock/godown', ''],
-    ['Reorder Status', '/finance/stock/reorder', ''],
-    ['Pending Purchase Orders', '/finance/stock/orders', 'Create bill from an order'],
-  ]],
-  ['Controls', 'Banking, audit, export', [
-    ['Bank & Cash Accounts', '/finance/banking', 'Master and opening balances'],
-    ['Bank Reconciliation', '/finance/bank-recon', 'Import statement, match, reconcile'],
-    ['Audit Trail & Period Lock', '/finance/audit', 'Who changed what; lock closed periods'],
-    ['Export & Backup', '/finance/export', 'Excel and Tally XML'],
-    ['Chart of Accounts', '/finance/accounts', ''],
-    ['Exchange rates', '/finance/fx/rates', 'Rates for USD, EUR and other currencies'],
-    ['Company Settings', '/finance/settings', 'GSTIN, TAN, state, lock date'],
-  ]],
-]
+const when = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).replace(',', '').toUpperCase() : '-')
+
+const Folder = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6a2 2 0 012-2h4l2 2h8a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V6z" /></svg>
+const Star = ({ on }) => <svg width="16" height="16" viewBox="0 0 24 24" fill={on ? '#f59e0b' : 'none'} stroke={on ? '#f59e0b' : '#94a3b8'} strokeWidth="1.6" strokeLinejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3z" /></svg>
 
 export default function ReportsHub() {
   const navigate = useNavigate()
+  const [view, setView] = useState('home')              // home | favourites | recent | category name
+  const [q, setQ] = useState('')
+  const [favs, setFavs] = useState(getFavourites)
+  const [visits, setVisits] = useState(getVisits)
+
+  const open = (r) => { recordVisit(r.path); setVisits(getVisits()); navigate(r.path) }
+  const star = (e, r) => { e.stopPropagation(); setFavs(toggleFavourite(r.path)) }
+
+  const counts = useMemo(() => Object.fromEntries(CATEGORIES.map(c => [c, CATALOG.filter(r => r.category === c).length])), [])
+  const rows = useMemo(() => {
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean)
+    let list = CATALOG
+    if (words.length) list = list.filter(r => words.every(w => `${r.label} ${r.desc} ${r.category}`.toLowerCase().includes(w)))
+    else if (view === 'favourites') list = list.filter(r => favs.includes(r.path))
+    else if (view === 'recent') list = list.filter(r => visits[r.path]).sort((a, b) => visits[b.path].localeCompare(visits[a.path])).slice(0, 15)
+    else if (view !== 'home') list = list.filter(r => r.category === view)
+    return list
+  }, [q, view, favs, visits])
+
+  const title = q ? `Search results` : view === 'home' ? 'All reports' : view === 'favourites' ? 'Favourites' : view === 'recent' ? 'Recently visited' : view
+  const navBtn = (key, label, icon, count) => (
+    <button key={key} onClick={() => { setView(key); setQ('') }} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition ${view === key && !q ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100'}`}>
+      <span className="text-slate-400">{icon}</span><span className="flex-1 truncate">{label}</span>{count !== undefined && <span className="text-xs text-slate-400">{count}</span>}
+    </button>
+  )
+
   return (
-    <div className="p-6 space-y-6">
-      <div><h2 className="text-2xl font-bold text-slate-900 tracking-tight">All Reports &amp; Functions</h2><p className="text-slate-500 text-sm">Everything in Finance, grouped the way Tally's Gateway groups it. Shortcuts work on any voucher screen: F4 Contra · F5 Payment · F6 Receipt · F9 Purchase · Ctrl+F5 Purchase Order · Ctrl+F7 Stock Journal · Ctrl+F8 Credit Note · Ctrl+F9 Debit Note · Esc closes a form.</p></div>
-      {GROUPS.map(([title, sub, items]) => (
-        <div key={title}>
-          <h3 className="font-semibold text-slate-800">{title} <span className="text-sm font-normal text-slate-400">— {sub}</span></h3>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
-            {items.map(([label, path, desc]) => (
-              <button key={path + label} onClick={() => navigate(path)} className={`${cardCls} p-3 text-left hover:border-blue-300 hover:shadow transition`}>
-                <p className="font-medium text-slate-800 text-sm">{label}</p>{desc && <p className="text-xs text-slate-400 mt-0.5">{desc}</p>}
-              </button>
-            ))}
+    <div className="p-6 space-y-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Reports Center</h2>
+        <div className="flex-1 max-w-xl mx-auto w-full min-w-[14rem]">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-500">
+            <span className="text-blue-600">🔍</span>
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search reports" className="flex-1 bg-transparent outline-none text-sm" />
+            {q && <button onClick={() => setQ('')} className="text-slate-400 text-sm">✕</button>}
           </div>
         </div>
-      ))}
+        <span className="text-xs text-slate-400 hidden md:block">Shortcuts on any voucher screen: F4 Contra · F5 Payment · F6 Receipt · F9 Purchase</span>
+      </div>
+
+      <div className="grid lg:grid-cols-[16rem_1fr] gap-4 items-start">
+        <aside className={`${cardCls} p-3 space-y-0.5`}>
+          {navBtn('home', 'Home', '⌂', CATALOG.length)}
+          {navBtn('favourites', 'Favourites', '☆', favs.length)}
+          {navBtn('recent', 'Recently visited', '↺', Object.keys(visits).filter(p => CATALOG.some(r => r.path === p)).length)}
+          <p className="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Report category</p>
+          {CATEGORIES.map(c => navBtn(c, c, <Folder />, counts[c]))}
+        </aside>
+
+        <section className={cardCls}>
+          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100">
+            <h3 className="font-semibold text-slate-800">{title}</h3><span className="text-xs bg-blue-50 text-blue-700 rounded-full px-2 py-0.5">{rows.length}</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider"><tr><th className="w-10" /><th className="text-left px-3 py-2.5">Report name</th><th className="text-left px-3 py-2.5 hidden md:table-cell">What it shows</th><th className="text-left px-3 py-2.5 hidden lg:table-cell">Category</th><th className="text-left px-3 py-2.5">Last visited</th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map(r => (
+                  <tr key={r.path + r.label} onClick={() => open(r)} className="cursor-pointer hover:bg-blue-50/40">
+                    <td className="pl-4"><button onClick={e => star(e, r)} title={favs.includes(r.path) ? 'Remove from favourites' : 'Add to favourites'}><Star on={favs.includes(r.path)} /></button></td>
+                    <td className="px-3 py-3 text-blue-700 font-medium">{r.label}</td>
+                    <td className="px-3 py-3 text-slate-500 hidden md:table-cell">{r.desc}</td>
+                    <td className="px-3 py-3 text-slate-500 hidden lg:table-cell">{r.category}</td>
+                    <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{when(visits[r.path])}</td>
+                  </tr>))}
+                {rows.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-slate-400">{q ? `No report matches “${q}”.` : view === 'favourites' ? 'Click the ☆ beside a report to keep it here.' : 'Nothing here yet.'}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </div>
   )
 }

@@ -19,7 +19,7 @@ export const NAV_GROUPS = [
     { label: 'Stock journal', icon: '🔀', path: '/finance/vouchers/stock_journal', keywords: 'transfer adjust manufacture physical count' },
   ]},
   { id: 'sales', label: 'Sales', icon: '🧾', items: [
-    { label: 'Customers & balances', icon: '👥', path: '/finance/parties', keywords: 'party ledger customer opening balance credit days' },
+    { label: 'Customers', icon: '👥', path: '/finance/parties', keywords: 'party ledger customer opening balance credit days' },
     { label: 'Sales invoices', icon: '🧾', path: '/finance/invoices', keywords: 'invoice sale tax invoice proforma' },
     { label: 'Sales orders', icon: '📑', path: '/finance/invoices?tab=orders', keywords: 'sales order so customer order quotation convert to invoice' },
     { label: 'Receipts (money in)', icon: '💰', path: '/finance/vouchers/receipt', keywords: 'receipt collect payment received f6' },
@@ -36,6 +36,7 @@ export const NAV_GROUPS = [
     { label: 'What I owe', icon: '📤', path: '/finance/outstanding/payables', keywords: 'payables outstanding creditors due' },
   ]},
   { id: 'banking', label: 'Banking', icon: '🏦', items: [
+    { label: 'Overview', icon: '🏦', path: '/finance/bank-overview', keywords: 'banking overview balances unmatched statements' },
     { label: 'Bank & cash accounts', icon: '🏦', path: '/finance/banking', keywords: 'bank account opening balance' },
     { label: 'Bank reconciliation', icon: '🔍', path: '/finance/bank-recon', keywords: 'reconcile statement brs match' },
     { label: 'Cash & bank book', icon: '🏧', path: '/finance/cashbank', keywords: 'cash book bank book balance' },
@@ -72,7 +73,7 @@ export const NAV_GROUPS = [
     { label: 'Audit trail & lock period', icon: '🔒', path: '/finance/audit', keywords: 'who changed lock close year' },
   ]},
   { id: 'reports', label: 'Reports', icon: '📈', items: [
-    { label: 'All reports & functions', icon: '🗂️', path: '/finance/reports', keywords: 'index gateway everything' },
+    { label: 'Reports Center', icon: '🗂️', path: '/finance/reports', keywords: 'index gateway everything all reports favourites' },
     { label: 'Profit & loss', icon: '📈', path: '/finance/statements/trading', keywords: 'p&l trading gross profit net profit' },
     { label: 'Balance sheet', icon: '🏛️', path: '/finance/balance-sheet', keywords: 'assets liabilities' },
     { label: 'Trial balance', icon: '⚖️', path: '/finance/trial-balance', keywords: 'tb' },

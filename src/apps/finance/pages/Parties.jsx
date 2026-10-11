@@ -11,6 +11,8 @@ import { COMPANIES, fmtAmt, isValidGstin, isValidPan, todayStr, num } from '../u
 import { tdsSectionList, Field } from '../components/formShared.jsx'
 import PartiesSheetImport from '../components/PartiesSheetImport.jsx'
 import PartyProfile from '../components/PartyProfile.jsx'
+import PartyForm from '../components/PartyForm.jsx'
+import { canFillFromGst, fillFromGst } from '../utils/gstFill.js'
 import { ReportShell, Badge, Empty, cardCls, btnPrimary, btnGhost, formInputCls, inputCls, useFinancePerms } from '../components/FinanceUI.jsx'
 
 export default function Parties() {
@@ -18,6 +20,8 @@ export default function Parties() {
   const { raw, allLines, loading, reload } = useFinanceData(['tdsSections'])
   const [params, setParams] = useSearchParams()
   const [tab, setTab] = useState(params.get('tab') === 'vendor' ? 'vendor' : 'customer')
+  const [adding, setAdding] = useState(false)
+  const [gstRun, setGstRun] = useState(null)         // { done, total, filled, failed, msg } while / after a bulk GST lookup
   const [profile, setProfile] = useState(null)         // { kind, party } — the details / ledger window
   const [q, setQ] = useState('')
   const [edit, setEdit] = useState(null)
@@ -52,6 +56,24 @@ export default function Parties() {
     return list.filter(p => { const n = isCust ? p.shopName : p.vendorName; return !q || `${n} ${p.gstin || ''} ${p.pan || ''}`.toLowerCase().includes(q.toLowerCase()) })
       .sort((a, b) => ((isCust ? a.shopName : a.vendorName) || '').localeCompare((isCust ? b.shopName : b.vendorName) || ''))
   }, [raw, isCust, q])
+
+  // customers / vendors that have a GSTIN but no full address — one lookup each on the GST service
+  const fillable = useMemo(() => (raw ? (isCust ? raw.customers : raw.vendors) : []).filter(canFillFromGst), [raw, isCust])
+  const fillAll = async () => {
+    if (!window.confirm(`Look up ${fillable.length} ${isCust ? 'customer' : 'vendor'}(s) on the GST portal and fill their missing address, city, pincode and state?\n\nEach lookup uses one credit of the GST service (the free plan allows about 50 a month). Details you already entered are not changed.`)) return
+    const list = fillable.slice(), coll = isCust ? 'crm_customers' : 'finance_vendors'
+    const run = { done: 0, total: list.length, filled: 0, failed: 0, msg: '' }
+    setGstRun({ ...run })
+    let streak = 0
+    for (const p of list) {
+      try { const patch = await fillFromGst(coll, p); if (Object.keys(patch).length) run.filled++; streak = 0 }
+      catch (e) { run.failed++; streak++; run.msg = e.message }
+      run.done++; setGstRun({ ...run })
+      if (streak >= 3) { run.msg = 'Stopped after 3 failures in a row — ' + run.msg; setGstRun({ ...run }); break }
+      await new Promise(r => setTimeout(r, 400))
+    }
+    invalidateFinanceCache(); reload()
+  }
 
   const open = (p) => {
     setEdit(p); setError('')
@@ -89,18 +111,18 @@ export default function Parties() {
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
   return (
-    <ReportShell title="Party Ledgers" loading={loading} subtitle="Customer & vendor finance masters — credit terms, tax IDs, default TDS and opening balances."
+    <ReportShell title={isCust ? 'Customers' : 'Vendors'} loading={loading} subtitle="Customer & vendor finance masters — credit terms, tax IDs, default TDS and opening balances."
       filters={<>
         <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm">
           {[['customer', 'Customers'], ['vendor', 'Vendors']].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 font-medium ${tab === k ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{l}</button>)}
         </div>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, GSTIN, PAN…" className={`${inputCls} w-60`} />
       </>}>
-      {canWrite && <div><button onClick={() => setShowImport(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">⬆ Import {isCust ? 'customers' : 'vendors'} from spreadsheet</button></div>}
+      {canWrite && <div className="flex gap-2 flex-wrap"><button onClick={() => setAdding(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">+ Add {isCust ? 'customer' : 'vendor'}</button>{fillable.length > 0 && <button onClick={fillAll} disabled={!!gstRun && gstRun.done < gstRun.total} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg disabled:opacity-50" title="Uses the GSTIN already on each record">🔍 Fill {fillable.length} missing address(es) from GSTIN</button>}<button onClick={() => setShowImport(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">⬆ Import {isCust ? 'customers' : 'vendors'} from spreadsheet</button></div>}
       {showImport && <PartiesSheetImport kind={isCust ? 'customer' : 'vendor'} existing={isCust ? raw.customers : raw.vendors} onClose={() => setShowImport(false)} onDone={() => { invalidateFinanceCache(); reload() }} />}
       <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-xs">
         Opening balances entered here are posted to the books against <b>Opening Balance Equity (3200)</b>. If you already booked opening balances through a manual Journal Entry, don't enter them again here or they will count twice.
-        {' '}Add new {isCust ? 'customers under CRM → Customers' : 'vendors under Finance → Vendors'}.
+        {' '}Open a {isCust ? 'customer' : 'vendor'}’s name for the full details card, address and ledger.
       </div>
       <div className={`${cardCls} overflow-x-auto`}>
         <table className="w-full text-sm">
@@ -130,6 +152,8 @@ export default function Parties() {
         </table>
       </div>
 
+      {gstRun && <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-900 text-sm">GST lookup: {gstRun.done} of {gstRun.total} done · {gstRun.filled} filled{gstRun.failed ? ` · ${gstRun.failed} failed` : ''}{gstRun.msg ? ` — ${gstRun.msg}` : ''}{gstRun.done >= gstRun.total && <button onClick={() => setGstRun(null)} className="ml-3 underline">dismiss</button>}</div>}
+      {adding && <PartyForm kind={tab} existing={isCust ? raw.customers : raw.vendors} onClose={() => setAdding(false)} onSaved={() => { invalidateFinanceCache(); reload() }} />}
       {profile && <PartyProfile key={profile.party.id} kind={profile.kind} party={profile.party} raw={raw} allLines={allLines} canWrite={canWrite} reload={reload} onClose={() => setProfile(null)} />}
       {edit && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setEdit(null)}>

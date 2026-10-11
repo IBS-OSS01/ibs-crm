@@ -8,8 +8,7 @@ import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
   Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar, groupFlag,
   cashBankOptions, customerOptions, vendorOptions, tdsSectionList,
-  todayStr, normName, num, fmtAmt,
-} from './formShared.jsx'
+  todayStr, normName, num, fmtAmt, fdOptions } from './formShared.jsx'
 import { r2 } from '../utils/financeConstants.js'
 
 // Fixed deposits, trust funds, investments: listed first wherever a ledger has to be picked.
@@ -328,13 +327,13 @@ export function ContraForm({ data, initial, onSaved, onCancel }) {
   // cash / bank accounts first, then any other balance-sheet ledger (Fixed Deposit, Trust fund, loan...) so money can move to and from them
   const banks = useMemo(() => {
     const cb = cashBankOptions(raw, company)
-    const skip = new Set(['1100', '1110', '1200', '2100', '1310', '1400', '2500', '3200'])
+    const skip = new Set(['1100', '1110', '1520', '1200', '2100', '1310', '1400', '2500', '3200'])
     const others = (data.accounts || []).filter(a => ['asset', 'liability', 'equity'].includes(a.type) && !skip.has(a.code) && !/^13/.test(a.code) && !/^24/.test(a.code))
       .sort((x, y) => (isInvestmentName(y.name) - isInvestmentName(x.name)) || x.code.localeCompare(y.code))
       .map(a => ({ key: 'acct:' + a.code, label: `${a.code} ${a.name}${isInvestmentName(a.name) ? ' *' : ''}`, code: a.code, id: '', other: true }))
-    return [...cb, ...others]
+    return [...cb, ...fdOptions(raw, company), ...others]
   }, [raw, company, data.accounts])
-  const keyOf2 = (code, id) => (['1100', '1110'].includes(code) ? bankKeyOf(code, id) : 'acct:' + code)
+  const keyOf2 = (code, id) => (code === '1520' && id ? 'fd:' + id : ['1100', '1110'].includes(code) ? bankKeyOf(code, id) : 'acct:' + code)
   const [fromKey, setFromKey] = useState(initial ? keyOf2(initial.fromAccountCode, initial.fromBankAccountId) : '')
   const [toKey, setToKey] = useState(initial ? keyOf2(initial.toAccountCode, initial.toBankAccountId) : '')
   const [amount, setAmount] = useState(initial?.amount || '')

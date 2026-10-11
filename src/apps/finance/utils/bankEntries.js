@@ -51,6 +51,12 @@ export function suggestEntry(line, ctx) {
   const out = (o) => ({ kind: isCredit ? 'receipt' : 'payment', partyType: '', partyId: '', partyName: '', accountCode: '', otherBankId: '', reason: '', review: false, ...o })
   const others = (ctx.banks || []).filter(b => b.id !== ctx.thisBankId)
 
+  // 0. sweep to / from a fixed deposit, and interest the bank credits on it (the narrative carries the FD / sweep account number)
+  const fdHit = (ctx.fds || []).find(f => { const a = digitsOf(f.accountNumber); return a.length >= 6 && (d.match(/\d{9,}/g) || []).some(n => n.endsWith(a) || a.endsWith(n)) })
+  if (fdHit && /SWEEP|SWCR|AUTO|\bFD\b|DEPOSIT|INT\.?\s*ON/i.test(d)) {
+    if (isCredit && /INT\.?\s*ON|INTEREST/i.test(d)) return out({ accountCode: '4910', reason: `Interest on ${fdHit.name}` })
+    return out({ kind: 'contra', otherBankId: fdHit.id, reason: isCredit ? `Sweep-in from ${fdHit.name}` : `Sweep-out to ${fdHit.name}` })
+  }
   // 1. money moving between our own accounts → contra
   if (/UDISHTHA INNOVATIONS/i.test(d)) {
     const nums = d.match(/\d{9,}/g) || []
@@ -100,7 +106,8 @@ export function buildVoucher(row, line, { company, bank, interCompanyFlag }) {
   if (row.kind === 'contra') {
     const other = row.otherBank
     const from = line.credit ? other : bank, to = line.credit ? bank : other
-    return { voucherType: 'contra', ...common, amount: amt, fromAccountCode: '1100', fromBankAccountId: from.id || '', toAccountCode: '1100', toBankAccountId: to.id || '', fromAccountName: from.name, toAccountName: to.name }
+    const codeOf = (x) => (x.fd ? '1520' : '1100')                     // a fixed deposit is the other side of a sweep
+    return { voucherType: 'contra', ...common, amount: amt, fromAccountCode: codeOf(from), fromBankAccountId: from.id || '', toAccountCode: codeOf(to), toBankAccountId: to.id || '', fromAccountName: from.name, toAccountName: to.name }
   }
   const viaParty = !!row.partyId || !!row.partyName
   const base = {

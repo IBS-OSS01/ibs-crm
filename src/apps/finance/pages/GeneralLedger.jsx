@@ -1,3 +1,4 @@
+import { DateRange, periodPresets } from '../components/FinanceUI.jsx'
 import React, { useState, useMemo } from 'react'
 import { useFinanceData } from '../hooks/useFinanceData.js'
 import { useVoucherModal } from '../components/useVoucherModal.jsx'
@@ -10,8 +11,8 @@ const SOURCE_LABELS = {
 export default function GeneralLedger() {
   const [company, setCompany] = useState('UIPL')
   const [accountCode, setAccountCode] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [period, setPeriod] = useState(() => { const p = periodPresets()[4]; return { from: p.from, to: p.to } })     // this year
+  const dateFrom = period.from, dateTo = period.to
 
   const { raw, loading, allLines, reload } = useFinanceData()
   const { openKey, modal } = useVoucherModal({ raw, allLines, reload })
@@ -56,11 +57,7 @@ export default function GeneralLedger() {
           className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-64">
           {(raw?.accounts || []).map(a => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
         </select>
-        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} placeholder="From"
-          className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        <span className="text-slate-400 text-sm">to</span>
-        <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-          className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <DateRange from={period.from} to={period.to} onChange={setPeriod} />
       </div>
 
       {(raw?.accounts || []).length === 0 ? (

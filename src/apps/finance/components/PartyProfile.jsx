@@ -2,9 +2,6 @@
 // financial summary, its ledger statement and its open bills, in one window. Everything is read from the master record
 // and the derived ledger, so it always agrees with the reports.
 import React, { useMemo, useState } from 'react'
-import { doc, updateDoc } from 'firebase/firestore'
-import { db } from '../../../lib/firebase-config'
-import { invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { buildVoucherIndex } from '../utils/voucherIndex.js'
 import { ledgerStatement } from '../utils/statements.js'
 import { computeOutstanding } from '../utils/outstanding.js'
@@ -12,8 +9,9 @@ import { INDIA_STATES } from '../utils/indiaConstants.js'
 import { VOUCHER_TYPES, kindOfSource, fmtAmt, fmtDrCr, fyRange, currentFY, todayStr, num, r2, normName } from '../utils/financeConstants.js'
 import { downloadXlsx, downloadCsv, printReport } from '../utils/exportUtils.js'
 import { useVoucherModal } from './useVoucherModal.jsx'
-import { Field } from './formShared.jsx'
-import { Badge, DateRange, DrCr, btnGhost, btnPrimary, formInputCls } from './FinanceUI.jsx'
+import PartyForm from './PartyForm.jsx'
+import { canFillFromGst, fillFromGst } from '../utils/gstFill.js'
+import { Badge, DateRange, DrCr, btnGhost } from './FinanceUI.jsx'
 
 const COMPANY = 'UIPL'
 const FIELDS = {
@@ -31,10 +29,9 @@ export default function PartyProfile({ kind, party, raw, allLines, canWrite, rel
   const F = FIELDS[kind]
   const name = party[F.name] || ''
   const [tab, setTab] = useState('overview')
-  const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({})
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [gstMsg, setGstMsg] = useState('')
+  const [, bump] = useState(0)
   const [period, setPeriod] = useState(fyRange(currentFY()))
   const { open, modal } = useVoucherModal({ raw, allLines, reload })
 
@@ -57,25 +54,13 @@ export default function PartyProfile({ kind, party, raw, allLines, canWrite, rel
   ].filter(Boolean)
   const lastTxn = lifetime.rows.length ? lifetime.rows[lifetime.rows.length - 1].date : ''
 
-  const startEdit = () => {
-    setForm({ [F.contact]: party[F.contact] || '', phone: party.phone || '', email: party.email || '', address: party.address || '', area: party.area || '', city: party.city || '',
-      state: stateOf(party), pincode: party.pincode || '', country: party.country || 'India', ...(isCust ? {} : { bankName: party.bankName || '', bankAccount: party.bankAccount || '', ifsc: party.ifsc || '' }) })
-    setError(''); setEditing(true)
-  }
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
-  const save = async () => {
-    setError('')
-    if (form.pincode && !/^\d{6}$/.test(form.pincode.trim())) return setError('Pincode should be 6 digits.')
-    if (form.email && !/^\S+@\S+\.\S+$/.test(form.email.trim())) return setError('Email does not look right.')
-    setSaving(true)
+  const fillGst = async () => {
+    setGstMsg('Looking up the GST portal…')
     try {
-      const patch = Object.fromEntries(Object.entries(form).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]))
-      const st = INDIA_STATES.find(s => s.name === patch.state); if (st) patch.stateCode = st.code
-      await updateDoc(doc(db, F.coll, party.id), patch)
-      Object.assign(party, patch)                 // show the change straight away; the master list reloads behind it
-      invalidateFinanceCache(); reload?.(); setEditing(false)
-    } catch (e) { setError(e.code === 'permission-denied' ? 'You do not have permission to edit this record.' : 'Could not save: ' + e.message) }
-    finally { setSaving(false) }
+      const patch = await fillFromGst(F.coll, party)
+      setGstMsg(Object.keys(patch).length ? 'Filled from GST: ' + Object.keys(patch).filter(k => k !== 'stateCode').join(', ') + '.' : 'The GST portal had nothing to add.')
+      bump(x => x + 1); reload?.()
+    } catch (e) { setGstMsg('❌ ' + e.message) }
   }
 
   const sheet = () => [
@@ -105,8 +90,8 @@ export default function PartyProfile({ kind, party, raw, allLines, canWrite, rel
           {tab === 'overview' && (
             <div className="grid md:grid-cols-2 gap-5">
               <div className="rounded-xl border border-slate-200 p-4">
-                <div className="flex items-center justify-between mb-1"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Business details</p>{canWrite && !editing && <button onClick={startEdit} className="text-sm text-blue-600 hover:underline">✏️ Edit address & contact</button>}</div>
-                {!editing ? (<>
+                <div className="flex items-center justify-between mb-1"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Business details</p>{canWrite && <button onClick={() => setShowForm(true)} className="text-sm text-blue-600 hover:underline">✏️ Edit details</button>}</div>
+                <>
                   <Row label="Name">{name}</Row>
                   <Row label="Address">{addressLines(party).length ? addressLines(party).map((l, i) => <span key={i} className="block">{l}</span>) : null}</Row>
                   <Row label="GSTIN">{party.gstin && <span className="font-mono">{party.gstin}</span>}</Row>
@@ -116,30 +101,12 @@ export default function PartyProfile({ kind, party, raw, allLines, canWrite, rel
                   <Row label="Email">{party.email}</Row>
                   <Row label={isCust ? 'Credit days' : 'Payment terms'}>{isCust ? (party.creditDays ?? 0) + ' days' : party.paymentTerms}</Row>
                   {!isCust && <Row label="Default TDS">{party.tdsSection ? `${party.tdsSection} @ ${party.tdsRate}%` : ''}</Row>}
-                  {!isCust && <Row label="Bank">{[party.bankName, party.bankAccount && `A/c ${party.bankAccount}`, party.ifsc && `IFSC ${party.ifsc}`].filter(Boolean).join(' · ')}</Row>}
+                  <Row label="Bank">{[party.bankName, party.bankAccount && `A/c ${party.bankAccount}`, party.ifsc && `IFSC ${party.ifsc}`].filter(Boolean).join(' · ')}</Row>
+                  <Row label="Notes">{party.notes}</Row>
                   <Row label="Opening balance">{num(party.openingBalance) ? `₹${fmtAmt(party.openingBalance)} ${party.openingType || (isCust ? 'Dr' : 'Cr')} as on ${party.openingDate || '—'}` : ''}</Row>
-                  {missing.length > 0 && <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Incomplete: {missing.join(', ')}.{canWrite ? ' Use “Edit address & contact” (GSTIN, PAN and terms are on the list page).' : ''}</p>}
-                </>) : (
-                  <div className="space-y-3 mt-2">
-                    {error && <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
-                    <Field label="Street address"><input value={form.address} onChange={set('address')} className={formInputCls} /></Field>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Area / locality"><input value={form.area} onChange={set('area')} className={formInputCls} /></Field>
-                      <Field label="City"><input value={form.city} onChange={set('city')} className={formInputCls} /></Field>
-                      <Field label="State"><select value={form.state} onChange={set('state')} className={formInputCls}><option value="">— select —</option>{INDIA_STATES.map(s => <option key={s.code}>{s.name}</option>)}</select></Field>
-                      <Field label="Pincode"><input value={form.pincode} onChange={set('pincode')} maxLength={6} className={formInputCls} /></Field>
-                      <Field label="Country"><input value={form.country} onChange={set('country')} className={formInputCls} /></Field>
-                      <Field label={F.contactLabel}><input value={form[F.contact]} onChange={set(F.contact)} className={formInputCls} /></Field>
-                      <Field label="Phone"><input value={form.phone} onChange={set('phone')} className={formInputCls} /></Field>
-                      <Field label="Email"><input type="email" value={form.email} onChange={set('email')} className={formInputCls} /></Field>
-                      {!isCust && <>
-                        <Field label="Bank name"><input value={form.bankName} onChange={set('bankName')} className={formInputCls} /></Field>
-                        <Field label="Account number"><input value={form.bankAccount} onChange={set('bankAccount')} className={formInputCls} /></Field>
-                        <Field label="IFSC"><input value={form.ifsc} onChange={set('ifsc')} className={formInputCls} /></Field>
-                      </>}
-                    </div>
-                    <div className="flex gap-2"><button onClick={save} disabled={saving} className={btnPrimary}>{saving ? 'Saving…' : 'Save'}</button><button onClick={() => setEditing(false)} className={btnGhost}>Cancel</button></div>
-                  </div>)}
+                  {missing.length > 0 && <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Incomplete: {missing.join(', ')}.{canWrite ? ' Use “Edit details” to complete it.' : ''}{canWrite && canFillFromGst(party) && <button onClick={fillGst} className="ml-2 underline font-semibold">🔍 Fill address from GSTIN</button>}</p>}
+                  {gstMsg && <p className="mt-2 text-xs text-slate-600">{gstMsg}</p>}
+                </>
               </div>
 
               <div className="space-y-3">
@@ -213,6 +180,7 @@ export default function PartyProfile({ kind, party, raw, allLines, canWrite, rel
         </div>
         <div className="flex justify-end p-4 border-t border-slate-100"><button onClick={onClose} className={btnGhost}>Close</button></div>
       </div>
+      {showForm && <PartyForm kind={kind} party={party} existing={kind === 'vendor' ? raw.vendors : raw.customers} onClose={() => setShowForm(false)} onSaved={() => reload?.()} />}
       {modal}
     </div>
   )

@@ -16,7 +16,8 @@ import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.
 // until individual accounts get their own GL sub-accounts, which is a
 // natural next step, not done here.
 const today = () => new Date().toISOString().slice(0, 10)
-const TYPES = ['bank', 'cash']
+const TYPES = ['bank', 'cash', 'fd']
+const TYPE_LABEL = { bank: 'Bank', cash: 'Cash', fd: 'Fixed deposit' }
 const COMPANIES = ['UIPL']
 
 const empty = {
@@ -24,6 +25,7 @@ const empty = {
   bankName: '', accountNumber: '', ifsc: '', branch: '',
   openingBalance: '', openingDate: today(),
   notes: '', active: true,
+  interestRate: '', maturityDate: '', linkedBankId: '',
 }
 
 const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -112,6 +114,7 @@ export default function BankAccounts() {
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
           {showForm && !editing ? '✕ Cancel' : '+ Add Account'}
         </button>
+        <button onClick={() => { reset(); setForm({ ...empty, type: 'fd' }); setShowForm(true) }} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition">+ Add fixed deposit</button>
       </div>
 
       {/* Combined GL cross-check */}
@@ -140,7 +143,7 @@ export default function BankAccounts() {
               <div>
                 <label className={lbl}>Type</label>
                 <select className={inp} value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}>
-                  {TYPES.map(t => <option key={t} value={t}>{t === 'bank' ? 'Bank' : 'Cash'}</option>)}
+                  {TYPES.map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
                 </select>
               </div>
               <div>
@@ -155,6 +158,16 @@ export default function BankAccounts() {
                   <div><label className={lbl}>Account Number</label><input className={inp} value={form.accountNumber} onChange={e => setForm(p => ({ ...p, accountNumber: e.target.value }))} /></div>
                   <div><label className={lbl}>IFSC Code</label><input className={inp} value={form.ifsc} onChange={e => setForm(p => ({ ...p, ifsc: e.target.value }))} /></div>
                   <div><label className={lbl}>Branch</label><input className={inp} value={form.branch} onChange={e => setForm(p => ({ ...p, branch: e.target.value }))} /></div>
+                </>
+              )}
+              {form.type === 'fd' && (
+                <>
+                  <div><label className={lbl}>Bank Name</label><input className={inp} value={form.bankName} onChange={e => setForm(p => ({ ...p, bankName: e.target.value }))} /></div>
+                  <div><label className={lbl}>FD / sweep account number</label><input className={inp} value={form.accountNumber} onChange={e => setForm(p => ({ ...p, accountNumber: e.target.value }))} placeholder="as printed in the statement narration" /></div>
+                  <div><label className={lbl}>Linked current account (sweep)</label>
+                    <select className={inp} value={form.linkedBankId} onChange={e => setForm(p => ({ ...p, linkedBankId: e.target.value }))}><option value="">— none —</option>{accounts.filter(a => a.type === 'bank').map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+                  <div><label className={lbl}>Interest rate % p.a.</label><input type="number" step="any" className={inp} value={form.interestRate} onChange={e => setForm(p => ({ ...p, interestRate: e.target.value }))} /></div>
+                  <div><label className={lbl}>Maturity date (blank for a sweep FD)</label><input type="date" className={inp} value={form.maturityDate} onChange={e => setForm(p => ({ ...p, maturityDate: e.target.value }))} /></div>
                 </>
               )}
               <div>
@@ -202,11 +215,11 @@ export default function BankAccounts() {
             {accounts.map(a => (
               <tr key={a.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
-                  <div className="font-medium text-slate-800">{a.type === 'cash' ? '💵' : '🏦'} {a.name}</div>
+                  <div className="font-medium text-slate-800">{a.type === 'cash' ? '💵' : a.type === 'fd' ? '📈' : '🏦'} {a.name}{a.type === 'fd' && <span className="ml-2 text-[10px] font-bold bg-indigo-100 text-indigo-700 rounded px-1.5 py-0.5">FD</span>}</div>
                 </td>
                 <td className="px-4 py-3 text-slate-600">{a.company || 'UIPL'}</td>
                 <td className="px-4 py-3 text-slate-500 text-xs">
-                  {a.type === 'bank' ? [a.bankName, a.accountNumber, a.ifsc].filter(Boolean).join(' · ') || '—' : '—'}
+                  {a.type === 'bank' ? [a.bankName, a.accountNumber, a.ifsc].filter(Boolean).join(' · ') || '—' : a.type === 'fd' ? [a.bankName, a.accountNumber, a.interestRate && `${a.interestRate}% p.a.`, a.maturityDate && `matures ${a.maturityDate}`].filter(Boolean).join(' · ') || '—' : '—'}
                 </td>
                 <td className="px-4 py-3 text-right text-slate-700">₹{(Number(a.openingBalance) || 0).toLocaleString('en-IN')}</td>
                 <td className="px-4 py-3 text-center">

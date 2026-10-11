@@ -43,6 +43,7 @@ export const SEED_ACCOUNTS = [
   { code: '1400', name: 'Stock in Hand',                 type: 'asset',     normalBalance: 'debit',  isSystem: true },
   { code: '1950', name: 'Employee Advances',               type: 'asset',     normalBalance: 'debit',  isSystem: true },
   { code: '1500', name: 'Fixed Assets',                  type: 'asset',     normalBalance: 'debit' },
+  { code: '1520', name: 'Fixed Deposits (sweep & term)',  type: 'asset',     normalBalance: 'debit' },
   { code: '1900', name: 'Prepaid Expenses',               type: 'asset',     normalBalance: 'debit' },
   { code: '2100', name: 'Accounts Payable',               type: 'liability', normalBalance: 'credit', isSystem: true },
   { code: '2150', name: 'Salary Payable',                 type: 'liability', normalBalance: 'credit', isSystem: true },
@@ -97,7 +98,7 @@ export const SEED_ACCOUNTS = [
 // every report). So readers merge any missing ones in-memory (flagged
 // `virtual:true`) instead of depending on someone having re-seeded the CoA.
 export const REQUIRED_ACCOUNT_CODES = [
-  '1100', '1110', '1200', '1301', '1302', '1303', '1310', '1400',
+  '1100', '1110', '1520', '1200', '1301', '1302', '1303', '1310', '1400',
   '2100', '2150', '2401', '2402', '2403', '2404', '2500', '2610', '2620', '2630', '1950', '5110', '5115', '5116', '5117', '5200',
   '3200', '4000', '4925', '4950', '5000', '5010', '5900', '5925', '5950',
 ]

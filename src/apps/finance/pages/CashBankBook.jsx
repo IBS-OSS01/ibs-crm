@@ -22,7 +22,7 @@ export default function CashBankBook() {
     const banks = (raw?.bankAccounts || []).filter(b => b.company === company && b.active !== false)
     return [
       { key: 'all-bank', label: 'All bank accounts', code: '1100', bankId: null },
-      ...banks.filter(b => b.type !== 'cash').map(b => ({ key: `bank:${b.id}`, label: `${b.name}${b.accountNumber ? ` ••${String(b.accountNumber).slice(-4)}` : ''}`, code: '1100', bankId: b.id })),
+      ...banks.filter(b => b.type !== 'cash' && b.type !== 'fd').map(b => ({ key: `bank:${b.id}`, label: `${b.name}${b.accountNumber ? ` ••${String(b.accountNumber).slice(-4)}` : ''}`, code: '1100', bankId: b.id })),
       { key: 'unassigned', label: 'Bank — not assigned to an account (legacy entries)', code: '1100', bankId: '' },
       { key: 'cash', label: 'Cash in hand', code: '1110', bankId: null },
     ]
