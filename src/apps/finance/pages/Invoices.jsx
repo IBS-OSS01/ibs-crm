@@ -203,6 +203,7 @@ export default function Invoices() {
   const fd = useFinanceData()
   const ledgerLines = fd.allLines
   const [params, setParams] = useSearchParams()
+  const [q, setQ] = useState('')                      // search box over the list on the current tab
   const navigate = useNavigate()
   const tab = TABS.find(t => t.key === params.get('tab')) || TABS[0]
   const [editingId, setEditingId] = useState('')
@@ -446,6 +447,11 @@ export default function Invoices() {
   const seller = sellers[form.company] || {}
   // credit notes are vouchers (finance_vouchers); they are listed here so the Sales tabs look and behave the same
   const cnRows = (fd.raw?.vouchers || []).filter(v => v.voucherType === 'credit_note' && v.status !== 'cancelled').sort((a, b) => (b.date || '').localeCompare(a.date || '') || String(b.voucherNumber).localeCompare(String(a.voucherNumber)))
+  // every word typed must be found somewhere in the document (number, customer, PO, date, amount, items…)
+  const words = q.toLowerCase().replace(/,/g, '').split(/\s+/).filter(Boolean)
+  const found = (parts) => !words.length || words.every(w => parts.some(p => String(p ?? '').toLowerCase().replace(/,/g, '').includes(w)))
+  const cnShown = cnRows.filter(v => found([v.voucherNumber, v.refNumber, v.partyName, v.refInvoiceNumber, v.reason, v.date, v.total, v.narration]))
+  const invShown = invoices.filter(tab.match).filter(inv => found([inv.invoiceNumber, inv.sourceOrderNumber, inv.billToName, inv.poNumber, inv.invoiceDate, inv.total, inv.billToGstin, inv.notes, ...(inv.items || []).map(i => i.description)]))
   const fx = useFx({ fxRates }, form.invoiceDate)
   // Export under LUT = zero-rated: no GST. Export with payment of IGST is always an inter-state (IGST) supply.
   const exportNoTax = form.isExport && form.exportType === 'WOPAY'
@@ -645,6 +651,11 @@ export default function Invoices() {
       <div className="flex gap-1 border-b border-slate-200">
         {TABS.map(t => <button key={t.key} onClick={() => setParams(t.key === 'invoices' ? {} : { tab: t.key })} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${t.key === tab.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{t.label} <span className="text-xs text-slate-400">{t.key === 'creditnotes' ? cnRows.length : invoices.filter(t.match).length}</span></button>)}
       </div>
+      <div className="flex items-center gap-3">
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${tab.label.toLowerCase()} — number, customer, PO, item, amount…`} className="w-full max-w-md px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        {q && <button onClick={() => setQ('')} className="text-xs text-slate-500 hover:text-slate-700">Clear</button>}
+        {q && <span className="text-xs text-slate-400">{tab.key === 'creditnotes' ? cnShown.length : invShown.length} found</span>}
+      </div>
       {docModal}
       {convertFor && <ConvertOrderModal order={convertFor} sellerStateCode={(sellers[convertFor.company] || {}).stateCode} onClose={() => setConvertFor(null)} onConfirm={(r) => createFromOrder(convertFor, r)} />}
 
@@ -664,7 +675,7 @@ export default function Invoices() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {cnRows.map(v => (
+            {cnShown.map(v => (
               <tr key={v.id} onClick={() => openKey(`credit_note:${v.id}`)} className="hover:bg-blue-50/40 cursor-pointer" title="Open this document">
                 <td className="px-4 py-3 font-mono font-bold text-blue-700">{v.voucherNumber}{v.refNumber && <span className="block text-[10px] font-normal text-slate-400">{v.refNumber}</span>}</td>
                 <td className="px-4 py-3"><span className="px-2 py-0.5 rounded-lg text-xs font-bold bg-indigo-100 text-indigo-700">Credit Note</span></td>
@@ -679,7 +690,7 @@ export default function Invoices() {
                 </td>
               </tr>
             ))}
-            {cnRows.length === 0 && <tr><td colSpan={8} className="text-center py-10 text-slate-400">No credit notes yet. Click “Create Credit Note” to record a sales return or discount.</td></tr>}
+            {cnShown.length === 0 && <tr><td colSpan={8} className="text-center py-10 text-slate-400">{q ? 'No credit note matches your search.' : 'No credit notes yet. Click “Create Credit Note” to record a sales return or discount.'}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -699,7 +710,7 @@ export default function Invoices() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {invoices.filter(tab.match).map(inv => (
+            {invShown.map(inv => (
               <tr key={inv.id} onClick={() => openKey(`invoice:${inv.id}`)} className="hover:bg-blue-50/40 cursor-pointer" title="Open this document">
                 <td className="px-4 py-3 font-mono font-bold text-blue-700">{inv.invoiceNumber}{inv.sourceOrderNumber && <span className="block text-[10px] font-normal text-slate-400">from {inv.sourceOrderNumber}</span>}</td>
                 <td className="px-4 py-3">
@@ -723,8 +734,8 @@ export default function Invoices() {
                 </td>
               </tr>
             ))}
-            {invoices.filter(tab.match).length === 0 && (
-              <tr><td colSpan={8} className="text-center py-10 text-slate-400">No {tab.label.toLowerCase()} yet.</td></tr>
+            {invShown.length === 0 && (
+              <tr><td colSpan={8} className="text-center py-10 text-slate-400">{q ? `No ${tab.label.toLowerCase()} match your search.` : `No ${tab.label.toLowerCase()} yet.`}</td></tr>
             )}
           </tbody>
         </table>
