@@ -9,7 +9,6 @@ import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.
 import { computeOutstanding } from '../utils/outstanding.js'
 import { COMPANIES, fmtAmt, isValidGstin, isValidPan, todayStr, num } from '../utils/financeConstants.js'
 import { tdsSectionList, Field } from '../components/formShared.jsx'
-import PartiesSheetImport from '../components/PartiesSheetImport.jsx'
 import PartyProfile from '../components/PartyProfile.jsx'
 import PartyForm from '../components/PartyForm.jsx'
 import { canFillFromGst, fillFromGst } from '../utils/gstFill.js'
@@ -29,7 +28,6 @@ export default function Parties() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const isCust = tab === 'customer'
-  const [showImport, setShowImport] = useState(false)
 
   // arrive from a link (?tab=vendor&open=<id>) straight into that party's window
   useEffect(() => {
@@ -118,8 +116,7 @@ export default function Parties() {
         </div>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, GSTIN, PAN…" className={`${inputCls} w-60`} />
       </>}>
-      {canWrite && <div className="flex gap-2 flex-wrap"><button onClick={() => setAdding(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">+ Add {isCust ? 'customer' : 'vendor'}</button>{fillable.length > 0 && <button onClick={fillAll} disabled={!!gstRun && gstRun.done < gstRun.total} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg disabled:opacity-50" title="Uses the GSTIN already on each record">🔍 Fill {fillable.length} missing address(es) from GSTIN</button>}<button onClick={() => setShowImport(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">⬆ Import {isCust ? 'customers' : 'vendors'} from spreadsheet</button></div>}
-      {showImport && <PartiesSheetImport kind={isCust ? 'customer' : 'vendor'} existing={isCust ? raw.customers : raw.vendors} onClose={() => setShowImport(false)} onDone={() => { invalidateFinanceCache(); reload() }} />}
+      {canWrite && <div className="flex gap-2 flex-wrap"><button onClick={() => setAdding(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">+ Add {isCust ? 'customer' : 'vendor'}</button>{fillable.length > 0 && <button onClick={fillAll} disabled={!!gstRun && gstRun.done < gstRun.total} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg disabled:opacity-50" title="Uses the GSTIN already on each record">🔍 Fill {fillable.length} missing address(es) from GSTIN</button>}</div>}
       <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-xs">
         Opening balances entered here are posted to the books against <b>Opening Balance Equity (3200)</b>. If you already booked opening balances through a manual Journal Entry, don't enter them again here or they will count twice.
         {' '}Open a {isCust ? 'customer' : 'vendor'}’s name for the full details card, address and ledger.

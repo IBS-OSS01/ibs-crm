@@ -11,7 +11,6 @@ import { UNITS } from '../components/ItemsEditor.jsx'
 import { Field } from '../components/formShared.jsx'
 import AttachmentPanel, { useAttachmentDraft } from '../components/AttachmentPanel.jsx'
 import { uploadAttachments } from '../utils/attachments.js'
-import ItemsSheetImport from '../components/ItemsSheetImport.jsx'
 import { ReportShell, CompanyToggle, Badge, Empty, cardCls, btnPrimary, btnGhost, formInputCls, inputCls, useFinancePerms } from '../components/FinanceUI.jsx'
 
 const blank = { name: '', sku: '', unit: 'pcs', hsnCode: '', gstRate: 18, purchaseRate: '', saleRate: '', minStock: 0, valuationMethod: 'avg', description: '', openingDate: '', opening: {} }
@@ -29,7 +28,6 @@ export default function StockItems() {
   const [busy, setBusy] = useState('')
   const draft = useAttachmentDraft()
   const [info, setInfo] = useState('')
-  const [showImport, setShowImport] = useState(false)
 
   const items = raw?.stockItems || []
   const warehouses = raw?.warehouses || []
@@ -113,7 +111,6 @@ export default function StockItems() {
       {info && <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-sm">{info}</div>}
       {canWrite && (
         <div className={`${cardCls} p-3 flex gap-3 items-center flex-wrap text-sm`}>
-          <button onClick={() => setShowImport(true)} className={btnPrimary}>⬆ Import items from spreadsheet</button>
           <button onClick={adoptSnapshot} disabled={!!busy} className={btnGhost}>{busy === 'snapshot' ? 'Working…' : 'Use Services Stock Levels as opening stock'}</button>
           {isAdmin && <label className="flex items-center gap-2 text-slate-600" title="Receive Stock entries in Services have no price. Count them only if you do NOT also enter the same goods as Purchase vouchers, or stock will double up.">
             <input type="checkbox" checked={!!opts.includeServicesReceive} disabled={busy === 'opt'} onChange={e => toggleReceive(e.target.checked)} />Count Services “Receive Stock” entries as inward stock
@@ -146,7 +143,6 @@ export default function StockItems() {
         </table>
       </div>
 
-      {showImport && <ItemsSheetImport items={items} warehouses={warehouses} stockLevels={raw?.stockLevels || []} onClose={() => setShowImport(false)} onDone={() => { invalidateFinanceCache(); reload() }} />}
       {edit && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setEdit(null)}>
           <div className={`${cardCls} w-full max-w-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto`} onClick={e => e.stopPropagation()}>

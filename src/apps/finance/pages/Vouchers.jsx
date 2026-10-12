@@ -13,8 +13,6 @@ import { pendingPoLines } from '../utils/purchaseOrders.js'
 import { creditDaysFromTerms } from '../components/formShared.jsx'
 import { useVoucherModal } from '../components/useVoucherModal.jsx'
 import { cloneVoucher } from '../utils/cloneDoc.js'
-import BillsImport from '../components/BillsImport.jsx'
-import ExpensesImport from '../components/ExpensesImport.jsx'
 import PayStatus from '../components/PayStatus.jsx'
 import { openBillMap, payStatus } from '../utils/outstanding.js'
 import { ReportShell, CompanyToggle, Badge, Empty, cardCls, btnPrimary, btnGhost, inputCls, useFinancePerms } from '../components/FinanceUI.jsx'
@@ -35,7 +33,6 @@ export default function Vouchers() {
   const [q, setQ] = useState('')
   const today = new Date().toLocaleDateString('en-CA')
   const openBills = useMemo(() => (type === 'purchase' && data.allLines ? openBillMap(data.allLines, { kind: 'payable', company, asOf: today }) : null), [data.allLines, type, company, today]) // eslint-disable-line react-hooks/exhaustive-deps
-  const [showImport, setShowImport] = useState('')
 
   const editId = params.get('edit')
   const creating = params.get('new') === '1'
@@ -110,7 +107,7 @@ export default function Vouchers() {
   return (
     <ReportShell title={`${label} Vouchers`} loading={loading}
       subtitle="Record transactions the Tally way — every voucher posts balanced double entries and feeds GST, outstanding and the statements."
-      exportBar={canWrite && newType && !showForm ? <span className="flex gap-2">{params.get('zoho') === '1' && type === 'purchase' && <button onClick={() => setShowImport('bills')} className={btnGhost}>⬆ Import bills from Zoho</button>}{params.get('zoho') === '1' && type === 'payment' && <button onClick={() => setShowImport('expenses')} className={btnGhost}>⬆ Import expenses from Zoho</button>}<button onClick={() => setParams({ new: '1' })} className={btnPrimary}>+ New {label} <span className="opacity-60 text-xs ml-1">{VOUCHER_TYPES[type].fkey}</span></button></span> : null}
+      exportBar={canWrite && newType && !showForm ? <span className="flex gap-2"><button onClick={() => setParams({ new: '1' })} className={btnPrimary}>+ New {label} <span className="opacity-60 text-xs ml-1">{VOUCHER_TYPES[type].fkey}</span></button></span> : null}
       filters={<>
         <CompanyToggle value={company} onChange={setCompany} />
         {type === 'credit_note' && (
@@ -125,8 +122,6 @@ export default function Vouchers() {
       </>}>
       {!canWrite && <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">You have view-only access to Finance — vouchers can be opened but not created or edited.</div>}
       {form}
-      {showImport === 'bills' && <BillsImport onClose={() => { setShowImport(''); invalidateFinanceCache(); reload() }} />}
-      {showImport === 'expenses' && <ExpensesImport onClose={() => { setShowImport(''); invalidateFinanceCache(); reload() }} />}
       <div className={`${cardCls} overflow-x-auto`}>
         <table className="w-full text-sm">
           <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider"><tr>

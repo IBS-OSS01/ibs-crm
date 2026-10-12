@@ -23,13 +23,10 @@ import { todayStr } from '../utils/financeConstants.js'
 import { computeVoucherTotals } from '../utils/taxCalc.js'
 import { convertTotals, fmtFc, symbolOf } from '../utils/fx.js'
 import { useFx, CurrencyBar } from '../components/formShared.jsx'
-import InvoicesImport from '../components/InvoicesImport.jsx'
 import PayStatus from '../components/PayStatus.jsx'
 import SearchSelect from '../components/SearchSelect.jsx'
-import CreditNotesImport from '../components/CreditNotesImport.jsx'
 import { cloneInvoiceItems } from '../utils/cloneDoc.js'
 import ConvertOrderModal from '../components/ConvertOrderModal.jsx'
-import SalesOrdersImport from '../components/SalesOrdersImport.jsx'
 import { orderProgress, applyInvoicing, invoiceFromOrder, closeOrderItems, ORDER_STATE_LABEL } from '../utils/salesOrders.js'
 import { buildInvoicePdf, downloadPdf } from '../utils/invoicePdf.js'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
@@ -203,7 +200,6 @@ export default function Invoices() {
   const [loading, setLoading] = useState(true)
   const [sellers, setSellers] = useState({})
   const [customers, setCustomers] = useState([])
-  const [showImport, setShowImport] = useState(false)
   const fd = useFinanceData()
   const ledgerLines = fd.allLines
   const [params, setParams] = useSearchParams()
@@ -212,8 +208,6 @@ export default function Invoices() {
   const [editingId, setEditingId] = useState('')
   const [edAddr, setEdAddr] = useState({ bill: false, ship: false, gst: false })     // which address / GST blocks are open for editing
   const [convertFor, setConvertFor] = useState(null)        // the sales order being invoiced
-  const [showOrdersImport, setShowOrdersImport] = useState(false)
-  const [showCnImport, setShowCnImport] = useState(false)
   const openInv = useMemo(() => openBillMap(ledgerLines || [], { kind: 'receivable', asOf: todayStr() }), [ledgerLines])
   const [hsnCodes, setHsnCodes] = useState([])
   const [fxRates, setFxRates] = useState([])
@@ -638,9 +632,6 @@ export default function Invoices() {
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Sales</h2>
           <p className="text-slate-500 text-sm">{tab.blurb}</p>
         </div>
-        {params.get('zoho') === '1' && tab.key === 'orders' && <button onClick={() => setShowOrdersImport(true)} className="ml-auto mr-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Import from Zoho</button>}
-        {params.get('zoho') === '1' && tab.key === 'invoices' && <button onClick={() => setShowCnImport(true)} className="ml-auto px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Credit notes</button>}
-        {params.get('zoho') === '1' && tab.key === 'invoices' && <button onClick={() => setShowImport(true)} className="ml-auto mr-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">⬆ Import from Zoho</button>}
         <button onClick={() => {
           if (tab.key === 'creditnotes') { navigate('/finance/vouchers/credit_note?new=1'); return }
           const s = sellers['UIPL'] || {}
@@ -656,9 +647,6 @@ export default function Invoices() {
       </div>
       {docModal}
       {convertFor && <ConvertOrderModal order={convertFor} sellerStateCode={(sellers[convertFor.company] || {}).stateCode} onClose={() => setConvertFor(null)} onConfirm={(r) => createFromOrder(convertFor, r)} />}
-      {showOrdersImport && <SalesOrdersImport onClose={() => { setShowOrdersImport(false); loadAll(); fd.reload() }} />}
-      {showCnImport && <CreditNotesImport onClose={() => setShowCnImport(false)} onDone={() => { invalidateFinanceCache(); fd.reload() }} />}
-      {showImport && <InvoicesImport onClose={() => { setShowImport(false); loadAll() }} />}
 
       {tab.key === 'creditnotes' ? (
       <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 overflow-hidden">
