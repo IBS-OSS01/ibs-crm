@@ -1,7 +1,7 @@
 // Import purchase bills from a Zoho Books "Bill" export as purchase vouchers, and link the bank payments that are already
 // in the books (on account, or booked straight to an expense) to the bills they paid. Previewed first.
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, doc, getDocs, getDoc, addDoc } from 'firebase/firestore'
+import { collection, doc, getDocs, getDoc, addDoc } from '../../../lib/cachedFirestore'
 import * as XLSX from 'xlsx'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'

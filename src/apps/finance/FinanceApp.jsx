@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { clearDataCache, dataCacheInfo } from '../../lib/cachedFirestore'
 import FinanceDashboard from './pages/FinanceDashboard.jsx'
 import ProjectCosts from './pages/ProjectCosts.jsx'
 import CompanySettings from './pages/CompanySettings.jsx'
@@ -65,6 +66,24 @@ const MANAGER_ROLES = ['admin','sales_manager','sales_director','project_manager
 
 const OPEN_KEY = 'finance.nav.open2'
 const loadOpen = () => { try { return JSON.parse(localStorage.getItem(OPEN_KEY) || 'null') } catch { return null } }
+
+// The app keeps what it has read from Firebase (so pages open instantly and the free daily read quota lasts). Changes made by
+// someone else, or from another device, appear after a few hours — or right away when this is pressed.
+function RefreshData({ compact }) {
+  const [busy, setBusy] = useState(false)
+  const t = dataCacheInfo().oldest
+  const when = t ? new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''
+  const go = async () => {
+    if (!window.confirm('Re-read all the finance data from the server now?\n\nThis uses a few thousand of the free daily Firebase reads. Your own saves already show up without this — use it only to pick up changes made by someone else or from another device.')) return
+    setBusy(true); await clearDataCache(); window.location.reload()
+  }
+  return (
+    <button onClick={go} disabled={busy} title={`Data last read from the server at ${when || 'this session'} — click to re-read everything`}
+      className={compact ? 'p-1.5 rounded-lg bg-slate-100 text-slate-600 text-sm' : 'h-8 px-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 text-xs flex items-center gap-1'} aria-label="Refresh data">
+      <span className={busy ? 'animate-spin inline-block' : ''}>↻</span>{!compact && <span className="hidden xl:inline">{when ? `Data ${when}` : 'Refresh'}</span>}
+    </button>
+  )
+}
 
 export default function FinanceApp() {
   const location = useLocation()
@@ -163,6 +182,7 @@ export default function FinanceApp() {
       <div className="md:hidden fixed top-0 inset-x-0 z-30 flex items-center gap-2 bg-white/95 backdrop-blur border-b border-slate-200 px-3 py-2">
         <button onClick={() => setMobileNavOpen(o => !o)} className="p-1.5 rounded-lg bg-slate-100 text-slate-600 text-sm" aria-label="Menu">☰</button>
         <span className="text-sm font-semibold text-slate-700 flex-1 truncate">{currentLabel}</span>
+        <RefreshData compact />
         <button onClick={() => setPaletteOpen(true)} className="p-1.5 rounded-lg bg-slate-100 text-slate-600 text-sm" aria-label="Search">🔍</button>
       </div>
 
@@ -199,6 +219,7 @@ export default function FinanceApp() {
             <span>🔍</span><span className="flex-1 text-left">Search in Finance</span><kbd className="text-[10px] border border-slate-300 rounded px-1">/</kbd>
           </button>
           <span className="ml-auto text-xs text-slate-500 hidden lg:inline">{currentLabel}</span>
+          <RefreshData />
           <button onClick={() => setAddOpen(true)} className="w-8 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xl leading-none flex items-center justify-center shadow-sm" aria-label="New" title="Create new">＋</button>
         </div>
         <Routes>

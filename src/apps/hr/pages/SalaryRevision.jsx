@@ -4,7 +4,7 @@
  * Adding a revision also updates employee's current salary in hr_employees.
  */
 import React, { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs, addDoc, doc, updateDoc, query, orderBy } from 'firebase/firestore'
+import { collection, getDocs, addDoc, doc, updateDoc, query, orderBy } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { fetchGstinDetails } from '../../finance/utils/gstLookup.js'

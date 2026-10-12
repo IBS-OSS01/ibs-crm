@@ -1,7 +1,7 @@
 // Credit notes from a Zoho Books "Credit Note" export → credit-note vouchers against the invoices they refer to (previewed first).
 // (Not shown in the menus — opened with ?zoho=1 by the person entering the data.)
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, doc, getDocs, getDoc } from 'firebase/firestore'
+import { collection, doc, getDocs, getDoc } from '../../../lib/cachedFirestore'
 import * as XLSX from 'xlsx'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'

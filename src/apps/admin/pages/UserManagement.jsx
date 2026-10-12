@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { initializeApp, getApps } from 'firebase/app'
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth'
-import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from '../../../lib/cachedFirestore'
 import { auth, db, firebaseConfig } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { ensureDefaultRoles } from '../defaultRoles'

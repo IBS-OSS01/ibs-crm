@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { collection, getCountFromServer } from 'firebase/firestore'
+import { collection, getCountFromServer } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 
 // Firebase Spark (free) plan daily/total limits relevant to this app.

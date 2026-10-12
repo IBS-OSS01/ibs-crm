@@ -1,12 +1,11 @@
 // Shared loader for every finance report/voucher page.
 //
-// Before this, each report re-declared the same 7-collection fetch. Now there is
-// one place, with a per-collection cache (60s) so clicking through Trial Balance
-// → Balance Sheet → Day Book doesn't re-read the whole database each time —
-// matters on the free Firebase plan's daily read quota. Writes call
-// invalidateFinanceCache() so the next page load is fresh.
+// One place reads the collections, through the read cache in lib/cachedFirestore.js: a collection is read from the server once
+// (then kept in memory and in the browser for hours), and every save made by the app updates that copy as it happens. So moving
+// between pages, reloading, and saving a bill cost no reads — what the free Firebase plan's daily quota needs. A full re-read
+// happens when a copy is older than its time-to-live or when the user presses "Refresh data".
 import { useEffect, useMemo, useState, useCallback } from 'react'
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, getCollectionCached } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { deriveAllLines, manualEntryLines, assertBalanced, mergeRequiredAccounts, isAccountingInvoice } from '../utils/ledger.js'
 import { computeStock } from '../utils/stockEngine.js'
@@ -55,33 +54,27 @@ export const CORE_KEYS = [
   'stockItems', 'warehouses', 'stockAdjustments', 'stockTransfers', 'consumptionRequests', 'fxRates',
 ]
 
-const TTL_MS = 60_000
-const cache = {}                 // key -> { at, promise }
+const SETTINGS_TTL_MS = 10 * 60_000       // the two company-settings documents; a save of settings drops this copy
 const failures = {}              // key -> error message (e.g. permission-denied)
 
-const toArr = (snap) => { const a = []; snap.forEach(d => a.push({ id: d.id, ...d.data() })); return a }
-
 function load(key) {
-  const hit = cache[key]
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.promise
-  const promise = getDocs(collection(db, COLLECTIONS[key]))
-    .then(s => { delete failures[key]; return toArr(s) })
+  return getCollectionCached(COLLECTIONS[key])
+    .then(a => { delete failures[key]; return a })
     .catch(err => { failures[key] = err.code || err.message; return [] })   // a collection the user can't read (or that doesn't exist yet) must not break unrelated pages
-  cache[key] = { at: Date.now(), promise }
-  return promise
 }
 
 let settingsCache = null
 function loadCompanySettings() {
-  if (settingsCache && Date.now() - settingsCache.at < TTL_MS) return settingsCache.promise
+  if (settingsCache && Date.now() - settingsCache.at < SETTINGS_TTL_MS) return settingsCache.promise
   const promise = Promise.all(['UIPL', 'Wayzim'].map(c => getDoc(doc(db, 'company_settings', c)).catch(() => null)))
     .then(([u, w]) => ({ UIPL: u?.exists() ? u.data() : {}, Wayzim: w?.exists() ? w.data() : {} }))
   settingsCache = { at: Date.now(), promise }
   return promise
 }
 
+// Saves keep the collection cache in step by themselves (lib/cachedFirestore.js), so this only drops the small company-settings copy.
+// To force a full re-read from the server use clearDataCache() (the "Refresh data" button).
 export function invalidateFinanceCache() {
-  Object.keys(cache).forEach(k => delete cache[k])
   settingsCache = null
 }
 

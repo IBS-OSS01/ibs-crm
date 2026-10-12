@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs, doc, updateDoc, getDoc, setDoc } from 'firebase/firestore'
+import { collection, getDocs, doc, updateDoc, getDoc, setDoc } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'

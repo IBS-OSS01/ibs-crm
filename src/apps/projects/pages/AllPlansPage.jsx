@@ -5,7 +5,7 @@
  * Click "Open Plan" to navigate into ProjectPlanPage for inline editing.
  */
 import React, { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, getDocs, query, where } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'

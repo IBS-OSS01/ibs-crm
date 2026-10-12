@@ -12,7 +12,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc } from '../lib/cachedFirestore'
 import { auth, db } from '../lib/firebase-config'
 import { hasPermission, canView, canEdit, MODULES, RIGHTS } from './permissions'
 import { prefetchUsers } from '../lib/useUsers'

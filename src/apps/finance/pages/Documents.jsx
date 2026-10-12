@@ -2,7 +2,7 @@
 // and the bills, receipts and photos attached to vouchers and invoices. Click a name to open or download it; click “Attached to”
 // to open the voucher it belongs to.
 import React, { useEffect, useMemo, useState } from 'react'
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useFinanceData } from '../hooks/useFinanceData.js'
 import { buildVoucherIndex } from '../utils/voucherIndex.js'

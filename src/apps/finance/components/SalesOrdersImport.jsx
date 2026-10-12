@@ -1,7 +1,7 @@
 // Sales orders from a Zoho Books "Sales Order" export, with the quantities already invoiced. Existing invoices that carry the same
 // customer PO number are linked to their order. (Not shown in the menus — used by the person entering the data.)
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, doc, getDocs, getDoc, writeBatch } from 'firebase/firestore'
+import { collection, doc, getDocs, getDoc, writeBatch } from '../../../lib/cachedFirestore'
 import * as XLSX from 'xlsx'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'

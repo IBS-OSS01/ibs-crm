@@ -4,7 +4,7 @@
  * Also pulls crm_tasks for full interlink with CRM deal tasks.
  */
 import React, { useState, useEffect, useMemo } from 'react'
-import { collection, query, where, onSnapshot, updateDoc, doc, serverTimestamp } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, updateDoc, doc, serverTimestamp } from '../../lib/cachedFirestore'
 import { db } from '../../lib/firebase-config'
 import { useAuth } from '../../context/AuthContext'
 import { notifyTaskCompleted } from '../../lib/emailNotifications'

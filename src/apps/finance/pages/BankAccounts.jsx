@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getCachedSnap } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { computeAccountBalances } from '../utils/ledger.js'
@@ -47,7 +47,7 @@ export default function BankAccounts() {
 
   const load = async () => {
     try {
-      const snap = await getDocs(collection(db, 'finance_bank_accounts'))
+      const snap = await getCachedSnap('finance_bank_accounts')
       const data = []; snap.forEach(d => data.push({ id: d.id, ...d.data() }))
       data.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       setAccounts(data)

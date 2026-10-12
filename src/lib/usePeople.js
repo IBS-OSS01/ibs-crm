@@ -19,7 +19,7 @@
  * }
  */
 import { useState, useEffect } from 'react'
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs } from './cachedFirestore'
 import { db } from './firebase-config'
 
 const ROLE_LABELS = {

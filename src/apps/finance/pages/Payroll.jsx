@@ -1,7 +1,7 @@
 // Finance → Payroll: post a month's salary slips (from HR) to the books, track PF / ESIC dues and payments,
 // and edit the statutory rates.
 import React, { useMemo, useState } from 'react'
-import { addDoc, collection, deleteDoc, doc, setDoc } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, setDoc } from '../../../lib/cachedFirestore'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'

@@ -21,6 +21,7 @@ import { parseZohoExpenses, matchExpenses, reclassify, toExpenseVoucher } from '
 import { parseScannedStatement, parseScanDate } from '../src/apps/finance/utils/bankOcr.js'
 import { suggestEntry, buildVoucher, bankLineKey } from '../src/apps/finance/utils/bankEntries.js'
 import { reclassifyProposals, reclassifiedFields } from '../src/apps/finance/utils/reclassify.js'
+import { isPlain, hasDottedKey, patchedDoc, isFresh } from '../src/lib/cacheCore.js'
 import { tallyVouchers, tallyMasters } from '../src/apps/finance/utils/tallyExport.js'
 import { buildEInvoice, buildEwayBill, invoiceProblems, ewayProblems, gstr3bJson } from '../src/apps/finance/utils/einvoice.js'
 import { convertTotals, rateOn, revaluation, fmtFc } from '../src/apps/finance/utils/fx.js'
@@ -654,6 +655,19 @@ section('Zoho expenses → tied to bank payments or new entries')
   const lines = [{ accountCode: '2100', company: 'UIPL', credit: 188559, debit: 0, date: '2026-10-30', partyName: 'Wayzim', billKey: 'purchase:b1', sourceType: 'purchase', sourceId: 'b1' }]
   const m = openBillMap(lines, { kind: 'payable', company: 'UIPL', asOf: '2026-10-12' })
   ok(payStatus(m, 'purchase:b1', 188559).state === 'unpaid' && payStatus(m, 'purchase:b1', 188559).pending === 188559, 'outstanding: a bill dated in the future shows as unpaid, not paid')
+}
+
+// ── The Firestore read cache keeps in step with the app's own writes
+{
+  class FieldValueLike { constructor() { this.x = 1 } }
+  ok(isPlain({ a: 1, b: 'x', c: [1, { d: null }], e: true }) && !isPlain({ a: new FieldValueLike() }) && !isPlain({ a: new Date() }) && !isPlain([new FieldValueLike()]), 'cache: only plain data is copied into the cache as written; sentinels / timestamps are re-read')
+  ok(hasDottedKey({ 'a.b': 1 }) && !hasDottedKey({ a: { b: 1 } }), 'cache: a dotted field path is not a plain top-level update')
+  const before = { id: 'v1', status: 'active', total: 100, tds: { amount: 5 } }
+  const upd = patchedDoc(before, 'v1', { total: 120, note: undefined }, { merge: true })
+  ok(upd.id === 'v1' && upd.status === 'active' && upd.total === 120 && !('note' in upd) && upd.tds.amount === 5, 'cache: an update merges into the cached document and drops undefined fields')
+  const set = patchedDoc(before, 'v1', { total: 7 }, { merge: false })
+  ok(set.id === 'v1' && set.total === 7 && !('status' in set), 'cache: a set replaces the cached document')
+  ok(isFresh(1000, 500, 1400) && !isFresh(1000, 500, 1500) && !isFresh(undefined, 500, 1000), 'cache: a copy is fresh until its time-to-live runs out')
 }
 
 // ── A round off typed by the user replaces the automatic nearest-rupee one

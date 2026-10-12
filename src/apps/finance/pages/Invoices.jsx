@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs, addDoc, updateDoc, doc, getDoc } from 'firebase/firestore'
+import { collection, getDocs, addDoc, updateDoc, doc, getDoc, getCachedSnap } from '../../../lib/cachedFirestore'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
@@ -231,13 +231,13 @@ export default function Invoices() {
   const loadAll = async () => {
     try {
       const [invSnap, custSnap, hsnSnap, uiplSnap, wayzimSnap, stockSnap, fxSnap] = await Promise.all([
-        getDocs(collection(db, 'finance_invoices')),
-        getDocs(collection(db, 'crm_customers')),
-        getDocs(collection(db, 'finance_hsn_codes')),
+        getCachedSnap('finance_invoices'),
+        getCachedSnap('crm_customers'),
+        getCachedSnap('finance_hsn_codes'),
         getDoc(doc(db, 'company_settings', 'UIPL')),
         getDoc(doc(db, 'company_settings', 'Wayzim')),
-        getDocs(collection(db, 'inventory_items')).catch(() => null),
-        getDocs(collection(db, 'finance_fx_rates')).catch(() => null),
+        getCachedSnap('inventory_items').catch(() => null),
+        getCachedSnap('finance_fx_rates').catch(() => null),
       ])
       const fxr = []; fxSnap?.forEach(d => fxr.push({ id: d.id, ...d.data() })); setFxRates(fxr)
       const stk = []; stockSnap?.forEach(d => stk.push({ id: d.id, ...d.data() }))
@@ -261,7 +261,7 @@ export default function Invoices() {
   const getNextInvoiceNumber = async (company, typeCode) => {
     const fy = getFY()
     const prefix = `${company}/${typeCode}/${fy}/`
-    const snap = await getDocs(collection(db, 'finance_invoices'))
+    const snap = await getCachedSnap('finance_invoices')
     const nums = []
     snap.forEach(d => {
       const n = d.data().invoiceNumber || ''

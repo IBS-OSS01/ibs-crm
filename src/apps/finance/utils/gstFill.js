@@ -1,6 +1,6 @@
 // Fill a customer's / vendor's missing address from the GST portal (by GSTIN). Only blank fields are filled — anything
 // already entered is kept, and the name is never changed (ledger lines are matched by name).
-import { doc, updateDoc } from 'firebase/firestore'
+import { doc, updateDoc } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { fetchGstinDetails } from './gstLookup.js'
 import { INDIA_STATES } from './indiaConstants.js'

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { collection, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { collection, addDoc, doc, updateDoc, deleteDoc } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 

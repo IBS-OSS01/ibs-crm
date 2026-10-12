@@ -2,7 +2,7 @@
 // deduction register, challans, quarterly statement data, deductee statements,
 // TDS receivable (deducted by customers) and the section master.
 import React, { useMemo, useState } from 'react'
-import { addDoc, collection, deleteDoc, doc, setDoc } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, setDoc } from '../../../lib/cachedFirestore'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'

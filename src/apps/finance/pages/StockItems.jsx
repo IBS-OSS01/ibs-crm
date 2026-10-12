@@ -1,7 +1,7 @@
 // Stock item master (finance view of inventory_items): HSN/GST, rates, valuation
 // method, minimum stock and opening stock per godown.
 import React, { useMemo, useState } from 'react'
-import { addDoc, collection, doc, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
+import { addDoc, collection, doc, setDoc, updateDoc, writeBatch } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'

@@ -3,7 +3,7 @@
 // Contact details stay in CRM → Customers and Finance → Vendors.
 import React, { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { doc, updateDoc } from 'firebase/firestore'
+import { doc, updateDoc } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { computeOutstanding } from '../utils/outstanding.js'

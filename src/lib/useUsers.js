@@ -4,7 +4,7 @@ import {
   getDocs,
   query,
   orderBy
-} from 'firebase/firestore'
+} from './cachedFirestore'
 import { db } from './firebase-config'
 
 let cachedUsers = null

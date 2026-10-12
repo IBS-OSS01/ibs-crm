@@ -1,7 +1,7 @@
 // HR → PF / ESIC: what was deducted and contributed for a month, plus the two files the portals want
 // (EPFO ECR text file and the ESIC monthly contribution sheet).
 import React, { useEffect, useMemo, useState } from 'react'
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, where } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { mergeStatutory, payrollTotals, buildEcr, esicRows, contributionDue } from '../utils/statutory.js'
 import { downloadXlsx } from '../../finance/utils/exportUtils.js'

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react'
-import { collection, addDoc, doc, updateDoc } from 'firebase/firestore'
+import { collection, addDoc, doc, updateDoc } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { downloadXlsxTemplate, parseXlsxFile } from '../../../lib/xlsxTemplate'

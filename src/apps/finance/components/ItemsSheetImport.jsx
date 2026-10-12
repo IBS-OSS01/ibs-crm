@@ -2,7 +2,7 @@
 // for goods in the chosen godown (both the Services "Stock Levels" figure and the Finance stock ledger's opening stock).
 import React, { useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
-import { collection, doc, writeBatch } from 'firebase/firestore'
+import { collection, doc, writeBatch } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { readSheetFile } from '../utils/readSheetFile.js'

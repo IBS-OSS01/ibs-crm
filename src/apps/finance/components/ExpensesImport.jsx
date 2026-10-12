@@ -1,7 +1,7 @@
 // Import expenses from a Zoho Books "Expense" export. Expenses that already appear as a payment in the bank entries are
 // re-classified (no duplicate); the rest are created as payment vouchers from the bank / ledger Zoho says they were paid through.
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs } from '../../../lib/cachedFirestore'
 import * as XLSX from 'xlsx'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'

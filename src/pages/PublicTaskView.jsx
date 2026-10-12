@@ -5,7 +5,7 @@
  */
 import React, { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { doc, getDoc, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, updateDoc } from '../lib/cachedFirestore'
 import { db } from '../lib/firebase-config'
 import IBSLogo from '../components/common/IBSLogo'
 

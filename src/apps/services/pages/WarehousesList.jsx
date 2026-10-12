@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 
 export default function WarehousesList() {

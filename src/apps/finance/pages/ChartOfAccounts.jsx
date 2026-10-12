@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore'
+import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, writeBatch, getCachedSnap } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { SEED_ACCOUNTS } from '../utils/ledger.js'
@@ -37,7 +37,7 @@ export default function ChartOfAccounts() {
   const load = async () => {
     setLoading(true)
     try {
-      const snap = await getDocs(collection(db, 'finance_accounts'))
+      const snap = await getCachedSnap('finance_accounts')
       const data = []
       snap.forEach(d => data.push({ id: d.id, ...d.data() }))
       if (data.length === 0 && isAdmin) {

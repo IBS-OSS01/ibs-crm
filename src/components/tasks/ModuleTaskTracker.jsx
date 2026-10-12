@@ -4,7 +4,7 @@
  * Visible to: admin, sales_manager, sales_director, project_manager, service_manager, solution_manager.
  */
 import React, { useState, useEffect, useMemo } from 'react'
-import { collection, onSnapshot, updateDoc, doc, serverTimestamp } from 'firebase/firestore'
+import { collection, onSnapshot, updateDoc, doc, serverTimestamp } from '../../lib/cachedFirestore'
 import { db } from '../../lib/firebase-config'
 import { useAuth } from '../../context/AuthContext'
 

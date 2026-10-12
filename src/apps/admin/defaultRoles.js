@@ -1,4 +1,4 @@
-import { doc, getDocs, collection, setDoc } from 'firebase/firestore'
+import { doc, getDocs, collection, setDoc } from '../../lib/cachedFirestore'
 
 // Built-in roles that always exist so the app keeps working even before
 // anyone visits the Roles tab. 'admin' is special-cased throughout the app

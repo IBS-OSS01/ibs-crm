@@ -1,7 +1,7 @@
 // Bank reconciliation: import the bank's statement, match it to the bank book, see what is
 // uncleared and whether the books agree with the statement balance.
 import React, { useEffect, useMemo, useState } from 'react'
-import { collection, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore'
+import { collection, deleteDoc, doc, updateDoc, writeBatch } from '../../../lib/cachedFirestore'
 import * as XLSX from 'xlsx'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { db } from '../../../lib/firebase-config'

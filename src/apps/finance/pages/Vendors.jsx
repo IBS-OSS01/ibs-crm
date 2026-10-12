@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getCachedSnap } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { INDIA_STATES, gstinToState } from '../utils/indiaConstants.js'
@@ -39,7 +39,7 @@ export default function Vendors() {
 
   const load = async () => {
     try {
-      const snap = await getDocs(collection(db, 'finance_vendors'))
+      const snap = await getCachedSnap('finance_vendors')
       const data = []
       snap.forEach(d => data.push({ id: d.id, ...d.data() }))
       data.sort((a, b) => (a.vendorName || '').localeCompare(b.vendorName || ''))

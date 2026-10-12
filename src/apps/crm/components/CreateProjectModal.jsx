@@ -24,7 +24,7 @@
  */
 
 import React, { useState } from 'react'
-import { collection, addDoc, doc, updateDoc } from 'firebase/firestore'
+import { collection, addDoc, doc, updateDoc } from '../../../lib/cachedFirestore'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../../lib/firebase-config'
 import { generateProjectNumber } from '../../../lib/projectUtils'

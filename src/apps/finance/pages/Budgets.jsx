@@ -1,7 +1,7 @@
 // Budgets: yearly amount per income/expense account (optionally per cost centre) and a
 // budget-vs-actual report pro-rated to the months in the chosen period.
 import React, { useMemo, useState } from 'react'
-import { addDoc, collection, deleteDoc, doc } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'

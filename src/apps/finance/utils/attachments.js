@@ -6,7 +6,7 @@
 //   • a PDF up to ~450 KB is stored as it is; a larger PDF is turned into compressed
 //     page pictures (first 10 pages), because a PDF can't be shrunk in the browser;
 //   • anything else is refused.
-import { collection, addDoc, getDocs, deleteDoc, doc, query, where } from 'firebase/firestore'
+import { collection, addDoc, getDocs, deleteDoc, doc, query, where } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 
 export const MAX_DOC_CHARS = 900000          // Firestore document limit is 1 MiB; leave headroom

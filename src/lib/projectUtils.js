@@ -6,7 +6,7 @@
  * No React imports — safe to use from any module.
  */
 
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs } from './cachedFirestore'
 import { db } from './firebase-config'
 
 /**

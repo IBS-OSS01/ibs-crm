@@ -12,7 +12,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import {
   collection, getDocs, addDoc, updateDoc, doc,
-} from 'firebase/firestore'
+} from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useUsers } from '../../../lib/useUsers'

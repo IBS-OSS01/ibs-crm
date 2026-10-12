@@ -1,6 +1,6 @@
 // Exchange rates (INR per 1 unit of a foreign currency) and the year-end revaluation of open foreign bills.
 import React, { useMemo, useState } from 'react'
-import { addDoc, collection, deleteDoc, doc } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc } from '../../../lib/cachedFirestore'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'

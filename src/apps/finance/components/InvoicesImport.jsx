@@ -1,7 +1,7 @@
 // Import sales invoices from a Zoho Books "Invoice" export, and link the bank receipts that are already in the books
 // "on account" to them (with the TDS the customer deducted). Everything is previewed first.
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, doc, getDocs, getDoc, writeBatch } from 'firebase/firestore'
+import { collection, doc, getDocs, getDoc, writeBatch } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { readSheetFile } from '../utils/readSheetFile.js'

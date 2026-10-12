@@ -2,7 +2,7 @@
 // GST portal), PAN, state, full address, bank details, notes. Writes to the same master collections the CRM and the Vendors
 // page use (crm_customers / finance_vendors), so every screen sees the same record.
 import React, { useState } from 'react'
-import { addDoc, collection, doc, updateDoc } from 'firebase/firestore'
+import { addDoc, collection, doc, updateDoc } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { INDIA_STATES } from '../utils/indiaConstants.js'

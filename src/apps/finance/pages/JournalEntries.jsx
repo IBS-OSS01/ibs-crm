@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { collection, getDocs, addDoc, doc, deleteDoc } from 'firebase/firestore'
+import { collection, getDocs, addDoc, doc, deleteDoc, getCachedSnap } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 
@@ -30,8 +30,8 @@ export default function JournalEntries() {
   const load = async () => {
     try {
       const [jeSnap, acctSnap] = await Promise.all([
-        getDocs(collection(db, 'finance_journal_entries')),
-        getDocs(collection(db, 'finance_accounts')),
+        getCachedSnap('finance_journal_entries'),
+        getCachedSnap('finance_accounts'),
       ])
       const j = []; jeSnap.forEach(d => j.push({ id: d.id, ...d.data() }))
       j.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
@@ -50,7 +50,7 @@ export default function JournalEntries() {
   const getNextJENumber = async (company) => {
     const fy = getFY()
     const prefix = `JE/${company}/${fy}/`
-    const snap = await getDocs(collection(db, 'finance_journal_entries'))
+    const snap = await getCachedSnap('finance_journal_entries')
     const nums = []
     snap.forEach(d => {
       const n = d.data().reference || ''

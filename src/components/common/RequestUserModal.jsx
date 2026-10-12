@@ -20,7 +20,7 @@
  */
 
 import React, { useState } from 'react'
-import { collection, addDoc } from 'firebase/firestore'
+import { collection, addDoc } from '../../lib/cachedFirestore'
 import { db } from '../../lib/firebase-config'
 import { useAuth } from '../../context/AuthContext'
 

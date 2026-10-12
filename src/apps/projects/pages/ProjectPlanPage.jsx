@@ -9,7 +9,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   doc, getDoc, collection, query, where, getDocs,
   addDoc, updateDoc, deleteDoc, writeBatch, setDoc,
-} from 'firebase/firestore'
+} from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { notifyProjectTaskAssigned, sendProjectTaskReminder } from '../../../lib/projectNotifications'
