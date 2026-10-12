@@ -27,14 +27,19 @@ async function api(path, body, { retry = true } = {}) {
   let token = null
   try { await (auth.authStateReady ? auth.authStateReady() : Promise.resolve()); token = auth.currentUser ? await auth.currentUser.getIdToken() : null } catch { /* signed out */ }
   const send = () => fetch(API_URL + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: JSON.stringify(body) })
-  let res
-  try { res = await send() } catch (e) {
-    if (!retry) throw fbError('unavailable', 'Could not reach the server — check your connection')
-    await sleep(500)
-    try { res = await send() } catch { throw fbError('unavailable', 'Could not reach the server — check your connection') }
+  // reads are repeated (up to 3 tries) on a network failure or a temporary server error (5xx); writes never are
+  let res, json
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await send()
+      try { json = await res.json() } catch { json = null }
+      if (res.status < 500 || !retry || attempt >= 2) break
+    } catch (e) {
+      if (!retry || attempt >= 2) throw fbError('unavailable', 'Could not reach the server — check your connection')
+    }
+    await sleep(600 * (attempt + 1))
   }
-  let json
-  try { json = await res.json() } catch { throw fbError('internal', 'The server sent an unreadable answer') }
+  if (!json) throw fbError('internal', 'The server sent an unreadable answer')
   if (!res.ok) throw fbError(json?.error?.code || 'internal', json?.error?.message || `Request failed (${res.status})`)
   return json
 }
