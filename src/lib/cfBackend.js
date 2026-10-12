@@ -305,3 +305,4 @@ export async function importDocs(col, docs, onProgress) {
   return done
 }
 export const countInCloudflare = async (col) => (await api('/v1/count', { col })).n
+export async function idsInCloudflare(col) { const { docs } = await fetchAll(col); return new Set(docs.keys()) }

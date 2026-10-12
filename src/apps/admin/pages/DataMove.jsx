@@ -4,7 +4,7 @@
 import React, { useState } from 'react'
 import { collection as fsCollection, getDocs as fsGetDocs, getCountFromServer as fsCount } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
-import { importDocs, countInCloudflare } from '../../../lib/cfBackend.js'
+import { importDocs, countInCloudflare, idsInCloudflare } from '../../../lib/cfBackend.js'
 import { RULES } from '../../../../cloudflare/src/rules.js'
 import { usingCloudflare } from '../../../lib/cachedFirestore'
 
@@ -38,11 +38,13 @@ export default function DataMove() {
     set(n, { msg: 'reading from Firebase…' })
     try {
       const snap = await fsGetDocs(fsCollection(db, n))
-      const docs = []; snap.forEach(d => docs.push({ id: d.id, data: plain(d.data()) }))
-      set(n, { fs: docs.length, msg: `writing 0 / ${docs.length}…` })
+      let docs = []; snap.forEach(d => docs.push({ id: d.id, data: plain(d.data()) }))
+      const total = docs.length
+      if (n === 'finance_audit_log') { const have = await idsInCloudflare(n); docs = docs.filter(d => !have.has(d.id)) }      // append-only: only entries not copied yet
+      set(n, { fs: total, msg: `writing 0 / ${docs.length}…` })
       await importDocs(n, docs, (k) => set(n, { msg: `writing ${k} / ${docs.length}…` }))
       const cf = await countInCloudflare(n)
-      set(n, { fs: docs.length, cf, msg: cf >= docs.length ? 'done ✓' : 'counts differ!' })
+      set(n, { fs: total, cf, msg: cf >= total ? 'done ✓' : 'counts differ!' })
     } catch (e) { set(n, { msg: 'stopped: ' + (e.code ? e.code + ' — ' : '') + e.message }); e.collection = n; throw e }
   }
   const run = async (names, label) => {
