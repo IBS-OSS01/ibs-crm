@@ -1,0 +1,12 @@
+name = "ibs-api"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ibs-data"
+database_id = "REPLACE_WITH_ID_FROM_wrangler_d1_create"
+
+[vars]
+FIREBASE_PROJECT_ID = "uipl-erp"
+ALLOWED_ORIGINS = "https://uipl-erp.web.app,https://uipl-erp.firebaseapp.com,http://localhost:5173,http://localhost:4173"

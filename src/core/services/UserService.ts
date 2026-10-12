@@ -1,4 +1,4 @@
-﻿import { doc, getDoc, collection, getDocs } from 'firebase/firestore'
+﻿import { doc, getDoc, collection, getDocs } from '../../lib/cachedFirestore'
 import { db } from '../../lib/firebase-config'
 
 export async function getUser(uid) {

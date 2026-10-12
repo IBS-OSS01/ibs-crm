@@ -4,6 +4,7 @@ import UserManagement from './pages/UserManagement.jsx'
 import RoleManagement from './pages/RoleManagement.jsx'
 import PlanStatus from './pages/PlanStatus.jsx'
 import Permissions from './pages/Permissions.jsx'
+import DataMove from './pages/DataMove.jsx'
 
 export default function AdminApp() {
   const location = useLocation()
@@ -14,6 +15,7 @@ export default function AdminApp() {
     { label: 'Permissions', path: '/admin/permissions', match: (p) => p.startsWith('/admin/permissions') },
     { label: 'Roles', path: '/admin/roles', match: (p) => p.startsWith('/admin/roles') },
     { label: 'Plan & Usage', path: '/admin/plan', match: (p) => p.startsWith('/admin/plan') },
+    { label: 'Data move', path: '/admin/move', match: (p) => p.startsWith('/admin/move') },
   ]
 
   return (
@@ -37,6 +39,7 @@ export default function AdminApp() {
         <Route path="/permissions" element={<Permissions />} />
         <Route path="/roles" element={<RoleManagement />} />
         <Route path="/plan" element={<PlanStatus />} />
+        <Route path="/move" element={<DataMove />} />
       </Routes>
     </div>
   )

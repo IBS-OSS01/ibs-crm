@@ -22,6 +22,7 @@ import { parseScannedStatement, parseScanDate } from '../src/apps/finance/utils/
 import { suggestEntry, buildVoucher, bankLineKey } from '../src/apps/finance/utils/bankEntries.js'
 import { reclassifyProposals, reclassifiedFields } from '../src/apps/finance/utils/reclassify.js'
 import { isPlain, hasDottedKey, patchedDoc, isFresh } from '../src/lib/cacheCore.js'
+import { runQuery, autoId } from '../src/lib/queryEval.js'
 import { tallyVouchers, tallyMasters } from '../src/apps/finance/utils/tallyExport.js'
 import { buildEInvoice, buildEwayBill, invoiceProblems, ewayProblems, gstr3bJson } from '../src/apps/finance/utils/einvoice.js'
 import { convertTotals, rateOn, revaluation, fmtFc } from '../src/apps/finance/utils/fx.js'
@@ -668,6 +669,23 @@ section('Zoho expenses → tied to bank payments or new entries')
   const set = patchedDoc(before, 'v1', { total: 7 }, { merge: false })
   ok(set.id === 'v1' && set.total === 7 && !('status' in set), 'cache: a set replaces the cached document')
   ok(isFresh(1000, 500, 1400) && !isFresh(1000, 500, 1500) && !isFresh(undefined, 500, 1000), 'cache: a copy is fresh until its time-to-live runs out')
+}
+
+// ── Firestore-style queries evaluated in the browser (Cloudflare data layer)
+{
+  const docs = [
+    { id: 'a', data: { status: 'open', n: 3, tags: ['x', 'y'], at: '2026-01-02' } },
+    { id: 'b', data: { status: 'done', n: 1, tags: ['y'], at: '2026-01-01' } },
+    { id: 'c', data: { status: 'open', n: 2 } },
+    { id: 'd', data: { status: 'open', n: 'text' } },
+  ]
+  const ids = (r) => r.map(d => d.id).join('')
+  ok(ids(runQuery(docs, [{ k: 'where', f: 'status', op: '==', v: 'open' }])) === 'acd', 'query: == and default order by id')
+  ok(ids(runQuery(docs, [{ k: 'where', f: 'n', op: '>=', v: 2 }])) === 'ac', 'query: numeric comparison ignores values of another type')
+  ok(ids(runQuery(docs, [{ k: 'where', f: 'status', op: 'in', v: ['done', 'zzz'] }])) === 'b' && ids(runQuery(docs, [{ k: 'where', f: 'tags', op: 'array-contains', v: 'y' }])) === 'ab', 'query: in and array-contains')
+  ok(ids(runQuery(docs, [{ k: 'orderBy', f: 'at', dir: 'desc' }])) === 'ab', 'query: ordering by a field leaves out documents that lack it')
+  ok(ids(runQuery(docs, [{ k: 'where', f: 'status', op: '==', v: 'open' }, { k: 'orderBy', f: 'n', dir: 'asc' }, { k: 'limit', n: 2 }])) === 'ca', 'query: orderBy + limit (numbers sort before text)')
+  ok(autoId().length === 20 && autoId() !== autoId(), 'query: auto ids are 20 characters')
 }
 
 // ── A round off typed by the user replaces the automatic nearest-rupee one

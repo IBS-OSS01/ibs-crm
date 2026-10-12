@@ -1,0 +1,14 @@
+{
+  "name": "ibs-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --var DEV_AUTH:1",
+    "deploy": "wrangler deploy",
+    "db:init:local": "wrangler d1 execute ibs-data --local --file=schema.sql",
+    "db:init:remote": "wrangler d1 execute ibs-data --remote --file=schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^3.100.0"
+  }
+}
