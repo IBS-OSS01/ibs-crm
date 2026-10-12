@@ -42,6 +42,9 @@ const ALIASES = [   // narrative fragment → party name to look for (statement 
 ]
 
 const DIRECTORS = /KUMAR KAUSHIK VARSH|VARSHA KRI|VARSHA KAUSHIK|KHARBANDA S\b|SANDEEP KHARBANDA|NEHA MALHOTRA|ADVAIT KAUSHIK|FROM KUMAR P\b|VARSHAKRISHANKUMARKA/i
+// banks break names across words ("SANDEEP K HARBANDA"), so also test the narrative with only its letters
+const DIRECTORS_FLAT = /SANDEEPKHARBANDA|VARSHAKRISHAN|NEHAMALHOTRA|ADVAITKAUSHIK/
+const isDirector = (d) => DIRECTORS.test(d) || /66452000001865|XX\s?1865\b/i.test(d) || DIRECTORS_FLAT.test(String(d).toUpperCase().replace(/[^A-Z]/g, ''))
 const digitsOf = (s) => String(s || '').replace(/\D/g, '')
 
 // line: { date, description, ref, debit, credit, trnType }
@@ -78,13 +81,19 @@ export function suggestEntry(line, ctx) {
   if (!isCredit && /\bGST TAX PAYMENT\b|\bGST PAYMENT\b/i.test(d)) return out({ accountCode: '2400', reason: 'GST paid to the government (split into CGST / SGST / IGST when you file)' })
   if (!isCredit && /\bTDS\b/i.test(d) && !/REFUND|DEBT/i.test(d)) return out({ accountCode: '2500', reason: 'TDS paid to the government' })
   if (!isCredit && /\bPTRC\b|PROFESSIONAL TAX/i.test(d)) return out({ accountCode: '2630', reason: 'Professional tax paid' })
+  // 4b-2. tax challans (CBDT / OLTAS), bank-guarantee commission and stamp paper, courier, domains and printing
+  if (!isCredit && /CBDT|\bOLTAS\b/i.test(d)) return out({ accountCode: '2500', reason: 'Tax paid to the government by challan (CBDT) — TDS' })
+  if (!isCredit && /COMM-GTEE|CHGS-STMP|STMP-PAPER|GUARANTEE (COMM|CHG)/i.test(d)) return out({ accountCode: '5170', reason: 'Bank guarantee commission / stamp paper charges' })
+  if (!isCredit && /\bDHL\b|DHLMB|FEDEX|BLUE\s?DART|\bDTDC\b|DELHIVERY/i.test(d)) return out({ accountCode: '5120', reason: 'Courier / freight' })
+  if (!isCredit && /GODADDY|HOSTINGER|GOOGLE\s?(WORKSPACE|CLOUD)|MICROSOFT|\bZOHO\b/i.test(d)) return out({ accountCode: '5135', reason: 'IT, software and internet' })
+  if (!isCredit && /VISTAPRINT/i.test(d)) return out({ accountCode: '5150', reason: 'Printing / marketing material' })
   // 4c. staff (HR employees): salary or a reimbursement, even when the narrative does not say SALARY
-  if (!isCredit && (ctx.employees || []).length && !DIRECTORS.test(d)) {
+  if (!isCredit && (ctx.employees || []).length && !isDirector(d)) {
     const emp = bestParty(d, ctx.employees.map(n => ({ id: n, name: n })))
     if (emp) return out({ accountCode: '5110', reason: `Paid to employee ${emp.name}`, review: /CONSULT|VISIT|MEAL|FOOD|TKT|TRAVEL|ADVANCE|LOAN/i.test(d) })
   }
   // 5. directors / promoters' own money
-  if (DIRECTORS.test(d)) return out({ accountCode: '2900', reason: isCredit ? 'Money from a director / promoter — loan or capital?' : 'Paid to a director / promoter — advance, reimbursement or loan repayment?', review: true })
+  if (isDirector(d)) return out({ accountCode: '2910', reason: isCredit ? 'Money from a director / promoter — loan or capital?' : 'Paid to a director / promoter — advance, reimbursement or loan repayment?', review: true })
   // 6. known counter-parties
   const pool = isCredit ? ctx.customers : ctx.vendors
   const alias = ALIASES.find(a => a.side === (isCredit ? 'credit' : 'debit') && a.re.test(d))

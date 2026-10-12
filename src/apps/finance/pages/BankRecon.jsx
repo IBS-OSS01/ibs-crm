@@ -12,6 +12,9 @@ import { readPdfPages, parseStatementPages, hasTextLayer } from '../utils/bankPd
 import { parseScannedStatement, ocrPdfPages } from '../utils/bankOcr.js'
 import { saveStatementFile, listStatementFiles, downloadStatementFile, deleteStatementFile } from '../utils/statementFiles.js'
 import BankEntriesModal from '../components/BankEntriesModal.jsx'
+import ReclassifyModal from '../components/ReclassifyModal.jsx'
+import { reclassifyProposals } from '../utils/reclassify.js'
+import { customerOptions, vendorOptions } from '../components/formShared.jsx'
 import { useVoucherModal } from '../components/useVoucherModal.jsx'
 import { fmtAmt, todayStr } from '../utils/financeConstants.js'
 import { downloadXlsx } from '../utils/exportUtils.js'
@@ -33,6 +36,7 @@ export default function BankRecon() {
   const [busy, setBusy] = useState(false)
   const [pick, setPick] = useState('')
   const [showEntries, setShowEntries] = useState(false)
+  const [showReclass, setShowReclass] = useState(false)
   const [files, setFiles] = useState([])
   const [showFiles, setShowFiles] = useState(false)          // the stored statement files stay wrapped until asked for
   const loadFiles = () => listStatementFiles(company).then(setFiles).catch(() => setFiles([]))
@@ -59,6 +63,9 @@ export default function BankRecon() {
       return { ...b, book: r.bookBalance, unclearedBook: ents.filter(e => !e.opening && !matched.has(e.key)).length, unmatchedBank: st.filter(x => !x.matchedKey).length, lines: st.length, diff: r.difference }
     })
   }, [banks, hasUnassigned, allLines, raw, company, asOf])
+  const proposals = useMemo(() => reclassifyProposals((raw?.vouchers || []).filter(v => v.company === company), {
+    customers: customerOptions(raw, company), vendors: vendorOptions(raw), banks: [], fds: [], employees: (raw?.hrEmployees || []).map(e => e.name).filter(Boolean), thisBankId: '',
+  }), [raw, company])
   const matchedKeys = new Set(statement.map(s => s.matchedKey).filter(Boolean))
   const freeEntries = entries.filter(e => !e.opening && !matchedKeys.has(e.key))
 
@@ -160,6 +167,7 @@ export default function BankRecon() {
           <label className={`${btnGhost} cursor-pointer`}>{busy ? 'Working…' : '⬆ Import statement (PDF / Excel / CSV)'}<input type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={onFile} disabled={busy} /></label>
           <button className={btnPrimary} onClick={runAuto} disabled={busy || !statement.some(s => !s.matchedKey)}>Auto-match</button>
           <button className={btnGhost} onClick={() => setShowEntries(true)} disabled={busy || !statement.some(s => !s.matchedKey)}>Create entries for {statement.filter(s => !s.matchedKey).length} unmatched line(s)</button>
+          {proposals.length > 0 && <button className={btnGhost} onClick={() => setShowReclass(true)}>Re-check {proposals.length} parked entr{proposals.length === 1 ? 'y' : 'ies'}</button>}
           {statement.length > 0 && <button className="text-red-500 hover:underline text-xs" onClick={clearStatement}>Clear imported statement</button>}
           <span className="text-xs text-slate-400">PDF (HSBC “Statement details”, or any PDF with a Date / Debit / Credit table), Excel or CSV with Date, Narration, Withdrawal / Debit, Deposit / Credit (and Balance, for the final check).</span>
         </div>
@@ -181,6 +189,7 @@ export default function BankRecon() {
           </tbody></table>}
         </div>
       )}
+      {showReclass && <ReclassifyModal proposals={proposals} accounts={accounts} company={company} onClose={() => { setShowReclass(false); invalidateFinanceCache(); reload() }} onDone={() => invalidateFinanceCache()} />}
       {showEntries && <BankEntriesModal lines={statement.filter(s => !s.matchedKey)} company={company} bank={{ id: bankId, name: bankName }} banks={banks} fds={(raw?.bankAccounts || []).filter(b => b.type === 'fd' && b.company === company && b.active !== false)} raw={raw} accounts={accounts}
         onClose={() => { setShowEntries(false); invalidateFinanceCache(); reload() }} onDone={() => invalidateFinanceCache()} />}
 

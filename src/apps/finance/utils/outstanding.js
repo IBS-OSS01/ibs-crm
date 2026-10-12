@@ -30,7 +30,7 @@ const daysBetween = (fromStr, toStr) => {
 export const bucketOf = (daysOverdue) =>
   AGE_BUCKETS.find(b => daysOverdue >= b.from && daysOverdue <= b.to) || AGE_BUCKETS[AGE_BUCKETS.length - 1]
 
-export function computeOutstanding(allLines, { kind, company, asOf, ageBy = 'due' } = {}) {
+export function computeOutstanding(allLines, { kind, company, asOf, ageBy = 'due', keepFuture = false } = {}) {
   const control = kind === 'payable' ? '2100' : '1200'
   const billSide = kind === 'payable' ? 'credit' : 'debit'   // which side creates a bill
   const settleSide = billSide === 'debit' ? 'credit' : 'debit'
@@ -38,7 +38,7 @@ export function computeOutstanding(allLines, { kind, company, asOf, ageBy = 'due
   const lines = allLines.filter(l =>
     l.accountCode === control &&
     (!company || l.company === company) &&
-    (!asOf || (l.date || '') <= asOf))
+    (!asOf || keepFuture || (l.date || '') <= asOf))
 
   const parties = {}
   const ensure = (l) => {
@@ -140,7 +140,8 @@ export function pendingBillsForParty(allLines, { kind, company, partyName, party
 // Payment status of single documents: which bills are still open (and by how much), as of a date.
 //   openBillMap(...).get(billKey) → { original, pending } while unpaid or part paid; absent once fully settled.
 export function openBillMap(allLines, { kind, company, asOf } = {}) {
-  const { parties } = computeOutstanding(allLines, { kind, company, asOf })
+  // keepFuture: a bill dated after today is simply not due yet — it must show as unpaid, never as "paid" because it was not looked at
+  const { parties } = computeOutstanding(allLines, { kind, company, asOf, keepFuture: true })
   const m = new Map()
   parties.forEach(p => p.bills.forEach(b => m.set(b.billKey, { original: b.original, pending: b.pending, dueDate: b.dueDate, daysOverdue: b.daysOverdue })))
   return m

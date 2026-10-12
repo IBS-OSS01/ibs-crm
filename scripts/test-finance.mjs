@@ -20,6 +20,7 @@ import { parseZohoBills, toPurchaseVoucher, matchPayments } from '../src/apps/fi
 import { parseZohoExpenses, matchExpenses, reclassify, toExpenseVoucher } from '../src/apps/finance/utils/zohoExpenses.js'
 import { parseScannedStatement, parseScanDate } from '../src/apps/finance/utils/bankOcr.js'
 import { suggestEntry, buildVoucher, bankLineKey } from '../src/apps/finance/utils/bankEntries.js'
+import { reclassifyProposals, reclassifiedFields } from '../src/apps/finance/utils/reclassify.js'
 import { tallyVouchers, tallyMasters } from '../src/apps/finance/utils/tallyExport.js'
 import { buildEInvoice, buildEwayBill, invoiceProblems, ewayProblems, gstr3bJson } from '../src/apps/finance/utils/einvoice.js'
 import { convertTotals, rateOn, revaluation, fmtFc } from '../src/apps/finance/utils/fx.js'
@@ -474,7 +475,11 @@ section('bank statement PDF → entries')
   const ctxE = { ...ctx, employees: ['Kunal Sanjay Zope', 'Amandeep Singh'] }
   const emp = suggestEntry({ date: '2025-05-30', description: 'NONREF 596276C00HKZ LP BOMNOL63WIRN AMANDEEP SINGH', credit: 0, debit: 104409 }, ctxE)
   ok(emp.accountCode === '5110' && !emp.review && suggestEntry({ date: '2025-10-27', description: 'HQ VISIT 42207AI00MAK KUNAL SANJAY ZOPE', credit: 0, debit: 94738 }, ctxE).review, 'rules: payment to an HR employee = salary, a visit / meal / advance is flagged')
-  ok(suggestEntry({ date: '2025-05-07', description: 'TDS 453275P000FC LP BOMNNX6KQIRN SANDEEP KHARBANDA', credit: 0, debit: 110073 }, ctx).accountCode === '2500' && suggestEntry({ date: '2025-05-07', description: 'TDS REFUND 5775 SANDEEP KHARBANDA', credit: 0, debit: 3400 }, ctx).accountCode === '2900', 'rules: TDS paid to government vs a TDS refund to a director')
+  ok(suggestEntry({ date: '2025-05-07', description: 'TDS 453275P000FC LP BOMNNX6KQIRN SANDEEP KHARBANDA', credit: 0, debit: 110073 }, ctx).accountCode === '2500' && suggestEntry({ date: '2025-05-07', description: 'TDS REFUND 5775 SANDEEP KHARBANDA', credit: 0, debit: 3400 }, ctx).accountCode === '2910', 'rules: TDS paid to government vs a TDS refund to a director (directors current account)')
+  const dirOut = suggestEntry({ date: '2026-07-01', description: 'NET-TPT-SANDEE P KHARBANDA-IFB -066452000001865', credit: 0, debit: 500000 }, ctxE)
+  const dirIn = suggestEntry({ date: '2026-07-01', description: 'Funds Trf from XX 1865/udishtha yes', credit: 200000, debit: 0 }, ctxE)
+  ok(dirOut.accountCode === '2910' && dirIn.accountCode === '2910', 'rules: money to / from a director, even with the name split across words, goes to the directors current account')
+  ok(sg('NET TXN: CBDTYPMC 260 60700202787 CBDTMSME', 0, 127415).accountCode === '2500' && sg('551BG03261750001-COMM-GTEE-WADGAON SHER', 0, 590).accountCode === '5170' && sg('NET TXN: BILLDESKCMDYBMPTV1PB289U DHL', 0, 28052.2).accountCode === '5120' && sg('PCA:1525:GODADDYLLCV2:GODADDYLLCV 2 MUMBAI', 0, 2088).accountCode === '5135' && sg('PCA:1525:470000087032192 :IND*VistaPrint MUMBAI', 0, 14250).accountCode === '5150', 'rules: CBDT challan → TDS, bank-guarantee commission → bank charges, courier, domain, printing')
   const unk = sg('SOMEBODY UNKNOWN', 5, 0)
   ok(unk.review && unk.accountCode === '2900' && sg('SOMEBODY UNKNOWN', 0, 5).accountCode === '5900', 'rules: unidentified lines are parked and flagged')
 
@@ -642,6 +647,33 @@ section('Zoho expenses → tied to bank payments or new entries')
   const v = buildVoucher({ kind: 'contra', otherBank: { id: 'fd1', name: 'YES sweep FD (FD)', fd: true } }, { id: 'l1', date: '2026-08-28', debit: 500000, credit: 0, description: 'AUTO SWEEPOUT' }, { company: 'UIPL', bank: { id: 'y', name: 'YES BANK' } })
   const ls = deriveVoucherLines({ ...v, id: 'ct1', voucherNumber: 'UIPL/CT/26-27/001', status: 'active' }, accounts)
   ok(v.toAccountCode === '1520' && ls.find(l => l.accountCode === '1520')?.bankAccountId === 'fd1' && ls.find(l => l.accountCode === '1100')?.bankAccountId === 'y' && balanced(ls), 'FD: the transfer debits the FD sub-ledger and credits the current account, balanced')
+}
+
+// ── A bill dated after today is not due yet — unpaid, never "paid"
+{
+  const lines = [{ accountCode: '2100', company: 'UIPL', credit: 188559, debit: 0, date: '2026-10-30', partyName: 'Wayzim', billKey: 'purchase:b1', sourceType: 'purchase', sourceId: 'b1' }]
+  const m = openBillMap(lines, { kind: 'payable', company: 'UIPL', asOf: '2026-10-12' })
+  ok(payStatus(m, 'purchase:b1', 188559).state === 'unpaid' && payStatus(m, 'purchase:b1', 188559).pending === 188559, 'outstanding: a bill dated in the future shows as unpaid, not paid')
+}
+
+// ── Re-checking parked bank entries with today's rules
+{
+  const ctx = { customers: [], vendors: [], banks: [], fds: [], employees: ['Sandeep Kharbanda'], thisBankId: 'y' }
+  const mk = (id, narration, amt, type, code, desc) => ({ id, voucherType: type, status: 'active', bankStatementLine: 'l' + id, narration, amount: amt, accountLines: [{ accountCode: code, amount: amt, description: desc }] })
+  const vs = [
+    mk('1', 'NET TXN: CBDTYPMC 260 60700202787 CBDTMSME', 127415, 'payment', '5900', 'Unidentified payment — parked in Miscellaneous Expenses until you classify it'),
+    mk('2', 'NET-TPT-SANDEEP K HARBANDA-pf for emol oyee-066452000001865', 151316, 'payment', '5110', 'Paid to employee Sandeep Kharbanda'),
+    mk('3', 'SOMEBODY UNKNOWN', 500, 'payment', '5900', 'Unidentified payment — parked in Miscellaneous Expenses until you classify it'),
+    mk('4', 'NET TXN: CBDTYPMC 260 60700202787 CBDTMSME', 100, 'payment', '5900', 'my own note'),
+  ]
+  const p = reclassifyProposals(vs, ctx)
+  ok(p.length === 2 && p[0].suggestion.accountCode === '2500' && p[1].suggestion.accountCode === '2910', 'reclassify: parked entries with a clear home are proposed; unknown and hand-edited ones are left alone')
+  ok(reclassifiedFields(p[0].voucher, p[0].suggestion).accountLines[0].accountCode === '2500', 'reclassify: the ledger on the entry changes to the proposed one')
+  const gstWrong = { id: '9', voucherType: 'payment', status: 'active', partyType: 'vendor', partyId: 'w', partyName: 'Wayzim Technology co ltd', allocations: [], narration: 'MH SGST @ 9.0000 % (GS2523800000180903 HIECIOCOR770831PUN 27AADCUB8036C1ZF', amount: 82.79 }
+  const realPay = { ...gstWrong, id: '10', narration: 'P00012 CIOCOR770831PUN FCYAMT-CNY7,398.00FEX-12.433905', amount: 91986.03 }
+  const pg = reclassifyProposals([gstWrong, realPay], ctx)
+  const fg = pg.length && reclassifiedFields(pg[0].voucher, pg[0].suggestion)
+  ok(pg.length === 1 && pg[0].suggestion.accountCode === '1302' && fg.partyId === '' && fg.accountLines[0].accountCode === '1302', 'reclassify: bank GST booked as a payment to a vendor moves to Input GST; the real remittance stays')
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
