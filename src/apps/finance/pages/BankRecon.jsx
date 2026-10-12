@@ -37,6 +37,7 @@ export default function BankRecon() {
   const [pick, setPick] = useState('')
   const [showEntries, setShowEntries] = useState(false)
   const [showReclass, setShowReclass] = useState(false)
+  const [view, setView] = useState('all')                 // all | matched | unmatched
   const [files, setFiles] = useState([])
   const [showFiles, setShowFiles] = useState(false)          // the stored statement files stay wrapped until asked for
   const loadFiles = () => listStatementFiles(company).then(setFiles).catch(() => setFiles([]))
@@ -128,6 +129,13 @@ export default function BankRecon() {
   }
 
   const bankName = bankId ? banks.find(b => b.id === bankId)?.name : 'Bank (default / unassigned)'
+  // statement lines (matched or not) and the book entries that are not on the statement, oldest first
+  const rowsAll = [
+    ...statement.map(s => { const e = s.matchedKey ? entryByKey[s.matchedKey] : null; return { key: 'b' + s.id, kind: 'bank', date: s.date || '', s, e, matched: !!e } }),
+    ...freeEntries.map(e => ({ key: 'k' + e.key, kind: 'book', date: e.date || '', e, matched: false })),
+  ].sort((a, b) => a.date.localeCompare(b.date))
+  const matchedCount = rowsAll.filter(r => r.matched).length
+  const shownRows = rowsAll.filter(r => view === 'all' || (view === 'matched' ? r.matched : !r.matched))
 
   return (
     <ReportShell title="Bank Reconciliation" loading={loading} subtitle="Match the bank's statement to your bank book and see what has not cleared."
@@ -203,18 +211,34 @@ export default function BankRecon() {
         {rec.difference !== null && <div className={`flex justify-between py-1.5 text-sm font-bold ${Math.abs(rec.difference) < 0.5 ? 'text-green-700' : 'text-red-600'}`}><span>{Math.abs(rec.difference) < 0.5 ? '✓ Reconciled' : 'Unreconciled difference'}</span><span>{fmtAmt(rec.difference)}</span></div>}
       </div>
 
-      <h3 className="font-semibold text-slate-800">Bank statement lines ({statement.length})</h3>
+      {/* every transaction of this bank in one list — bank statement lines and book entries — in three groups */}
+      <div className="flex gap-1 border-b border-slate-200">
+        {[['all', 'All transactions', rowsAll.length], ['matched', 'Matched', matchedCount], ['unmatched', 'Unmatched', rowsAll.length - matchedCount]].map(([k, label, n]) => (
+          <button key={k} onClick={() => setView(k)} className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${view === k ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+            {label} <span className={`text-xs ${k === 'unmatched' && n ? 'text-amber-600 font-semibold' : 'text-slate-400'}`}>{n}</span>
+          </button>))}
+        <span className="ml-auto self-center text-xs text-slate-400 pr-1">{statement.length} bank statement line(s) · {freeEntries.length} book entr{freeEntries.length === 1 ? 'y' : 'ies'} not on the statement</span>
+      </div>
       <div className={`${cardCls} overflow-x-auto`}>
-        <table className="w-full text-sm"><thead className="bg-slate-50/80"><tr><Th>Date</Th><Th>Description</Th><Th>Ref</Th><Th right>Withdrawal</Th><Th right>Deposit</Th><Th>Matched to</Th></tr></thead>
+        <table className="w-full text-sm"><thead className="bg-slate-50/80"><tr><Th>Date</Th><Th>Description</Th><Th>Ref / voucher</Th><Th right>Withdrawal</Th><Th right>Deposit</Th><Th>Status</Th></tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {statement.map(s => {
-              const e = s.matchedKey ? entryByKey[s.matchedKey] : null
+            {shownRows.map(r => {
+              if (r.kind === 'book') {
+                const e = r.e
+                return (
+                  <tr key={r.key} className="bg-amber-50/40 hover:bg-amber-50 cursor-pointer" onClick={() => openKey(e.key.split('|')[0])} title="Open this voucher">
+                    <td className="px-3 py-2 whitespace-nowrap">{e.date}</td><td className="px-3 py-2">{e.party}</td><td className="px-3 py-2 font-mono text-xs">{e.number}</td>
+                    <td className="px-3 py-2 text-right">{e.credit ? fmtAmt(e.credit) : ''}</td><td className="px-3 py-2 text-right">{e.debit ? fmtAmt(e.debit) : ''}</td>
+                    <td className="px-3 py-2"><Badge color="bg-amber-100 text-amber-700">in books, not on the statement</Badge></td>
+                  </tr>)
+              }
+              const s = r.s, e = r.e
               return (
-                <tr key={s.id} className={!s.matchedKey ? 'bg-amber-50/40' : ''}>
+                <tr key={r.key} className={!r.matched ? 'bg-amber-50/40' : ''}>
                   <td className="px-3 py-2 whitespace-nowrap">{s.date}</td><td className="px-3 py-2">{s.description}</td><td className="px-3 py-2 font-mono text-xs">{s.ref}</td>
                   <td className="px-3 py-2 text-right">{s.debit ? fmtAmt(s.debit) : ''}</td><td className="px-3 py-2 text-right">{s.credit ? fmtAmt(s.credit) : ''}</td>
                   <td className="px-3 py-2">
-                    {e ? <span className="text-green-700"><button className="underline font-mono text-xs" title="Open this voucher" onClick={() => openKey(s.matchedKey.split('|')[0])}>{e.number}</button> · {e.date}{canWrite && <button className="text-xs text-slate-400 hover:text-red-500 ml-1" onClick={() => match(s, '')}>unmatch</button>}</span>
+                    {e ? <span className="text-green-700">✓ <button className="underline font-mono text-xs" title="Open this voucher" onClick={() => openKey(s.matchedKey.split('|')[0])}>{e.number}</button> · {e.date}{canWrite && <button className="text-xs text-slate-400 hover:text-red-500 ml-1" onClick={() => match(s, '')}>unmatch</button>}</span>
                       : s.matchedKey ? <span className="text-amber-600">entry changed — <button className="text-xs underline" onClick={() => match(s, '')}>unmatch</button></span>
                       : canWrite ? (
                         <span className="flex gap-1 items-center">
@@ -224,25 +248,15 @@ export default function BankRecon() {
                           </select>
                           <button className="text-xs text-blue-600 hover:underline disabled:opacity-40" disabled={!pick} onClick={() => { match(s, pick); setPick('') }}>match</button>
                           <button className="text-xs text-slate-500 hover:underline" onClick={() => navigate(`/finance/vouchers/${s.credit ? 'receipt' : 'payment'}?new=1`)}>+ entry</button>
-                        </span>) : <Badge color="bg-amber-100 text-amber-700">not in books</Badge>}
+                        </span>) : <Badge color="bg-amber-100 text-amber-700">on the statement, not in books</Badge>}
                   </td>
-                </tr>
-              )
+                </tr>)
             })}
-            {statement.length === 0 && <tr><td colSpan={6}><Empty>No statement imported for this account yet.</Empty></td></tr>}
+            {shownRows.length === 0 && <tr><td colSpan={6}><Empty>{rowsAll.length === 0 ? 'No statement imported for this account yet.' : view === 'matched' ? 'Nothing is matched yet — try Auto-match.' : 'Everything is matched. ✓'}</Empty></td></tr>}
           </tbody>
         </table>
       </div>
 
-      <h3 className="font-semibold text-slate-800">Entries in the books not matched to the statement ({freeEntries.length})</h3>
-      <div className={`${cardCls} overflow-x-auto`}>
-        <table className="w-full text-sm"><thead className="bg-slate-50/80"><tr><Th>Date</Th><Th>Voucher</Th><Th>Particulars</Th><Th right>Deposit</Th><Th right>Payment</Th></tr></thead>
-          <tbody className="divide-y divide-slate-100">
-            {freeEntries.map(e => <tr key={e.key} onClick={() => openKey(e.key.split('|')[0])} className="cursor-pointer hover:bg-blue-50/40" title="Open this voucher"><td className="px-3 py-2">{e.date}</td><td className="px-3 py-2 font-mono text-xs">{e.number}</td><td className="px-3 py-2">{e.party}</td><td className="px-3 py-2 text-right">{e.debit ? fmtAmt(e.debit) : ''}</td><td className="px-3 py-2 text-right">{e.credit ? fmtAmt(e.credit) : ''}</td></tr>)}
-            {freeEntries.length === 0 && <tr><td colSpan={5}><Empty>Everything in the bank book is matched.</Empty></td></tr>}
-          </tbody>
-        </table>
-      </div>
       {docModal}
       <p className="text-xs text-slate-400">Entries from before the new voucher screens have no bank-account link, so they appear only under “Bank (default / unassigned)”. Pick the bank account on every new voucher for exact per-account reconciliation.</p>
     </ReportShell>
