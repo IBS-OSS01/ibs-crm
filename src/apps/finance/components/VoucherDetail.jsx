@@ -105,7 +105,7 @@ export default function VoucherDetail({ entry, voucher, lines, seller, stockItem
                 <tbody className="divide-y divide-slate-100">
                   {voucher.items.map((i, n) => (
                     <tr key={n}><td className="py-1.5 text-slate-700">{i.description}{i.hsnCode && <span className="text-xs text-slate-400"> · HSN {i.hsnCode}</span>}</td>
-                      <td className="text-right">{i.qty} {i.unit}</td><td className="text-right">{fmtAmt(i.rate)}</td><td className="text-right">{num(i.gstRate)}%</td><td className="text-right">{fmtAmt(i.taxable)}</td></tr>
+                      <td className="text-right">{i.qty} {i.unit}{voucher.invoiceType === 'SO' && <span className="block text-[10px] text-slate-400">billed {i.invoicedQty || 0}{i.cancelledQty ? ` · cancelled ${i.cancelledQty}` : ''}</span>}</td><td className="text-right">{fmtAmt(i.rate)}</td><td className="text-right">{num(i.gstRate)}%</td><td className="text-right">{fmtAmt(i.taxable)}</td></tr>
                   ))}
                 </tbody>
               </table>
@@ -115,6 +115,14 @@ export default function VoucherDetail({ entry, voucher, lines, seller, stockItem
               </div>
             </div>
           )}
+
+          {voucher?.invoiceType === 'SO' && (voucher.invoiceLinks || []).length > 0 && (
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Invoices raised against this order</p>
+              <ul className="text-sm text-slate-700 divide-y divide-slate-100">{voucher.invoiceLinks.map(l => <li key={l.id} className="py-1 flex justify-between"><span className="font-mono">{l.number}<span className="text-slate-400 font-sans"> · {l.date}{l.note ? ` · ${l.note}` : ''}</span></span><span>₹{fmtAmt(l.total)}</span></li>)}</ul>
+            </div>
+          )}
+          {voucher?.invoiceType === 'TI' && voucher.sourceOrderNumber && <p className="text-sm text-slate-600"><b>Against sales order:</b> <span className="font-mono">{voucher.sourceOrderNumber}</span></p>}
 
           {voucher?.voucherType === 'stock_journal' && (
             <div className="text-sm text-slate-700 space-y-1">

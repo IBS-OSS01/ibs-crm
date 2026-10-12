@@ -54,7 +54,7 @@ export default function CreditNotesImport({ onClose, onDone }) {
       for (const cn of chosen) { await createVoucher(toCreditVoucher(cn, { stateCode: ctx.seller.stateCode || '27' }), { user, profile: userProfile, lockedUpTo }); done++ }
       invalidateFinanceCache(); onDone?.()
       setResult(`Done — ${done} credit note(s) created and applied to their invoices.`)
-    } catch (ex) { setErr('Stopped: ' + ex.message) } finally { setBusy(false) }
+    } catch (ex) { setErr('Stopped: ' + (ex.code ? ex.code + ' — ' : '') + ex.message) } finally { setBusy(false) }
   }
 
   return (

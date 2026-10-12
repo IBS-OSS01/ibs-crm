@@ -10,7 +10,7 @@ import { r2, num } from '../utils/financeConstants.js'
 // a sales invoice shown like a voucher: items with their taxable value, tax lines, creator
 const invoiceView = (inv) => inv && ({
   ...inv, voucherType: 'invoice',
-  items: (inv.items || []).map(i => ({ ...i, taxable: r2(num(i.qty) * num(i.rate)) })),
+  items: (inv.items || []).map(i => ({ ...i, taxable: r2(num(i.qty) * num(i.rate) * (1 - Math.min(100, Math.max(0, num(i.discountPct))) / 100)) })),
   createdByName: inv.createdByName || '', revision: 1,
 })
 
