@@ -8,6 +8,7 @@ import { VOUCHER_TYPES, fmtAmt, num } from '../utils/financeConstants.js'
 import { amountInWords } from '../utils/indiaConstants.js'
 import { Badge, btnGhost, btnPrimary, useFinancePerms } from './FinanceUI.jsx'
 import AttachmentPanel from './AttachmentPanel.jsx'
+import { PO_TERMS, termsHtml } from '../utils/poTerms.js'
 
 const LEGACY_PAGES = {
   finance_invoices: ['/finance/invoices', 'Invoices'],
@@ -36,7 +37,8 @@ function printVoucher(entry, voucher, lines, seller) {
     <div style="font-style:italic;color:#444">${esc(amountInWords(entry.amount))}</div>
     ${entry.narration ? `<p><b>Narration:</b> ${esc(entry.narration)}</p>` : ''}
     <h4 style="margin-bottom:0">Ledger entries</h4><table><thead><tr><th>Account</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th></tr></thead><tbody>${entries}</tbody></table>
-    <div style="margin-top:40px;text-align:right">Authorised signatory</div></body></html>`
+    <div style="margin-top:40px;text-align:right">Authorised signatory</div>
+    ${(voucher?.voucherType === 'purchase_order' || entry.kind === 'purchase_order') ? `<div style="page-break-before:always">${termsHtml(voucher?.termsAndConditions || PO_TERMS)}</div>` : ''}</body></html>`
   const w = window.open('', '_blank', 'width=900,height=800')
   if (!w) { alert('The print window was blocked — allow pop-ups and try again.'); return }
   w.document.write(html); w.document.close(); setTimeout(() => w.print(), 400)
@@ -142,6 +144,7 @@ export default function VoucherDetail({ entry, voucher, lines, seller, stockItem
 
           {isNewVoucher && voucher && <AttachmentPanel entityType={voucher.voucherType} entityId={voucher.id} company={voucher.company} editable={canWrite && !cancelled} />}
           {entry.narration && <p className="text-sm text-slate-600"><b>Narration:</b> {entry.narration}</p>}
+          {(voucher?.voucherType === 'purchase_order' || entry.kind === 'purchase_order') && <details className="text-sm"><summary className="cursor-pointer text-blue-700 font-medium">Terms &amp; conditions (printed with this order)</summary><pre className="whitespace-pre-wrap text-xs text-slate-600 mt-2 max-h-72 overflow-y-auto font-sans">{voucher?.termsAndConditions || PO_TERMS}</pre></details>}
           {cancelled && <p className="text-sm text-red-600"><b>Cancelled:</b> {voucher.cancelReason} — {voucher.cancelledByName}, {voucher.cancelledAt?.slice(0, 10)}</p>}
           {voucher && <p className="text-xs text-slate-400">Created by {voucher.createdByName || '—'} on {voucher.createdAt?.slice(0, 10)}{voucher.revision > 1 ? ` · revision ${voucher.revision}, last edited by ${voucher.updatedByName || '—'} on ${voucher.updatedAt?.slice(0, 10)}` : ''}</p>}
         </div>

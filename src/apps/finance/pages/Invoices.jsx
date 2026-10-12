@@ -51,6 +51,16 @@ const emptyForm = {
   notes: '', termsAndConditions: '', subject: '',
 }
 
+// one labelled row of the invoice form: label on the left (red when required), field on the right
+function FRow({ label, req, children, hint }) {
+  return (
+    <div className="flex gap-4 items-start">
+      <label className={`w-44 shrink-0 pt-2 text-sm ${req ? 'text-red-500' : 'text-slate-700'}`}>{label}{req ? '*' : ''}</label>
+      <div className="flex-1 min-w-0">{children}{hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}</div>
+    </div>
+  )
+}
+const Pencil = ({ onClick, title = 'Edit' }) => <button type="button" onClick={onClick} title={title} className="ml-1.5 text-blue-500 hover:text-blue-700 text-xs align-middle">✎</button>
 const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 const lbl = 'block text-xs font-medium text-slate-600 mb-1'
 
@@ -200,6 +210,7 @@ export default function Invoices() {
   const navigate = useNavigate()
   const tab = TABS.find(t => t.key === params.get('tab')) || TABS[0]
   const [editingId, setEditingId] = useState('')
+  const [edAddr, setEdAddr] = useState({ bill: false, ship: false, gst: false })     // which address / GST blocks are open for editing
   const [convertFor, setConvertFor] = useState(null)        // the sales order being invoiced
   const [showOrdersImport, setShowOrdersImport] = useState(false)
   const [showCnImport, setShowCnImport] = useState(false)
@@ -459,76 +470,96 @@ export default function Invoices() {
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>
 
   // ── FORM VIEW ──────────────────────────────────────────────────────────────
-  if (view === 'form') return (
-    <div className="p-4 max-w-5xl space-y-4">
-      <div className="flex items-center gap-3">
-        <button onClick={() => { setEditingId(''); setForm(emptyForm); setItems([newItem()]); setView('list') }} className="text-slate-500 hover:text-slate-700">← Back</button>
-        <h2 className="text-xl font-bold text-slate-900 tracking-tight">{editingId ? `Edit ${INVOICE_TYPES.find(t => t.code === form.invoiceType)?.label || 'Invoice'} — ${invoices.find(i => i.id === editingId)?.invoiceNumber || ''}` : `New ${INVOICE_TYPES.find(t => t.code === form.invoiceType)?.label || 'Invoice'}`}</h2>
+  if (view === 'form') {
+    const typeLbl = INVOICE_TYPES.find(t => t.code === form.invoiceType)?.label || 'Invoice'
+    const docLbl = typeLbl === 'Tax Invoice' ? 'Invoice' : typeLbl
+    const billLines = [form.billToAddress, [form.billToCity, form.billToState, form.billToPincode].filter(Boolean).join(', ')].filter(Boolean)
+    const shipLines = form.sameShipTo ? billLines : [form.shipToName, form.shipToAddress, [form.shipToCity, form.shipToState, form.shipToPincode].filter(Boolean).join(', ')].filter(Boolean)
+    const gstTreat = form.isExport ? 'Overseas' : form.billToGstin ? 'Registered Business - Regular' : 'Unregistered Business'
+    const goBack = () => { setEditingId(''); setForm(emptyForm); setItems([newItem()]); setEdAddr({ bill: false, ship: false, gst: false }); setView('list') }
+    return (
+    <div className="max-w-5xl">
+      <div className="flex items-center gap-3 px-6 pt-5 pb-3">
+        <span className="w-9 h-9 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center text-lg">🧾</span>
+        <h2 className="text-xl font-semibold text-slate-900">{editingId ? 'Edit' : 'New'} {docLbl}</h2>
       </div>
-      {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
-      <form onSubmit={handleSave} className="space-y-4">
+      {error && <div className="mx-6 mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
+      <form onSubmit={handleSave}>
 
-        {/* 1 · Customer and their details */}
-        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-5 grid md:grid-cols-[1fr_1.2fr] gap-6">
-          <div className="space-y-3">
+        {/* customer and where the supply is */}
+        <div className="bg-slate-50 border-y border-slate-200 px-6 py-5 space-y-4">
+          <FRow label="Customer Name" req>
+            <div className="flex gap-2 max-w-xl">
+              <div className="flex-1"><SearchSelect className={inp} value={form.customerId} onChange={handleCustomerChange} placeholder="Select or add a customer" options={customers.map(c => ({ value: c.id, label: c.shopName }))} /></div>
+              <span className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-600 whitespace-nowrap">{fx.isFc ? fx.currency : 'INR'}</span>
+            </div>
+            <input className={`${inp} max-w-xl mt-2`} value={form.billToName} onChange={e => setForm(p => ({ ...p, billToName: e.target.value }))} placeholder="Name on the invoice" required />
+          </FRow>
+
+          <div className="pl-0 md:pl-[11rem] grid md:grid-cols-2 gap-x-8 gap-y-4 text-sm text-slate-700">
             <div>
-              <label className={lbl}>Customer name *</label>
-              <SearchSelect className={inp} value={form.customerId} onChange={handleCustomerChange} placeholder="Select or type to search a customer…" options={customers.map(c => ({ value: c.id, label: c.shopName }))} />
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Billing address<Pencil onClick={() => setEdAddr(e => ({ ...e, bill: !e.bill }))} /></p>
+              {edAddr.bill ? (
+                <div className="space-y-2 mt-1.5"><input className={inp} value={form.billToAddress} onChange={e => setForm(p => ({ ...p, billToAddress: e.target.value }))} placeholder="Street address" />
+                  <div className="grid grid-cols-2 gap-2"><input className={inp} value={form.billToCity} onChange={e => setForm(p => ({ ...p, billToCity: e.target.value }))} placeholder="City" /><input className={inp} value={form.billToPincode} onChange={e => setForm(p => ({ ...p, billToPincode: e.target.value }))} placeholder="Pincode" /></div></div>
+              ) : <div className="mt-1">{form.billToName && <p className="font-semibold">{form.billToName}</p>}{billLines.length ? billLines.map((l, i) => <p key={i}>{l}</p>) : <p className="text-slate-400">No address yet — click ✎ to add</p>}</div>}
             </div>
-            <div><label className={lbl}>Billing name *</label><input className={inp} value={form.billToName} onChange={e => setForm(p => ({ ...p, billToName: e.target.value }))} required /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className={lbl}>Document type</label>
-                <select className={inp} value={form.invoiceType} onChange={e => setForm(p => ({ ...p, invoiceType: e.target.value }))}>{INVOICE_TYPES.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}</select></div>
-              <div className="flex items-end pb-2"><label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer"><input type="checkbox" checked={form.applyGst} onChange={e => setForm(p => ({ ...p, applyGst: e.target.checked }))} />Apply GST</label></div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Shipping address<Pencil onClick={() => setEdAddr(e => ({ ...e, ship: !e.ship }))} /></p>
+              {edAddr.ship ? (
+                <div className="space-y-2 mt-1.5">
+                  <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer"><input type="checkbox" checked={form.sameShipTo} onChange={e => setForm(p => ({ ...p, sameShipTo: e.target.checked }))} />Same as billing address</label>
+                  {!form.sameShipTo && <><input className={inp} value={form.shipToName} onChange={e => setForm(p => ({ ...p, shipToName: e.target.value }))} placeholder="Name" /><input className={inp} value={form.shipToAddress} onChange={e => setForm(p => ({ ...p, shipToAddress: e.target.value }))} placeholder="Street address" />
+                    <div className="grid grid-cols-2 gap-2"><input className={inp} value={form.shipToCity} onChange={e => setForm(p => ({ ...p, shipToCity: e.target.value }))} placeholder="City" /><input className={inp} value={form.shipToPincode} onChange={e => setForm(p => ({ ...p, shipToPincode: e.target.value }))} placeholder="Pincode" /></div></>}
+                </div>
+              ) : <div className="mt-1">{shipLines.length ? shipLines.map((l, i) => <p key={i}>{l}</p>) : <p className="text-slate-400">Same as billing</p>}</div>}
             </div>
-            <CurrencyBar fx={fx} date={form.invoiceDate} totalFc={total} label="Currency" />
-          </div>
-          <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-3">
-            <p className="text-sm font-semibold text-slate-800">{form.billToName ? `${form.billToName}'s details` : 'Customer details'}</p>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Billing address</p>
-                <input className={inp} value={form.billToAddress} onChange={e => setForm(p => ({ ...p, billToAddress: e.target.value }))} placeholder="Street address" />
-                <div className="grid grid-cols-2 gap-2"><input className={inp} value={form.billToCity} onChange={e => setForm(p => ({ ...p, billToCity: e.target.value }))} placeholder="City" /><input className={inp} value={form.billToPincode} onChange={e => setForm(p => ({ ...p, billToPincode: e.target.value }))} placeholder="Pincode" /></div>
-                <p className="text-xs text-slate-400">{[form.billToState, form.billToGstin ? 'GSTIN ' + form.billToGstin : ''].filter(Boolean).join(' · ')}</p>
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Shipping address</p>
-                <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer"><input type="checkbox" checked={form.sameShipTo} onChange={e => setForm(p => ({ ...p, sameShipTo: e.target.checked }))} />Same as billing address</label>
-                {!form.sameShipTo && <>
-                  <input className={inp} value={form.shipToAddress} onChange={e => setForm(p => ({ ...p, shipToAddress: e.target.value }))} placeholder="Street address" />
-                  <div className="grid grid-cols-2 gap-2"><input className={inp} value={form.shipToCity} onChange={e => setForm(p => ({ ...p, shipToCity: e.target.value }))} placeholder="City" /><input className={inp} value={form.shipToPincode} onChange={e => setForm(p => ({ ...p, shipToPincode: e.target.value }))} placeholder="Pincode" /></div>
-                </>}
-              </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Billing recipient GST details<Pencil onClick={() => setEdAddr(e => ({ ...e, gst: !e.gst }))} /></p>
+              <p className="mt-1">GST Treatment: <b className="font-medium">{gstTreat}</b></p>
+              {edAddr.gst ? <input className={`${inp} mt-1.5`} value={form.billToGstin} maxLength={15} onChange={e => setForm(p => ({ ...p, billToGstin: e.target.value.toUpperCase() }))} placeholder="GSTIN" /> : <p>GSTIN: <span className="font-mono text-xs">{form.billToGstin || '—'}</span></p>}
             </div>
-            <div className="grid sm:grid-cols-2 gap-4 pt-1 border-t border-slate-200">
-              <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Billing recipient GST details</p>
-                <p className="text-xs text-slate-600">GST treatment: <b>{form.isExport ? 'Overseas' : form.billToGstin ? 'Registered business' : 'Unregistered business'}</b></p>
-                <input className={inp} value={form.billToGstin} maxLength={15} onChange={e => setForm(p => ({ ...p, billToGstin: e.target.value.toUpperCase() }))} placeholder="GSTIN" />
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Shipping recipient GST details</p>
-                <input className={inp} value={form.shipToGstin} maxLength={15} disabled={form.sameShipTo} onChange={e => setForm(p => ({ ...p, shipToGstin: e.target.value.toUpperCase() }))} placeholder={form.sameShipTo ? 'Same as billing' : 'GSTIN'} />
-                <input className={inp} value={form.shipToName} disabled={form.sameShipTo} onChange={e => setForm(p => ({ ...p, shipToName: e.target.value }))} placeholder="Business legal name" />
-              </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Shipping recipient GST details</p>
+              {edAddr.ship && !form.sameShipTo
+                ? <div className="space-y-2 mt-1.5"><input className={inp} value={form.shipToGstin} maxLength={15} onChange={e => setForm(p => ({ ...p, shipToGstin: e.target.value.toUpperCase() }))} placeholder="GSTIN" /></div>
+                : <><p className="mt-1">GSTIN: <span className="font-mono text-xs">{form.sameShipTo ? '' : form.shipToGstin}</span></p><p>Business Legal Name: {form.sameShipTo ? '' : form.shipToName}</p></>}
             </div>
           </div>
+
+          <FRow label="Place of Supply" req>
+            <select className={`${inp} max-w-sm`} value={form.posState} onChange={e => handlePosChange(e.target.value)}><option value="">— select state —</option>{INDIA_STATES.map(s => <option key={s.code} value={s.name}>{s.name} ({s.code})</option>)}</select>
+            {form.applyGst && form.posStateCode && seller.stateCode && <span className={`ml-3 text-xs font-medium ${form.posStateCode === seller.stateCode ? 'text-green-700' : 'text-orange-700'}`}>{form.posStateCode === seller.stateCode ? '✓ Intra-state → CGST + SGST' : '↗ Inter-state → IGST'}</span>}
+          </FRow>
+          <FRow label="Location" hint={`Source of Supply: ${seller.state || '—'}${seller.stateCode ? ` (${seller.stateCode})` : ''}${seller.gstin ? ' · GSTIN ' + seller.gstin : ''}`}>
+            <div className="max-w-sm px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-700">{seller.legalName ? 'Pune HQ' : (seller.city || form.company)}</div>
+          </FRow>
         </div>
 
-        {/* 2 · Place of supply / source of supply (+ export) */}
-        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-5 space-y-3">
-          <div className="grid md:grid-cols-3 gap-4 items-end">
-            <div><label className={lbl}>Place of supply *</label>
-              <select className={inp} value={form.posState} onChange={e => handlePosChange(e.target.value)}><option value="">— select state —</option>{INDIA_STATES.map(s => <option key={s.code} value={s.name}>{s.name} ({s.code})</option>)}</select></div>
-            <div><label className={lbl}>Source of supply</label><div className="px-3 py-2 bg-slate-100 rounded-lg text-sm text-slate-700">{seller.state || '—'}{seller.stateCode ? ` (${seller.stateCode})` : ''}</div></div>
-            {form.applyGst && form.posStateCode && seller.stateCode && (
-              <div className={`text-xs px-3 py-2 rounded-lg font-medium ${form.posStateCode === seller.stateCode ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'}`}>{form.posStateCode === seller.stateCode ? '✓ Intra-state supply → CGST + SGST' : '↗ Inter-state supply → IGST'}</div>)}
+        {/* invoice details */}
+        <div className="px-6 py-5 space-y-4">
+          <FRow label={`${docLbl}#`} req><div className="max-w-sm px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-mono text-slate-700">{editingId ? (invoices.find(i => i.id === editingId)?.invoiceNumber || '') : 'Assigned when saved'}</div></FRow>
+          <FRow label="Order Number"><input className={`${inp} max-w-sm`} value={form.poNumber} onChange={e => setForm(p => ({ ...p, poNumber: e.target.value }))} /></FRow>
+          <FRow label={`${docLbl} Date`} req>
+            <div className="flex items-center gap-4 flex-wrap">
+              <input type="date" className={`${inp} max-w-[11rem]`} value={form.invoiceDate} onChange={e => setForm(p => ({ ...p, invoiceDate: e.target.value }))} />
+              <span className="text-sm text-slate-700">Terms</span>
+              <select className={`${inp} max-w-[10rem]`} value={form.terms} onChange={e => setForm(p => ({ ...p, terms: e.target.value }))}>{TERMS_OPTS.map(t => <option key={t}>{t}</option>)}</select>
+              <span className="text-sm text-slate-700">Due Date</span>
+              <input type="date" className={`${inp} max-w-[11rem]`} value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} />
+            </div>
+          </FRow>
+          <hr className="border-slate-200" />
+          <FRow label="Subject"><textarea className={`${inp} max-w-xl h-16 resize-none`} value={form.subject || ''} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} placeholder="Let your customer know what this invoice is for" /></FRow>
+          <hr className="border-slate-200" />
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-600">
+            <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.applyGst} onChange={e => setForm(p => ({ ...p, applyGst: e.target.checked }))} />Apply GST (tax exclusive)</label>
+            <label className="flex items-center gap-2">Document type <select className={`${inp} w-44`} value={form.invoiceType} onChange={e => setForm(p => ({ ...p, invoiceType: e.target.value }))}>{INVOICE_TYPES.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}</select></label>
+            <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.isExport} onChange={e => setForm(p => ({ ...p, isExport: e.target.checked }))} />Export supply (customer outside India)</label>
           </div>
-          <p className="text-xs text-slate-400">{[seller.legalName || form.company, seller.gstin && `GSTIN ${seller.gstin}`].filter(Boolean).join(' · ')}{!seller.legalName && ' — ⚠ configure seller details in Finance → Company Settings'}</p>
-          <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer font-medium"><input type="checkbox" checked={form.isExport} onChange={e => setForm(p => ({ ...p, isExport: e.target.checked }))} />Export supply (goods or services to a customer outside India)</label>
+          <CurrencyBar fx={fx} date={form.invoiceDate} totalFc={total} label="Invoice currency" />
           {form.isExport && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div className="col-span-2"><label className={lbl}>Tax treatment</label>
                 <select className={inp} value={form.exportType} onChange={e => setForm(p => ({ ...p, exportType: e.target.value }))}><option value="WOPAY">Zero-rated under LUT — no GST charged</option><option value="WPAY">With payment of IGST (refund claimed later)</option></select></div>
               <div><label className={lbl}>Shipping bill no.</label><input className={inp} value={form.shippingBillNo} onChange={e => setForm(p => ({ ...p, shippingBillNo: e.target.value }))} /></div>
@@ -536,78 +567,68 @@ export default function Invoices() {
               <div><label className={lbl}>Port code</label><input className={inp} value={form.portCode} maxLength={6} onChange={e => setForm(p => ({ ...p, portCode: e.target.value.toUpperCase() }))} /></div>
               <p className="col-span-full text-xs text-slate-400">Exports appear in GSTR-1 table 6A. The shipping bill details can be added later by your CA on the portal; leave blank for services.</p>
             </div>)}
-        </div>
 
-        {/* 3 · Invoice details */}
-        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-5 grid grid-cols-2 md:grid-cols-3 gap-4">
-          <div><label className={lbl}>{INVOICE_TYPES.find(t => t.code === form.invoiceType)?.label || 'Invoice'} #</label><div className="px-3 py-2 bg-slate-100 rounded-lg text-sm font-mono text-slate-700">{editingId ? (invoices.find(i => i.id === editingId)?.invoiceNumber || '') : 'Assigned when saved'}</div></div>
-          <div><label className={lbl}>Order number</label><input className={inp} value={form.poNumber} onChange={e => setForm(p => ({ ...p, poNumber: e.target.value }))} /></div>
-          <div><label className={lbl}>Invoice date</label><input type="date" className={inp} value={form.invoiceDate} onChange={e => setForm(p => ({ ...p, invoiceDate: e.target.value }))} /></div>
-          <div><label className={lbl}>Terms</label><select className={inp} value={form.terms} onChange={e => setForm(p => ({ ...p, terms: e.target.value }))}>{TERMS_OPTS.map(t => <option key={t}>{t}</option>)}</select></div>
-          <div><label className={lbl}>Due date</label><input type="date" className={inp} value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} /></div>
-          <div className="col-span-2 md:col-span-3"><label className={lbl}>Subject</label><input className={inp} value={form.subject || ''} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} placeholder="Let your customer know what this invoice is for" /></div>
-        </div>
+          {/* item table */}
+          <div className="rounded-lg border border-slate-200 overflow-hidden">
+            <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between"><p className="text-sm font-semibold text-slate-700">Item Table</p><span className="text-xs text-slate-400">Tax exclusive</span></div>
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                <tr><th className="px-3 py-2 text-left" style={{ width: '40%' }}>Item details</th><th className="px-3 py-2 text-left" style={{ width: '15%' }}>Quantity</th><th className="px-3 py-2 text-left" style={{ width: '13%' }}>Rate ({fx.isFc ? fx.symbol : '₹'})</th><th className="px-3 py-2 text-left" style={{ width: '9%' }}>Discount %</th><th className="px-3 py-2 text-left" style={{ width: '10%' }}>Tax %</th><th className="px-3 py-2 text-right" style={{ width: '13%' }}>Amount</th><th style={{ width: '3%' }} /></tr>
+              </thead>
+              <tbody>
+                {items.map((it, idx) => {
+                  const amt = lineBase(it), service = /^99/.test(String(it.hsnCode || '').trim())
+                  return (
+                    <tr key={idx} className="border-t border-slate-100 align-top">
+                      <td className="px-3 py-3 space-y-1.5">
+                        {stockItems.length > 0 && (
+                          <select className={`${inp} text-xs text-slate-500`} value={it.stockItemId || ''} onChange={e => pickStockItem(idx, e.target.value)}><option value="">Type or click to select an item</option>{stockItems.map(x => <option key={x.id} value={x.id}>{x.sku ? `${x.sku} · ` : ''}{x.name}</option>)}</select>)}
+                        <textarea className={`${inp} h-16 resize-none`} value={it.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Item name and description" />
+                        <div className="flex items-center gap-2">
+                          {it.hsnCode ? <span className={`text-[10px] font-bold rounded px-1.5 py-0.5 ${service ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'}`}>{service ? 'SERVICE' : 'GOODS'}</span> : null}
+                          <span className="text-xs text-slate-500">{service ? 'SAC' : 'HSN'}:</span>
+                          <input className={`${inp} text-xs w-32 py-1`} value={it.hsnCode} onChange={e => { updateItem(idx, 'hsnCode', e.target.value); handleHsnLookup(idx, e.target.value) }} placeholder="code" />
+                        </div>
+                      </td>
+                      <td className="px-3 py-3"><input type="number" className={inp} value={it.qty} min={0} onChange={e => updateItem(idx, 'qty', e.target.value)} /><select className={`${inp} mt-1.5 text-xs`} value={it.unit} onChange={e => updateItem(idx, 'unit', e.target.value)}>{UNITS.map(u => <option key={u}>{u}</option>)}</select></td>
+                      <td className="px-3 py-3"><input type="number" className={inp} value={it.rate} min={0} step="any" onChange={e => updateItem(idx, 'rate', e.target.value)} /></td>
+                      <td className="px-3 py-3"><input type="number" className={inp} value={it.discountPct ?? ''} min={0} max={100} onChange={e => updateItem(idx, 'discountPct', e.target.value)} placeholder="0" /></td>
+                      <td className="px-3 py-3"><input type="number" className={inp} value={it.gstRate} min={0} max={40} onChange={e => updateItem(idx, 'gstRate', e.target.value)} /></td>
+                      <td className="px-3 py-3 text-right font-semibold text-slate-800">{sym}{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                      <td className="px-1 py-3 text-center">{items.length > 1 && <button type="button" onClick={() => setItems(p => p.filter((_, i) => i !== idx))} className="text-slate-300 hover:text-red-500 text-lg">×</button>}</td>
+                    </tr>)
+                })}
+              </tbody>
+            </table>
+            </div>
+          </div>
+          <button type="button" onClick={() => setItems(p => [...p, newItem()])} className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-medium">⊕ Add New Row</button>
 
-        {/* 4 · Item table */}
-        <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 overflow-hidden">
-          <div className="px-4 py-2 bg-slate-50 border-b flex items-center justify-between"><p className="text-xs font-bold uppercase text-slate-600">Item table</p><button type="button" onClick={() => setItems(p => [...p, newItem()])} className="text-blue-600 hover:text-blue-700 text-sm font-medium">+ Add new row</button></div>
-          <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider">
-              <tr><th className="px-3 py-2 text-left" style={{ width: '38%' }}>Item details</th><th className="px-3 py-2 text-left" style={{ width: '14%' }}>Quantity</th><th className="px-3 py-2 text-left" style={{ width: '12%' }}>Rate ({fx.isFc ? fx.symbol : '₹'})</th><th className="px-3 py-2 text-left" style={{ width: '9%' }}>Discount %</th><th className="px-3 py-2 text-left" style={{ width: '9%' }}>Tax %</th><th className="px-3 py-2 text-right" style={{ width: '14%' }}>Amount</th><th style={{ width: '4%' }} /></tr>
-            </thead>
-            <tbody>
-              {items.map((it, idx) => {
-                const amt = lineBase(it)
-                return (
-                  <tr key={idx} className="border-t border-slate-100 align-top">
-                    <td className="px-2 py-2 space-y-1">
-                      {stockItems.length > 0 && (
-                        <select className={`${inp} text-xs text-slate-500`} value={it.stockItemId || ''} onChange={e => pickStockItem(idx, e.target.value)}><option value="">Type or click to select an item (or free text below)</option>{stockItems.map(x => <option key={x.id} value={x.id}>{x.sku ? `${x.sku} · ` : ''}{x.name}</option>)}</select>)}
-                      <input className={inp} value={it.description} onChange={e => updateItem(idx, 'description', e.target.value)} placeholder="Item description" />
-                      <input className={`${inp} text-xs`} value={it.hsnCode} onChange={e => { updateItem(idx, 'hsnCode', e.target.value); handleHsnLookup(idx, e.target.value) }} placeholder="HSN / SAC" />
-                    </td>
-                    <td className="px-2 py-2"><div className="flex gap-1"><input type="number" className={inp} value={it.qty} min={0} onChange={e => updateItem(idx, 'qty', e.target.value)} /><select className={`${inp} w-20`} value={it.unit} onChange={e => updateItem(idx, 'unit', e.target.value)}>{UNITS.map(u => <option key={u}>{u}</option>)}</select></div></td>
-                    <td className="px-2 py-2"><input type="number" className={inp} value={it.rate} min={0} onChange={e => updateItem(idx, 'rate', e.target.value)} /></td>
-                    <td className="px-2 py-2"><input type="number" className={inp} value={it.discountPct ?? ''} min={0} max={100} onChange={e => updateItem(idx, 'discountPct', e.target.value)} placeholder="0" /></td>
-                    <td className="px-2 py-2"><input type="number" className={inp} value={it.gstRate} min={0} max={40} onChange={e => updateItem(idx, 'gstRate', e.target.value)} /></td>
-                    <td className="px-2 py-2 text-right font-medium">{sym}{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2 py-2 text-center">{items.length > 1 && <button type="button" onClick={() => setItems(p => p.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 text-lg">×</button>}</td>
-                  </tr>)
-              })}
-            </tbody>
-          </table>
+          {/* notes + totals */}
+          <div className="grid md:grid-cols-[1.3fr_1fr] gap-6 pt-2">
+            <div className="space-y-3">
+              <div><label className={lbl}>Customer notes</label><textarea className={`${inp} h-20 resize-none`} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Thanks for your business." /><p className="text-xs text-slate-400 mt-1">Will be displayed on the invoice</p></div>
+              <div><label className={lbl}>Terms &amp; conditions</label><textarea className={`${inp} h-24 resize-none`} value={form.termsAndConditions} onChange={e => setForm(p => ({ ...p, termsAndConditions: e.target.value }))} /></div>
+            </div>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-5 text-sm space-y-2 self-start">
+              <div className="flex justify-between font-semibold"><span>Sub Total</span><span>{sym}{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+              {gstLines.map((g, i) => <div key={i} className="flex justify-between text-slate-600"><span>{g.label.replace(/\s+(\d+(\.\d+)?)%$/, ' [$1%]')}</span><span>{g.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
+              <div className="flex justify-between text-slate-500"><span>Round off</span><span>{roundOff.toFixed(2)}</span></div>
+              <div className="flex justify-between font-bold text-base border-t border-slate-300 pt-2"><span>Total ({sym.trim()})</span><span>{total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+              {booked && <div className="flex justify-between text-xs text-amber-800 bg-amber-50 rounded px-2 py-1"><span>Booked in accounts as</span><span className="font-semibold">₹{booked.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>}
+            </div>
           </div>
         </div>
 
-        {/* 5 · Notes, terms and totals */}
-        <div className="grid md:grid-cols-[1.3fr_1fr] gap-4">
-          <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-5 space-y-3">
-            <div><label className={lbl}>Customer notes</label><textarea className={`${inp} h-20 resize-none`} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Thanks for your business." /><p className="text-xs text-slate-400 mt-1">Will be displayed on the invoice</p></div>
-            <div><label className={lbl}>Terms &amp; conditions</label><textarea className={`${inp} h-24 resize-none`} value={form.termsAndConditions} onChange={e => setForm(p => ({ ...p, termsAndConditions: e.target.value }))} /></div>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm space-y-1.5 self-start">
-            <div className="flex justify-between"><span className="text-slate-500">Sub total</span><span className="font-medium">{sym}{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
-            {gstLines.map((g, i) => <div key={i} className="flex justify-between text-slate-600"><span>{g.label}</span><span>{sym}{g.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
-            <div className="flex justify-between text-slate-500"><span>Round off</span><span>{roundOff.toFixed(2)}</span></div>
-            <div className="flex justify-between font-bold text-base border-t border-slate-300 pt-2 mt-1"><span>Total ({sym.trim()})</span><span>{sym}{total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
-            {booked && <div className="flex justify-between text-xs text-amber-800 bg-amber-50 rounded px-2 py-1"><span>Booked in accounts as</span><span className="font-semibold">₹{booked.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>}
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <button type="submit" disabled={saving}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">
-            {saving ? 'Saving…' : editingId ? 'Save changes' : `Create ${INVOICE_TYPES.find(t => t.code === form.invoiceType)?.label || 'Invoice'}`}
-          </button>
-          <button type="button" onClick={() => { setEditingId(''); setView('list'); setForm(emptyForm); setItems([newItem()]) }}
-            className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg">
-            Cancel
-          </button>
+        <div className="sticky bottom-0 z-10 bg-white/95 backdrop-blur border-t border-slate-200 px-6 py-3 flex gap-3">
+          <button type="submit" disabled={saving} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
+          <button type="button" onClick={goBack} className="px-6 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg">Cancel</button>
         </div>
       </form>
     </div>
-  )
+    )
+  }
 
   // ── LIST VIEW ──────────────────────────────────────────────────────────────
   return (

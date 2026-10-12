@@ -7,7 +7,7 @@ import { convertTotals } from '../utils/fx.js'
 import ItemsEditor, { newLine, TotalsBox } from './ItemsEditor.jsx'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
 import SearchSelect from './SearchSelect.jsx'
-import { VendorCard, SupplyRow, NotesTotals } from './DocLayout.jsx'
+import { Band, Body, FRow, ReadBox, PartyBlock, SupplyChip, ItemCard, NotesTotals } from './DocLayout.jsx'
 import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
   Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar, groupFlag,
@@ -85,47 +85,52 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
   })
 
   return (
-    <FormShell title={initial && !initial._clone ? `Edit Purchase — ${initial.voucherNumber}` : 'Purchase Voucher'} subtitle="Records a vendor bill with input tax credit; the vendor's payable is raised automatically." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
-      <VendorCard vendors={vendors} vendorId={vendorId} onPick={pickVendor} vendor={vendor}>
-        <Field label="Order number / vendor invoice no."><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
-        <CurrencyBar fx={fx} date={date} totalFc={totals.total} />
-      </VendorCard>
-
-      <SupplyRow sourceState={vendor?.state || (vendor?.gstin ? '' : '')} destState={raw?.companySettings?.[company]?.state || ''} supplyType={supplyType} hasVendor={!!vendor}>
-        {vendor && !vendor.gstin && <p className="text-xs text-amber-600">Unregistered supplier — usually no GST, unless reverse charge applies.</p>}
-        {!compState && <p className="text-xs text-amber-600">Set your own state in Company Settings so CGST/SGST vs IGST is right.</p>}
-        <div className="flex gap-5 flex-wrap text-sm">
+    <FormShell title={initial && !initial._clone ? `Edit Purchase — ${initial.voucherNumber}` : 'Purchase Voucher'} subtitle="Records a vendor bill with input tax credit; the vendor's payable is raised automatically." bands onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
+      <Band>
+        <PartyBlock label="Vendor Name" options={vendors.map(v => ({ value: v.id, label: v.name }))} value={vendorId} onPick={pickVendor} name={vendor?.name} gstin={vendor?.gstin} pan={vendor?.pan} master={vendor?.raw} currency={fx.isFc ? fx.currency : 'INR'} />
+        <FRow label="Destination of Supply" hint={vendor ? `Source of Supply: ${vendor.state || '—'}${vendor.gstin ? '' : ' · unregistered supplier — usually no GST, unless reverse charge applies'}` : ''}>
+          <div className="flex items-center"><ReadBox>{raw?.companySettings?.[company]?.state || '—'}</ReadBox><SupplyChip ready={!!vendor} supplyType={supplyType} /></div>
+          {!compState && <p className="text-xs text-amber-600 mt-1">Set your own state in Company Settings so CGST/SGST vs IGST is right.</p>}
+        </FRow>
+      </Band>
+      <Body>
+        <FRow label="Bill#" req><ReadBox mono>{initial && !initial._clone ? initial.voucherNumber : 'Assigned when saved'}</ReadBox></FRow>
+        <FRow label="Order Number" hint="The vendor's own invoice / order number"><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={`${formInputCls} max-w-sm`} /></FRow>
+        <FRow label="Bill Date" req>
+          <div className="flex items-center gap-4 flex-wrap">
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} className={`${formInputCls} max-w-[11rem]`} required />
+            <span className="text-sm text-slate-700">Credit days</span><input type="number" min="0" value={creditDays} onChange={e => setCreditDays(e.target.value)} className={`${formInputCls} max-w-[6rem]`} />
+            <span className="text-sm text-slate-700">Due Date</span><div className={`${formInputCls} max-w-[11rem] bg-slate-100`}>{addDays(date, creditDays) || '—'}</div>
+          </div>
+        </FRow>
+        <FRow label="Vendor invoice date"><input type="date" value={refDate} onChange={e => setRefDate(e.target.value)} className={`${formInputCls} max-w-[11rem]`} /></FRow>
+        <hr className="border-slate-200" />
+        <div className="flex gap-5 flex-wrap text-sm text-slate-600">
           <label className="flex items-center gap-2"><input type="checkbox" checked={applyGst} onChange={e => { setApplyGst(e.target.checked); if (!e.target.checked) setRcm(false) }} />GST applicable</label>
           <label className="flex items-center gap-2" title="Buyer pays the GST directly to the government (unregistered supplier / notified services)"><input type="checkbox" checked={rcm} disabled={!applyGst} onChange={e => setRcm(e.target.checked)} />Reverse charge (RCM)</label>
           <label className="flex items-center gap-2" title="Untick for blocked credits under section 17(5): motor vehicles, food, club memberships, etc."><input type="checkbox" checked={itcEligible} onChange={e => setItcEligible(e.target.checked)} />Input tax credit eligible</label>
         </div>
-      </SupplyRow>
-
-      <HeaderFields company={company} setCompany={setCompany} date={date} setDate={setDate} locked={!!initial && !initial._clone}
-        extra={<>
-          <Field label="Vendor invoice date"><input type="date" value={refDate} onChange={e => setRefDate(e.target.value)} className={formInputCls} /></Field>
-          <Field label="Credit days"><input type="number" min="0" value={creditDays} onChange={e => setCreditDays(e.target.value)} className={formInputCls} /></Field>
-          <Field label="Due date"><div className={`${formInputCls} bg-slate-100`}>{addDays(date, creditDays) || '—'}</div></Field>
-        </>} />
-      <div className="grid md:grid-cols-2 gap-3">
-        <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
-        {(raw.warehouses || []).length > 0 && (raw.stockItems || []).length > 0 && (
-          <Field label="Receive stock into godown"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={formInputCls}><option value="">Default godown</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></Field>
-        )}
-      </div>
-
-      <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={stockItems} hsnCodes={raw.hsnCodes || []} symbol={fx.symbol}
-        accounts={expenseAccounts} accountLabel="Purchase ledger" defaultAccountCode="5000" applyGst={applyGst} />
-
-      <NotesTotals
-        left={<>
-          <Field label="Notes"><textarea value={narration} onChange={e => setNarration(e.target.value)} className={`${formInputCls} h-20 resize-none`} placeholder="Optional note" /></Field>
-          <TdsBlock raw={raw} vendor={vendor} date={date} base={inr.subTotal} tds={tds} setTds={setTds} fy={date ? `${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0)).slice(2)}-${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0) + 1).slice(2)}` : ''}
-            partyId={vendor?.id} currentDocId={initial?.id} />
-          <AttachmentPanel entityType="purchase" entityId={initial?.id} company={company} draft={draft} label="Attach file(s) to this bill" />
-        </>}
-        right={<TotalsBox totals={totals} rcm={rcm} tds={fx.isFc ? null : tdsFinal} symbol={fx.symbol} inr={fx.isFc ? inr : null}
-          extra={applyGst && itcEligible && inr.taxTotal > 0 && <div className="flex justify-between text-green-700 text-xs"><span>ITC claimable (₹)</span><span>{fmtAmt(inr.taxTotal)}</span></div>} />} />
+        <CurrencyBar fx={fx} date={date} totalFc={totals.total} />
+        <div className="grid md:grid-cols-2 gap-3">
+          <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
+          {(raw.warehouses || []).length > 0 && (raw.stockItems || []).length > 0 && (
+            <Field label="Receive stock into godown"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={formInputCls}><option value="">Default godown</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></Field>
+          )}
+        </div>
+        <ItemCard>
+          <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={stockItems} hsnCodes={raw.hsnCodes || []} symbol={fx.symbol}
+            accounts={expenseAccounts} accountLabel="Purchase ledger" defaultAccountCode="5000" applyGst={applyGst} />
+        </ItemCard>
+        <NotesTotals
+          left={<>
+            <Field label="Notes"><textarea value={narration} onChange={e => setNarration(e.target.value)} className={`${formInputCls} h-20 resize-none`} placeholder="Optional note" /></Field>
+            <TdsBlock raw={raw} vendor={vendor} date={date} base={inr.subTotal} tds={tds} setTds={setTds} fy={date ? `${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0)).slice(2)}-${String(Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 4 ? 1 : 0) + 1).slice(2)}` : ''}
+              partyId={vendor?.id} currentDocId={initial?.id} />
+            <AttachmentPanel entityType="purchase" entityId={initial?.id} company={company} draft={draft} label="Attach file(s) to this bill" />
+          </>}
+          right={<TotalsBox totals={totals} rcm={rcm} tds={fx.isFc ? null : tdsFinal} symbol={fx.symbol} inr={fx.isFc ? inr : null}
+            extra={applyGst && itcEligible && inr.taxTotal > 0 && <div className="flex justify-between text-green-700 text-xs"><span>ITC claimable (₹)</span><span>{fmtAmt(inr.taxTotal)}</span></div>} />} />
+      </Body>
     </FormShell>
   )
 }
@@ -223,39 +228,43 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
     <FormShell title={initial && !initial._clone ? `Edit ${label} — ${initial.voucherNumber}` : `${label} Voucher`}
       subtitle={isCredit ? 'Issued to a customer for sales returns, post-sale discounts or invoice corrections — reduces what they owe and your output GST.'
         : 'Issued to a vendor for purchase returns or rate differences — reduces what you owe and reverses the input tax credit.'}
-      onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
-      <HeaderFields company={company} setCompany={c => { setCompany(c); setPartyKey(''); setRefId('') }} date={date} setDate={setDate} locked={!!initial && !initial._clone}
-        extra={<>
-          <Field label={`${isCredit ? 'Customer' : 'Vendor'} *`}>
-            <SearchSelect value={partyKey} onChange={v => { setPartyKey(v); setRefId('') }} className={formInputCls} required placeholder={`Type to search ${isCredit ? 'customer' : 'vendor'}…`} options={parties.map(p => ({ value: p.key, label: p.name }))} />
-          </Field>
-          <Field label="Reason">
-            <select value={reasonCode} onChange={e => setReasonCode(e.target.value)} className={formInputCls}>{CN_REASONS.map(([c, l]) => <option key={c} value={c}>{l}</option>)}</select>
-          </Field>
-        </>} />
-      <div>
-        <label className={labelCls}>Against original {isCredit ? 'invoice' : 'purchase voucher'} {partyKey && !original && <span className="text-amber-600 normal-case font-normal"> — GST law expects a credit/debit note to refer to the original document</span>}</label>
-        <select value={refId} onChange={e => loadOriginal(e.target.value)} className={formInputCls} disabled={!partyKey}>
-          <option value="">{partyKey ? (originals.length ? '— none (not recommended) —' : 'No documents found for this party') : 'Select a party first'}</option>
-          {originals.map(o => isCredit
-            ? <option key={o.id} value={o.id}>{o.invoiceNumber} · {o.invoiceDate} · {o.fx?.currency && o.fx.currency !== 'INR' ? `${o.fx.currency} ${fmtAmt(o.fx.total)}` : `₹${fmtAmt(o.total)}`}</option>
-            : <option key={o.id} value={o.id}>{o.voucherNumber}{o.refNumber ? ` (${o.refNumber})` : ''} · {o.date} · {o.fc?.currency ? `${o.fc.currency} ${fmtAmt(o.fc.total)}` : `₹${fmtAmt(o.total)}`}</option>)}
-        </select>
-        {original && <p className="text-xs text-slate-400 mt-1">Items, GST rates and supply type loaded from the original — reduce quantities to the returned amount, or replace with a single "post-sale discount" line.</p>}
-      </div>
-      <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
-      <div className="flex gap-5 flex-wrap text-sm">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={applyGst} onChange={e => setApplyGst(e.target.checked)} />GST applicable</label>
-        <label className="flex items-center gap-2">Supply
-          <select value={supplyType} onChange={e => setSupplyType(e.target.value)} className="px-2 py-1 border border-slate-300 rounded-md text-sm"><option value="intra">Intra-state (CGST+SGST)</option><option value="inter">Inter-state (IGST)</option></select>
-        </label>
-        {!isCredit && <label className="flex items-center gap-2"><input type="checkbox" checked={itcEligible} onChange={e => setItcEligible(e.target.checked)} />ITC was claimed on original</label>}
-      </div>
-      <CurrencyBar fx={fx} date={date} totalFc={totals.total} />
-      <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={raw.stockItems || []} hsnCodes={raw.hsnCodes || []} applyGst={applyGst} symbol={fx.symbol} />
-      <AttachmentPanel entityType={type} entityId={initial?.id} company={company} draft={draft} label="Supporting document" />
-      <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
-      <TotalsBox totals={totals} symbol={fx.symbol} inr={fx.isFc ? inr : null} />
+      bands onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
+      <Band>
+        <PartyBlock label={isCredit ? 'Customer Name' : 'Vendor Name'} options={parties.map(p => ({ value: p.key, label: p.name }))} value={partyKey} onPick={v => { setPartyKey(v); setRefId('') }}
+          name={party?.name} gstin={party?.gstin} master={isCredit ? (raw.customers || []).find(c => c.id === party?.id) : (raw.vendors || []).find(v => v.id === party?.id)} currency={fx.isFc ? fx.currency : 'INR'} />
+        <FRow label={isCredit ? 'Against Invoice#' : 'Against Bill#'} hint={original ? 'Items, GST rates and supply type loaded from the original — reduce quantities to the returned amount, or replace with a single "post-sale discount" line.' : (partyKey ? 'GST law expects a credit / debit note to refer to the original document' : '')}>
+          <select value={refId} onChange={e => loadOriginal(e.target.value)} className={`${formInputCls} max-w-xl`} disabled={!partyKey}>
+            <option value="">{partyKey ? (originals.length ? '— none (not recommended) —' : 'No documents found for this party') : 'Select a party first'}</option>
+            {originals.map(o => isCredit
+              ? <option key={o.id} value={o.id}>{o.invoiceNumber} · {o.invoiceDate} · {o.fx?.currency && o.fx.currency !== 'INR' ? `${o.fx.currency} ${fmtAmt(o.fx.total)}` : `₹${fmtAmt(o.total)}`}</option>
+              : <option key={o.id} value={o.id}>{o.voucherNumber}{o.refNumber ? ` (${o.refNumber})` : ''} · {o.date} · {o.fc?.currency ? `${o.fc.currency} ${fmtAmt(o.fc.total)}` : `₹${fmtAmt(o.total)}`}</option>)}
+          </select>
+        </FRow>
+        <FRow label="Reason"><select value={reasonCode} onChange={e => setReasonCode(e.target.value)} className={`${formInputCls} max-w-sm`}>{CN_REASONS.map(([c, l]) => <option key={c} value={c}>{l}</option>)}</select></FRow>
+      </Band>
+      <Body>
+        <FRow label={`${label}#`} req><ReadBox mono>{initial && !initial._clone ? initial.voucherNumber : 'Assigned when saved'}</ReadBox></FRow>
+        <FRow label={`${label} Date`} req><input type="date" value={date} onChange={e => setDate(e.target.value)} className={`${formInputCls} max-w-[11rem]`} required /></FRow>
+        <hr className="border-slate-200" />
+        <div className="flex gap-5 flex-wrap items-center text-sm text-slate-600">
+          <label className="flex items-center gap-2"><input type="checkbox" checked={applyGst} onChange={e => setApplyGst(e.target.checked)} />GST applicable</label>
+          <label className="flex items-center gap-2">Supply
+            <select value={supplyType} onChange={e => setSupplyType(e.target.value)} className="px-2 py-1 border border-slate-300 rounded-md text-sm"><option value="intra">Intra-state (CGST+SGST)</option><option value="inter">Inter-state (IGST)</option></select>
+          </label>
+          {!isCredit && <label className="flex items-center gap-2"><input type="checkbox" checked={itcEligible} onChange={e => setItcEligible(e.target.checked)} />ITC was claimed on original</label>}
+        </div>
+        <CurrencyBar fx={fx} date={date} totalFc={totals.total} />
+        <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
+        <ItemCard>
+          <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={raw.stockItems || []} hsnCodes={raw.hsnCodes || []} applyGst={applyGst} symbol={fx.symbol} />
+        </ItemCard>
+        <NotesTotals
+          left={<>
+            <Field label="Notes"><textarea value={narration} onChange={e => setNarration(e.target.value)} className={`${formInputCls} h-20 resize-none`} /></Field>
+            <AttachmentPanel entityType={type} entityId={initial?.id} company={company} draft={draft} label="Supporting document" />
+          </>}
+          right={<TotalsBox totals={totals} symbol={fx.symbol} inr={fx.isFc ? inr : null} />} />
+      </Body>
     </FormShell>
   )
 }

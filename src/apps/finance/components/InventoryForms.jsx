@@ -9,7 +9,8 @@ import { computeVoucherTotals, supplyTypeOf } from '../utils/taxCalc.js'
 import { addDays } from '../utils/voucherEngine.js'
 import ItemsEditor, { newLine, TotalsBox } from './ItemsEditor.jsx'
 import SearchSelect from './SearchSelect.jsx'
-import { VendorCard, SupplyRow, NotesTotals } from './DocLayout.jsx'
+import { Band, Body, FRow, ReadBox, PartyBlock, SupplyChip, ItemCard, NotesTotals } from './DocLayout.jsx'
+import { PO_TERMS } from '../utils/poTerms.js'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
 import {
   Field, FormShell, HeaderFields, useVoucherSave, need,
@@ -30,6 +31,7 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
   const [expected, setExpected] = useState(initial?.expectedDate || '')
   const [warehouseId, setWarehouseId] = useState(initial?.warehouseId || '')
   const [terms, setTerms] = useState(initial?.terms || '')
+  const [tnc, setTnc] = useState(initial?.termsAndConditions ?? PO_TERMS)       // every purchase order carries the standard terms; editable per order
   const [applyGst, setApplyGst] = useState(initial ? initial.applyGst !== false : true)
   const [items, setItems] = useState(initial?.items?.length ? initial.items.map(lineFrom) : [newLine()])
   const [narration, setNarration] = useState(initial?.narration || '')
@@ -50,7 +52,7 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
       const t = computeVoucherTotals(lines, { supplyType, applyGst })
       return {
         voucherType: 'purchase_order', company, date, partyType: 'vendor', partyId: vendor.id, partyName: vendor.name, partyGstin: vendor.gstin,
-        expectedDate: expected, warehouseId, terms: terms.trim(), applyGst, supplyType,
+        expectedDate: expected, warehouseId, terms: terms.trim(), termsAndConditions: tnc, applyGst, supplyType,
         items: t.items, gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal, roundOff: t.roundOff, total: t.total, narration: narration.trim(), closed,
         creditDays: creditDaysFromTerms(vendor.paymentTerms), dueDate: addDays(expected || date, creditDaysFromTerms(vendor.paymentTerms)),
       }
@@ -58,28 +60,34 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
   })
 
   return (
-    <FormShell title={initial && !initial._clone ? `Edit Purchase Order — ${initial.voucherNumber}` : 'Purchase Order'} subtitle="Order goods from a vendor. No accounting entry is made until you enter the vendor's bill." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
-      <VendorCard vendors={vendors} vendorId={vendorId} onPick={setVendorId} vendor={vendor} />
-
-      <SupplyRow sourceState={vendor?.state || ''} destState={raw?.companySettings?.[company]?.state || ''} supplyType={supplyType} hasVendor={!!vendor}>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={applyGst} onChange={e => setApplyGst(e.target.checked)} />Show GST on this order</label>
-      </SupplyRow>
-
-      <HeaderFields company={company} setCompany={setCompany} date={date} setDate={setDate} locked={!!initial && !initial._clone}
-        extra={<>
-          <Field label="Expected delivery"><input type="date" value={expected} onChange={e => setExpected(e.target.value)} className={formInputCls} min={date} /></Field>
-          {(raw.warehouses || []).length > 0 && <Field label="Deliver to godown"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={formInputCls}><option value="">Default</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></Field>}
-        </>} />
-
-      <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={raw.stockItems || []} hsnCodes={raw.hsnCodes || []} applyGst={applyGst} />
-
-      <NotesTotals
-        left={<>
-          <Field label="Notes"><textarea value={narration} onChange={e => setNarration(e.target.value)} className={`${formInputCls} h-16 resize-none`} /></Field>
-          <Field label="Terms / delivery notes"><textarea value={terms} onChange={e => setTerms(e.target.value)} className={`${formInputCls} h-20 resize-none`} placeholder="Payment terms, delivery address…" /></Field>
-          {initial && !initial._clone && <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={closed} onChange={e => setClosed(e.target.checked)} />Close this order (stop expecting the pending balance)</label>}
-        </>}
-        right={<TotalsBox totals={totals} />} />
+    <FormShell title={initial && !initial._clone ? `Edit Purchase Order — ${initial.voucherNumber}` : 'Purchase Order'} subtitle="Order goods from a vendor. No accounting entry is made until you enter the vendor's bill." bands onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
+      <Band>
+        <PartyBlock label="Vendor Name" options={vendors.map(v => ({ value: v.id, label: v.name }))} value={vendorId} onPick={setVendorId} name={vendor?.name} gstin={vendor?.gstin} pan={vendor?.pan} master={vendor?.raw} />
+        <FRow label="Destination of Supply" hint={vendor ? `Source of Supply: ${vendor.state || '—'}` : ''}><div className="flex items-center"><ReadBox>{raw?.companySettings?.[company]?.state || '—'}</ReadBox><SupplyChip ready={!!vendor} supplyType={supplyType} /></div></FRow>
+      </Band>
+      <Body>
+        <FRow label="Purchase Order#" req><ReadBox mono>{initial && !initial._clone ? initial.voucherNumber : 'Assigned when saved'}</ReadBox></FRow>
+        <FRow label="Order Date" req>
+          <div className="flex items-center gap-4 flex-wrap">
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} className={`${formInputCls} max-w-[11rem]`} required />
+            <span className="text-sm text-slate-700">Expected delivery</span><input type="date" value={expected} onChange={e => setExpected(e.target.value)} className={`${formInputCls} max-w-[11rem]`} min={date} />
+          </div>
+        </FRow>
+        {(raw.warehouses || []).length > 0 && <FRow label="Deliver to godown"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={`${formInputCls} max-w-sm`}><option value="">Default</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></FRow>}
+        <hr className="border-slate-200" />
+        <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={applyGst} onChange={e => setApplyGst(e.target.checked)} />Show GST on this order</label>
+        <ItemCard>
+          <ItemsEditor items={items} onChange={setItems} computed={totals.items} date={date} stockItems={raw.stockItems || []} hsnCodes={raw.hsnCodes || []} applyGst={applyGst} />
+        </ItemCard>
+        <NotesTotals
+          left={<>
+            <Field label="Notes"><textarea value={narration} onChange={e => setNarration(e.target.value)} className={`${formInputCls} h-16 resize-none`} /></Field>
+            <Field label="Delivery notes"><textarea value={terms} onChange={e => setTerms(e.target.value)} className={`${formInputCls} h-16 resize-none`} placeholder="Delivery address, contact person…" /></Field>
+            <Field label="Terms & conditions (printed on the purchase order)"><textarea value={tnc} onChange={e => setTnc(e.target.value)} className={`${formInputCls} h-48 text-xs font-mono`} /><button type="button" onClick={() => setTnc(PO_TERMS)} className="text-xs text-blue-600 hover:underline mt-1">Reset to the standard terms</button></Field>
+            {initial && !initial._clone && <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={closed} onChange={e => setClosed(e.target.checked)} />Close this order (stop expecting the pending balance)</label>}
+          </>}
+          right={<TotalsBox totals={totals} />} />
+      </Body>
     </FormShell>
   )
 }

@@ -105,6 +105,8 @@ export default function Vouchers() {
     }
   })()
 
+  if (form) return <div className="max-w-5xl">{form}{modal}</div>
+
   return (
     <ReportShell title={`${label} Vouchers`} loading={loading}
       subtitle="Record transactions the Tally way — every voucher posts balanced double entries and feeds GST, outstanding and the statements."
