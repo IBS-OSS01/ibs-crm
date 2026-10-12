@@ -52,7 +52,7 @@ export function suggestEntry(line, ctx) {
   const others = (ctx.banks || []).filter(b => b.id !== ctx.thisBankId)
 
   // 0. sweep to / from a fixed deposit, and interest the bank credits on it (the narrative carries the FD / sweep account number)
-  const fdHit = (ctx.fds || []).find(f => { const a = digitsOf(f.accountNumber); return a.length >= 6 && (d.match(/\d{9,}/g) || []).some(n => n.endsWith(a) || a.endsWith(n)) })
+  const fdHit = (ctx.fds || []).find(f => String(f.accountNumber || '').split(/[,;/\s]+/).map(digitsOf).some(a => a.length >= 6 && (d.match(/\d{9,}/g) || []).some(n => n.endsWith(a) || a.endsWith(n))))
   if (fdHit && /SWEEP|SWCR|AUTO|\bFD\b|DEPOSIT|INT\.?\s*ON/i.test(d)) {
     if (isCredit && /INT\.?\s*ON|INTEREST/i.test(d)) return out({ accountCode: '4910', reason: `Interest on ${fdHit.name}` })
     return out({ kind: 'contra', otherBankId: fdHit.id, reason: isCredit ? `Sweep-in from ${fdHit.name}` : `Sweep-out to ${fdHit.name}` })
