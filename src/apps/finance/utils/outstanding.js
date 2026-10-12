@@ -73,14 +73,16 @@ export function computeOutstanding(allLines, { kind, company, asOf, ageBy = 'due
   const result = []
   const totals = { total: 0, advance: 0, ...Object.fromEntries(AGE_BUCKETS.map(b => [b.key, 0])) }
 
+  // 1. explicit allocations, across the whole ledger: a receipt / payment that names a bill settles THAT bill even when
+  //    the customer or vendor record it was entered under is not the one the bill was raised on (e.g. a branch record).
+  const byKey = {}
   Object.values(parties).forEach(p => {
     p.bills.sort((a, b) => (a.date || '').localeCompare(b.date || ''))
-    const byKey = {}
     p.bills.forEach(b => { byKey[b.billKey] = b })
-
-    // 1. explicit allocations
-    const pool = []
     p.settlements.sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    p.pool = []
+  })
+  Object.values(parties).forEach(p => {
     p.settlements.forEach(s => {
       let remaining = s.amount
       const target = s.allocatesTo && byKey[s.allocatesTo]
@@ -90,10 +92,13 @@ export function computeOutstanding(allLines, { kind, company, asOf, ageBy = 'due
         if (target.fcPending !== undefined && s.fcAmount) target.fcPending = r2(Math.max(0, target.fcPending - s.fcAmount))
         remaining = r2(remaining - use)
       }
-      if (remaining > 0.004) pool.push({ ...s, amount: remaining })
+      if (remaining > 0.004) p.pool.push({ ...s, amount: remaining })
     })
+  })
 
-    // 2. FIFO the leftover over oldest unpaid bills
+  Object.values(parties).forEach(p => {
+    // 2. FIFO the leftover over oldest unpaid bills of the same party
+    const pool = p.pool
     let advance = 0
     pool.forEach(s => {
       let remaining = s.amount

@@ -5,6 +5,7 @@ import { addDoc, collection, doc, setDoc } from 'firebase/firestore'
 import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
+import { updateVoucher, getBooksLockDate } from '../utils/voucherService.js'
 import { VOUCHER_TYPES, fmtAmt, fyRange, currentFY } from '../utils/financeConstants.js'
 import { downloadXlsx } from '../utils/exportUtils.js'
 import { ReportShell, CompanyToggle, DateRange, ExportBar, Badge, Empty, cardCls, inputCls, thCls, btnPrimary, useFinancePerms } from '../components/FinanceUI.jsx'
@@ -12,7 +13,7 @@ import { ReportShell, CompanyToggle, DateRange, ExportBar, Badge, Empty, cardCls
 const ACTION = { create: ['bg-green-100 text-green-700', 'Created'], edit: ['bg-blue-100 text-blue-700', 'Edited'], cancel: ['bg-amber-100 text-amber-700', 'Cancelled'], delete: ['bg-red-100 text-red-700', 'Deleted'], lock: ['bg-purple-100 text-purple-700', 'Lock date'] }
 
 export default function AuditTrail() {
-  const { isAdmin } = useFinancePerms()
+  const { isAdmin, canWrite } = useFinancePerms()
   const { user, userProfile } = useAuth()
   const { raw, loading, reload } = useFinanceData(['auditLog'])
   const [company, setCompany] = useState('UIPL')
@@ -27,6 +28,21 @@ export default function AuditTrail() {
   const rows = useMemo(() => (raw?.auditLog || []).filter(e => (!e.company || e.company === company) && (e.at || '').slice(0, 10) >= period.from && (e.at || '').slice(0, 10) <= period.to &&
     (!action || e.action === action) && (!q || `${e.voucherNumber} ${e.byName} ${e.reason || ''}`.toLowerCase().includes(q.toLowerCase())))
     .sort((a, b) => (b.at || '').localeCompare(a.at || '')).slice(0, 500), [raw, company, period, action, q])
+
+  // Put a voucher back to what it looked like before an edit (the edit itself stays in the trail, and so does this restore).
+  const restore = async (e) => {
+    let before; try { before = JSON.parse(e.before) } catch { setMsg('That earlier version is too long to restore automatically.'); return }
+    const current = (raw?.vouchers || []).find(v => v.id === (before.id || e.voucherId))
+    if (!current) { setMsg('That voucher no longer exists.'); return }
+    if (current.status === 'cancelled') { setMsg('A cancelled voucher cannot be restored.'); return }
+    if (!window.confirm(`Put ${e.voucherNumber} back to how it was before the edit of ${(e.at || '').slice(0, 16).replace('T', ' ')}?`)) return
+    setMsg('')
+    try {
+      const lockedUpTo = await getBooksLockDate(company)
+      await updateVoucher(current.id, current, before, { user, profile: userProfile, lockedUpTo })
+      invalidateFinanceCache(); reload(); setMsg(`${e.voucherNumber} restored to the earlier version.`)
+    } catch (ex) { setMsg('Could not restore: ' + ex.message) }
+  }
 
   const saveLock = async (date) => {
     setMsg('')
@@ -70,7 +86,7 @@ export default function AuditTrail() {
                   <td className="px-3 py-2 font-mono text-xs">{e.voucherNumber || '—'} <span className="text-slate-400 font-sans">{VOUCHER_TYPES[e.voucherType]?.label}</span></td>
                   <td className="px-3 py-2">{e.date || ''}</td><td className="px-3 py-2 text-right">{e.amount ? fmtAmt(e.amount) : ''}</td><td className="px-3 py-2 text-slate-500">{e.reason || (e.before ? 'click to see the earlier version' : '')}</td>
                 </tr>
-                {open === e.id && <tr><td colSpan={7} className="px-3 py-2 bg-slate-50"><pre className="text-xs whitespace-pre-wrap break-all max-h-64 overflow-auto">{prettyJson(e.before)}</pre></td></tr>}
+                {open === e.id && <tr><td colSpan={7} className="px-3 py-2 bg-slate-50">{canWrite && e.action === 'edit' && VOUCHER_TYPES[e.voucherType] && <button className="mb-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium" onClick={() => restore(e)}>↩ Restore this earlier version</button>}<pre className="text-xs whitespace-pre-wrap break-all max-h-64 overflow-auto">{prettyJson(e.before)}</pre></td></tr>}
               </React.Fragment>
             ))}
             {rows.length === 0 && <tr><td colSpan={7}><Empty>No audit entries match.</Empty></td></tr>}

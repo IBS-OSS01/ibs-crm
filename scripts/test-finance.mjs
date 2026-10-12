@@ -656,6 +656,16 @@ section('Zoho expenses → tied to bank payments or new entries')
   ok(payStatus(m, 'purchase:b1', 188559).state === 'unpaid' && payStatus(m, 'purchase:b1', 188559).pending === 188559, 'outstanding: a bill dated in the future shows as unpaid, not paid')
 }
 
+// ── A receipt that names an invoice settles it even when entered under another customer record (branch record)
+{
+  const lines = [
+    { accountCode: '1200', company: 'UIPL', debit: 1000, credit: 0, date: '2026-05-01', partyId: 'med', partyName: 'INSTAKART - MEDCHAL', billKey: 'invoice:i1', sourceType: 'invoice', sourceId: 'i1' },
+    { accountCode: '1200', company: 'UIPL', debit: 0, credit: 1000, date: '2026-06-01', partyId: 'hq', partyName: 'INSTAKART', allocatesTo: 'invoice:i1', sourceType: 'receipt', sourceId: 'r1' },
+  ]
+  const o = computeOutstanding(lines, { kind: 'receivable', company: 'UIPL', asOf: '2026-10-12' })
+  ok(o.parties.length === 0 && o.totals.advance === 0, 'outstanding: an allocation to another record\'s invoice settles that invoice — no stray advance')
+}
+
 // ── Re-checking parked bank entries with today's rules
 {
   const ctx = { customers: [], vendors: [], banks: [], fds: [], employees: ['Sandeep Kharbanda'], thisBankId: 'y' }
