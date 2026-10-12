@@ -1,5 +1,5 @@
 // Purchase voucher + Credit Note + Debit Note entry forms.
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { computeVoucherTotals, supplyTypeOf } from '../utils/taxCalc.js'
 import { isAccountingInvoice } from '../utils/ledger.js'
 import { addDays } from '../utils/voucherEngine.js'
@@ -40,14 +40,16 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
   const fx = useFx(raw, date, seed)
   const [costCentreId, setCostCentreId] = useState(seed?.costCentreId || '')
   const [narration, setNarration] = useState(seed?.narration || '')
+  const [roundEdit, setRoundEdit] = useState(seed?.roundOffManual ? String(seed.roundOff) : '')      // '' = automatic nearest rupee
 
   const compState = companyStateCode(raw, company)
   const vendorState = gstinToStateCode(vendor?.gstin) || stateCodeFromName(vendor?.state)
   const supplyType = supplyTypeOf(vendorState, compState)
-  const totals = useMemo(() => computeVoucherTotals(items, { supplyType, applyGst, rcm, rounding: !fx.isFc }), [items, supplyType, applyGst, rcm, fx.isFc])
+  const totals = useMemo(() => computeVoucherTotals(items, { supplyType, applyGst, rcm, rounding: !fx.isFc, roundOff: fx.isFc ? '' : roundEdit }), [items, supplyType, applyGst, rcm, fx.isFc, roundEdit])
   // foreign currency: every ledger amount is the rupee value at the booking-date rate
   const inr = useMemo(() => (fx.isFc && fx.rate > 0 ? convertTotals(totals, fx.rate, fx.currency) : totals), [totals, fx.isFc, fx.rate, fx.currency])
   const tdsFinal = finalTds(tds, inr.subTotal)
+  useEffect(() => { const s = initial; if (s && !s._clone && s.roundOff !== undefined && Math.abs((Number(s.roundOff) || 0) - totals.roundOff) > 0.005) setRoundEdit(String(s.roundOff)) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const expenseAccounts = useMemo(() => accounts.filter(a => a.type === 'expense' || a.code === '1500' || a.code === '1900'), [accounts])
   const stockItems = raw.stockItems || []
 
@@ -69,7 +71,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
       need(lines.length > 0, 'Add at least one line item with a rate.')
       need(!(rcm && !applyGst), 'Reverse charge needs GST to be applied.')
       need(!fx.isFc || fx.rate > 0, `Enter the exchange rate for ${fx.currency}.`)
-      const tFc = computeVoucherTotals(lines, { supplyType, applyGst, rcm, rounding: !fx.isFc })
+      const tFc = computeVoucherTotals(lines, { supplyType, applyGst, rcm, rounding: !fx.isFc, roundOff: fx.isFc ? '' : roundEdit })
       const t = fx.isFc ? convertTotals(tFc, fx.rate, fx.currency) : tFc
       need(t.total > 0, 'Invoice total is zero.')
       return {
@@ -78,7 +80,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
         refNumber: refNumber.trim(), refDate, creditDays: num(creditDays), dueDate: addDays(date, creditDays),
         applyGst, rcm, itcEligible, purchaseAccountCode: '5000', warehouseId, costCentreId, ...(seed?.purchaseOrderId ? { purchaseOrderId: seed.purchaseOrderId, purchaseOrderNumber: seed.purchaseOrderNumber || '' } : {}),
         items: t.items.map(i => ({ ...i, accountCode: i.accountCode || '5000' })), gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal,
-        roundOff: t.roundOff, total: t.total, tds: finalTds(tds, t.subTotal), narration: narration.trim(),
+        roundOff: t.roundOff, roundOffManual: !fx.isFc && roundEdit !== '', total: t.total, tds: finalTds(tds, t.subTotal), narration: narration.trim(),
         currency: fx.currency, fxRate: fx.isFc ? fx.rate : 1, fc: fx.isFc ? t.fc : null,
       }
     },
@@ -128,7 +130,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
               partyId={vendor?.id} currentDocId={initial?.id} />
             <AttachmentPanel entityType="purchase" entityId={initial?.id} company={company} draft={draft} label="Attach file(s) to this bill" />
           </>}
-          right={<TotalsBox totals={totals} rcm={rcm} tds={fx.isFc ? null : tdsFinal} symbol={fx.symbol} inr={fx.isFc ? inr : null}
+          right={<TotalsBox totals={totals} rcm={rcm} tds={fx.isFc ? null : tdsFinal} symbol={fx.symbol} inr={fx.isFc ? inr : null} roundEdit={roundEdit} onRoundEdit={fx.isFc ? undefined : setRoundEdit}
             extra={applyGst && itcEligible && inr.taxTotal > 0 && <div className="flex justify-between text-green-700 text-xs"><span>ITC claimable (₹)</span><span>{fmtAmt(inr.taxTotal)}</span></div>} />} />
       </Body>
     </FormShell>
@@ -194,8 +196,10 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
     if (oc && oc !== 'INR') { fx.setCurrency(oc); fx.setRate(String(o.fx?.rate || o.fxRate || '')) } else fx.setCurrency('INR')
   }
 
-  const totals = useMemo(() => computeVoucherTotals(items, { supplyType, applyGst, rounding: !fx.isFc }), [items, supplyType, applyGst, fx.isFc])
+  const [roundEdit, setRoundEdit] = useState(initial?.roundOffManual ? String(initial.roundOff) : '')      // '' = automatic nearest rupee
+  const totals = useMemo(() => computeVoucherTotals(items, { supplyType, applyGst, rounding: !fx.isFc, roundOff: fx.isFc ? '' : roundEdit }), [items, supplyType, applyGst, fx.isFc, roundEdit])
   const inr = useMemo(() => (fx.isFc && fx.rate > 0 ? convertTotals(totals, fx.rate, fx.currency) : totals), [totals, fx.isFc, fx.rate, fx.currency])
+  useEffect(() => { const s = initial; if (s && !s._clone && s.roundOff !== undefined && Math.abs((Number(s.roundOff) || 0) - totals.roundOff) > 0.005) setRoundEdit(String(s.roundOff)) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { save, saving, error } = useVoucherSave({
     initial, onSaved, draft,
@@ -204,7 +208,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
       const lines = cleanItems(items)
       need(lines.length > 0, 'Add at least one line.')
       need(!fx.isFc || fx.rate > 0, `Enter the exchange rate for ${fx.currency}.`)
-      const tFc = computeVoucherTotals(lines, { supplyType, applyGst, rounding: !fx.isFc })
+      const tFc = computeVoucherTotals(lines, { supplyType, applyGst, rounding: !fx.isFc, roundOff: fx.isFc ? '' : roundEdit })
       const t = fx.isFc ? convertTotals(tFc, fx.rate, fx.currency) : tFc
       need(t.total > 0, 'Note value is zero.')
       const origTotal = fx.isFc ? num(original?.fx?.total ?? original?.fc?.total) : num(original?.total)
@@ -217,7 +221,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
           : { refPurchaseId: original?.id || '', refInvoiceNumber: original?.refNumber || original?.voucherNumber || '', refInvoiceDate: original?.refDate || original?.date || '' }),
         reasonCode, reason: CN_REASONS.find(r => r[0] === reasonCode)?.[1] || '', applyGst, supplyType, itcEligible, costCentreId,
         companyStateCode: companyStateCode(raw, company),
-        items: t.items, gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal, roundOff: t.roundOff, total: t.total, narration: narration.trim(),
+        items: t.items, gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal, roundOff: t.roundOff, roundOffManual: !fx.isFc && roundEdit !== '', total: t.total, narration: narration.trim(),
         currency: fx.currency, fxRate: fx.isFc ? fx.rate : 1, fc: fx.isFc ? t.fc : null,
       }
     },
@@ -263,7 +267,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
             <Field label="Notes"><textarea value={narration} onChange={e => setNarration(e.target.value)} className={`${formInputCls} h-20 resize-none`} /></Field>
             <AttachmentPanel entityType={type} entityId={initial?.id} company={company} draft={draft} label="Supporting document" />
           </>}
-          right={<TotalsBox totals={totals} symbol={fx.symbol} inr={fx.isFc ? inr : null} />} />
+          right={<TotalsBox totals={totals} symbol={fx.symbol} inr={fx.isFc ? inr : null} roundEdit={roundEdit} onRoundEdit={fx.isFc ? undefined : setRoundEdit} />} />
       </Body>
     </FormShell>
   )

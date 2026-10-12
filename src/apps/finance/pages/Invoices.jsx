@@ -180,6 +180,13 @@ function computeTotals(items, posStateCode, sellerStateCode, applyGst) {
   return { subTotal, gstLines, total, roundOff }
 }
 
+// a round off typed by the user replaces the automatic one; the total follows it
+const withTyped = (t, typed) => {
+  if (typed === '' || typed === null || typed === undefined || !Number.isFinite(Number(typed))) return t
+  const raw = t.total - t.roundOff, ro = Math.round(Number(typed) * 100) / 100
+  return { ...t, roundOff: ro, total: Math.round((raw + ro) * 100) / 100 }
+}
+
 // where a sales order stands: open, partly invoiced (6 of 12 billed), invoiced, closed
 const ORDER_CLS = { draft: 'bg-slate-100 text-slate-600', open: 'bg-amber-100 text-amber-700', partial: 'bg-blue-100 text-blue-700', invoiced: 'bg-green-100 text-green-700', closed: 'bg-slate-200 text-slate-600' }
 function OrderBadge({ inv }) {
@@ -204,6 +211,7 @@ export default function Invoices() {
   const ledgerLines = fd.allLines
   const [params, setParams] = useSearchParams()
   const [q, setQ] = useState('')                      // search box over the list on the current tab
+  const [roundEdit, setRoundEdit] = useState('')        // round off typed by the user; '' = automatic nearest rupee
   const navigate = useNavigate()
   const tab = TABS.find(t => t.key === params.get('tab')) || TABS[0]
   const [editingId, setEditingId] = useState('')
@@ -323,7 +331,7 @@ export default function Invoices() {
       const applyGstNow = form.applyGst && !expNoTax
       const posCode = form.isExport && !expNoTax ? '96' : form.posStateCode
       if (fx.isFc && !(fx.rate > 0)) { setError(`Enter the exchange rate for ${fx.currency}`); setSaving(false); return }
-      const base = computeTotals(items, posCode, seller.stateCode, applyGstNow)
+      const base = withTyped(computeTotals(items, posCode, seller.stateCode, applyGstNow), roundEdit)
       const lines = items.filter(it => it.description.trim())
       let subTotal = base.subTotal, gstLines = base.gstLines, total = base.total, roundOff = base.roundOff, fxDoc = null
       if (fx.isFc) {
@@ -341,7 +349,7 @@ export default function Invoices() {
         sellerState: seller.state || '',
         sellerStateCode: seller.stateCode || '',
         items: items.filter(it => it.description.trim()),
-        subTotal, gstLines, roundOff, total,
+        subTotal, gstLines, roundOff, roundOffManual: !fx.isFc && roundEdit !== '', total,
         totalInWords: fxDoc ? `${fx.currency} ${fxDoc.total.toFixed(2)}` : amountInWords(total),
         status: prev ? prev.status : 'draft',
         ...(prev ? { updatedBy: user.uid, updatedAt: new Date().toISOString() } : { createdBy: user.uid, createdAt: new Date().toISOString() }),
@@ -367,6 +375,8 @@ export default function Invoices() {
     if (inv.fx?.currency && inv.fx.currency !== 'INR') { alert('Foreign-currency documents cannot be edited here — cancel it and issue a new one.'); return }
     setForm({ ...emptyForm, ...Object.fromEntries(Object.keys(emptyForm).map(k => [k, inv[k] ?? emptyForm[k]])), customerId: inv.customerId || '' })
     setItems((inv.items || []).length ? inv.items.map(i => ({ ...newItem(), ...i })) : [newItem()])
+    const auto = computeTotals(inv.items || [], inv.posStateCode, inv.sellerStateCode, inv.applyGst !== false)
+    setRoundEdit(inv.roundOff !== undefined && Math.abs((Number(inv.roundOff) || 0) - auto.roundOff) > 0.005 ? String(inv.roundOff) : '')
     setEditingId(inv.id); setError(''); setView('form')
   }
   // new document from an existing one: same customer and lines, today's date, next number on save
@@ -377,6 +387,7 @@ export default function Invoices() {
     const due = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     setForm({ ...emptyForm, ...Object.fromEntries(Object.keys(emptyForm).map(k => [k, inv[k] ?? emptyForm[k]])), customerId: inv.customerId || '', invoiceDate: today(), dueDate: due })
     setItems((inv.items || []).length ? cloneInvoiceItems(inv.items).map(i => ({ ...newItem(), ...i })) : [newItem()])
+    setRoundEdit('')
     setEditingId(''); setError(''); setView('form')
   }
   // sales order → tax invoice for the chosen quantities (all, part, or a percentage); what is left stays open on the order
@@ -457,7 +468,7 @@ export default function Invoices() {
   const exportNoTax = form.isExport && form.exportType === 'WOPAY'
   const effApplyGst = form.applyGst && !exportNoTax
   const effPosCode = form.isExport && !exportNoTax ? '96' : form.posStateCode
-  const inrTotals = computeTotals(items, effPosCode, seller.stateCode, effApplyGst)
+  const inrTotals = withTyped(computeTotals(items, effPosCode, seller.stateCode, effApplyGst), fx.isFc ? '' : roundEdit)
   // foreign currency: totals in that currency (no rupee rounding) and the rupee value booked in the accounts
   const fcT = fx.isFc ? computeVoucherTotals(items.map(i => ({ ...i, discountPct: 0 })), { supplyType: (form.isExport || !(seller.stateCode && effPosCode && seller.stateCode === effPosCode)) ? 'inter' : 'intra', applyGst: effApplyGst, rounding: false }) : null
   const booked = fcT && fx.rate > 0 ? convertTotals(fcT, fx.rate, fx.currency) : null
@@ -476,7 +487,7 @@ export default function Invoices() {
     const billLines = [form.billToAddress, [form.billToCity, form.billToState, form.billToPincode].filter(Boolean).join(', ')].filter(Boolean)
     const shipLines = form.sameShipTo ? billLines : [form.shipToName, form.shipToAddress, [form.shipToCity, form.shipToState, form.shipToPincode].filter(Boolean).join(', ')].filter(Boolean)
     const gstTreat = form.isExport ? 'Overseas' : form.billToGstin ? 'Registered Business - Regular' : 'Unregistered Business'
-    const goBack = () => { setEditingId(''); setForm(emptyForm); setItems([newItem()]); setEdAddr({ bill: false, ship: false, gst: false }); setView('list') }
+    const goBack = () => { setEditingId(''); setRoundEdit(''); setForm(emptyForm); setItems([newItem()]); setEdAddr({ bill: false, ship: false, gst: false }); setView('list') }
     return (
     <div className="max-w-5xl">
       <div className="flex items-center gap-3 px-6 pt-5 pb-3">
@@ -614,7 +625,9 @@ export default function Invoices() {
             <div className="rounded-lg bg-slate-50 border border-slate-200 p-5 text-sm space-y-2 self-start">
               <div className="flex justify-between font-semibold"><span>Sub Total</span><span>{sym}{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
               {gstLines.map((g, i) => <div key={i} className="flex justify-between text-slate-600"><span>{g.label.replace(/\s+(\d+(\.\d+)?)%$/, ' [$1%]')}</span><span>{g.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
-              <div className="flex justify-between text-slate-500"><span>Round off</span><span>{roundOff.toFixed(2)}</span></div>
+              {fx.isFc ? <div className="flex justify-between text-slate-500"><span>Round off</span><span>{roundOff.toFixed(2)}</span></div>
+                : <div className="flex justify-between items-center text-slate-500"><span>Round off <span className="text-[10px] text-slate-400">{roundEdit === '' ? '(automatic — type to change)' : <button type="button" className="text-blue-600 hover:underline" onClick={() => setRoundEdit('')}>use automatic</button>}</span></span>
+                  <input type="number" step="0.01" value={roundEdit === '' ? roundOff.toFixed(2) : roundEdit} onChange={e => setRoundEdit(e.target.value)} className="w-24 px-2 py-1 border border-slate-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" /></div>}
               <div className="flex justify-between font-bold text-base border-t border-slate-300 pt-2"><span>Total ({sym.trim()})</span><span>{total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
               {booked && <div className="flex justify-between text-xs text-amber-800 bg-amber-50 rounded px-2 py-1"><span>Booked in accounts as</span><span className="font-semibold">₹{booked.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>}
             </div>
@@ -642,7 +655,7 @@ export default function Invoices() {
           if (tab.key === 'creditnotes') { navigate('/finance/vouchers/credit_note?new=1'); return }
           const s = sellers['UIPL'] || {}
           setForm({ ...emptyForm, invoiceType: tab.type, notes: 'Thanks for your business.', termsAndConditions: s.termsAndConditions || '' })
-          setItems([newItem()]); setView('form')
+          setItems([newItem()]); setRoundEdit(''); setView('form')
         }}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
           + Create {tab.key === 'orders' ? 'Sales Order' : tab.key === 'proforma' ? 'Pro-forma' : tab.key === 'creditnotes' ? 'Credit Note' : 'Invoice'}

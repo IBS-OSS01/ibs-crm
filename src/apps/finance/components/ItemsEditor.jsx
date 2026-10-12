@@ -78,12 +78,15 @@ export default function ItemsEditor({ items, onChange, computed = [], date, stoc
   )
 }
 
-export function TotalsBox({ totals, rcm, tds, extra, symbol = '₹', inr = null }) {
+export function TotalsBox({ totals, rcm, tds, extra, symbol = '₹', inr = null, roundEdit, onRoundEdit }) {
   return (
     <div className="ml-auto w-full max-w-sm space-y-1 text-sm">
       <div className="flex justify-between text-slate-600"><span>Taxable value</span><span>{fmtAmt(totals.subTotal)}</span></div>
       {totals.gstLines.map(g => <div key={g.label} className="flex justify-between text-slate-500"><span>{g.label}{rcm ? ' (RCM — payable by you)' : ''}</span><span>{fmtAmt(g.amount)}</span></div>)}
-      {totals.roundOff !== 0 && <div className="flex justify-between text-slate-400"><span>Round off</span><span>{fmtAmt(totals.roundOff)}</span></div>}
+      {onRoundEdit
+        ? <div className="flex justify-between items-center text-slate-500"><span>Round off <span className="text-[10px] text-slate-400">{roundEdit === '' ? '(automatic — type to change)' : <button type="button" className="text-blue-600 hover:underline" onClick={() => onRoundEdit('')}>use automatic</button>}</span></span>
+            <input type="number" step="0.01" value={roundEdit === '' ? totals.roundOff : roundEdit} onChange={e => onRoundEdit(e.target.value)} className="w-24 px-2 py-1 border border-slate-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" /></div>
+        : totals.roundOff !== 0 && <div className="flex justify-between text-slate-400"><span>Round off</span><span>{fmtAmt(totals.roundOff)}</span></div>}
       <div className="flex justify-between font-bold text-slate-800 border-t border-slate-200 pt-1.5"><span>Invoice total</span><span>{symbol}{symbol.length > 1 ? ' ' : ''}{fmtAmt(totals.total)}</span></div>
       {tds?.applicable && tds.amount > 0 && <div className="flex justify-between text-red-600"><span>Less: TDS {tds.section} @ {tds.rate}%</span><span>− {fmtAmt(tds.amount)}</span></div>}
       {tds?.applicable && tds.amount > 0 && <div className="flex justify-between font-bold text-blue-700"><span>Net payable to vendor</span><span>₹{fmtAmt(totals.total - tds.amount)}</span></div>}

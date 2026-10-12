@@ -4,7 +4,7 @@
 // Stock and payables move only when the supplier's bill is entered as a Purchase
 // voucher ("Create bill" on a pending order pre-fills it and links back, so the
 // pending-quantity report stays right).
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { computeVoucherTotals, supplyTypeOf } from '../utils/taxCalc.js'
 import { addDays } from '../utils/voucherEngine.js'
 import ItemsEditor, { newLine, TotalsBox } from './ItemsEditor.jsx'
@@ -36,11 +36,13 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
   const [items, setItems] = useState(initial?.items?.length ? initial.items.map(lineFrom) : [newLine()])
   const [narration, setNarration] = useState(initial?.narration || '')
   const [closed, setClosed] = useState(!!initial?.closed)
+  const [roundEdit, setRoundEdit] = useState(initial?.roundOffManual ? String(initial.roundOff) : '')      // '' = automatic nearest rupee
 
   const compState = companyStateCode(raw, company)
   const vendorState = gstinToStateCode(vendor?.gstin) || stateCodeFromName(vendor?.state)
   const supplyType = supplyTypeOf(vendorState, compState)
-  const totals = useMemo(() => computeVoucherTotals(items, { supplyType, applyGst }), [items, supplyType, applyGst])
+  const totals = useMemo(() => computeVoucherTotals(items, { supplyType, applyGst, roundOff: roundEdit }), [items, supplyType, applyGst, roundEdit])
+  useEffect(() => { const s = initial; if (s && !s._clone && s.roundOff !== undefined && Math.abs((Number(s.roundOff) || 0) - totals.roundOff) > 0.005) setRoundEdit(String(s.roundOff)) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { save, saving, error } = useVoucherSave({
     initial, onSaved,
@@ -49,11 +51,11 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
       const lines = cleanItems(items)
       need(lines.length > 0, 'Add at least one item.')
       need(lines.every(l => num(l.qty) > 0), 'Every line needs a quantity.')
-      const t = computeVoucherTotals(lines, { supplyType, applyGst })
+      const t = computeVoucherTotals(lines, { supplyType, applyGst, roundOff: roundEdit })
       return {
         voucherType: 'purchase_order', company, date, partyType: 'vendor', partyId: vendor.id, partyName: vendor.name, partyGstin: vendor.gstin,
         expectedDate: expected, warehouseId, terms: terms.trim(), termsAndConditions: tnc, applyGst, supplyType,
-        items: t.items, gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal, roundOff: t.roundOff, total: t.total, narration: narration.trim(), closed,
+        items: t.items, gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal, roundOff: t.roundOff, roundOffManual: roundEdit !== '', total: t.total, narration: narration.trim(), closed,
         creditDays: creditDaysFromTerms(vendor.paymentTerms), dueDate: addDays(expected || date, creditDaysFromTerms(vendor.paymentTerms)),
       }
     },
@@ -86,7 +88,7 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
             <Field label="Terms & conditions (printed on the purchase order)"><textarea value={tnc} onChange={e => setTnc(e.target.value)} className={`${formInputCls} h-48 text-xs font-mono`} /><button type="button" onClick={() => setTnc(PO_TERMS)} className="text-xs text-blue-600 hover:underline mt-1">Reset to the standard terms</button></Field>
             {initial && !initial._clone && <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={closed} onChange={e => setClosed(e.target.checked)} />Close this order (stop expecting the pending balance)</label>}
           </>}
-          right={<TotalsBox totals={totals} />} />
+          right={<TotalsBox totals={totals} roundEdit={roundEdit} onRoundEdit={setRoundEdit} />} />
       </Body>
     </FormShell>
   )

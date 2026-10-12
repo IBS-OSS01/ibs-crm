@@ -656,6 +656,17 @@ section('Zoho expenses → tied to bank payments or new entries')
   ok(payStatus(m, 'purchase:b1', 188559).state === 'unpaid' && payStatus(m, 'purchase:b1', 188559).pending === 188559, 'outstanding: a bill dated in the future shows as unpaid, not paid')
 }
 
+// ── A round off typed by the user replaces the automatic nearest-rupee one
+{
+  const items = [{ qty: 1, rate: 1000.4, discountPct: 0, gstRate: 18 }]       // 1000.40 + 180.07 = 1180.47
+  const auto = computeVoucherTotals(items, { supplyType: 'inter' })
+  const typed = computeVoucherTotals(items, { supplyType: 'inter', roundOff: '0.53' })
+  const none = computeVoucherTotals(items, { supplyType: 'inter', roundOff: '' })
+  ok(auto.total === 1180 && Math.abs(auto.roundOff + 0.47) < 0.001 && none.total === 1180, 'round off: automatic nearest rupee when nothing is typed')
+  ok(typed.total === 1181 && typed.roundOff === 0.53, 'round off: a typed round off sets the total (1180.47 + 0.53 = 1181.00)')
+  ok(computeVoucherTotals(items, { supplyType: 'inter', roundOff: '0' }).total === 1180.47, 'round off: typing 0 means no rounding at all')
+}
+
 // ── A receipt that names an invoice settles it even when entered under another customer record (branch record)
 {
   const lines = [

@@ -37,7 +37,7 @@ export function computeLineTaxes(items = [], { supplyType = 'inter', applyGst = 
 //   rcm:true → the tax is the buyer's liability, not part of what the vendor is
 //   owed, so the payable total (and its rounding) excludes tax.
 export function computeVoucherTotals(items = [], opts = {}) {
-  const { supplyType = 'inter', applyGst = true, rcm = false, rounding = true } = opts
+  const { supplyType = 'inter', applyGst = true, rcm = false, rounding = true, roundOff: typedRoundOff } = opts
   const lines = computeLineTaxes(items, { supplyType, applyGst })
   const subTotal = r2(lines.reduce((s, l) => s + l.taxable, 0))
 
@@ -66,7 +66,9 @@ export function computeVoucherTotals(items = [], opts = {}) {
   const igst = r2(lines.reduce((s, l) => s + l.igst, 0))
   const taxTotal = r2(cgst + sgst + igst)
   const rawTotal = r2(subTotal + (rcm ? 0 : taxTotal))
-  const total = rounding ? Math.round(rawTotal) : rawTotal
+  // a round off typed by the user wins over the automatic nearest-rupee one
+  const typed = typedRoundOff !== undefined && typedRoundOff !== null && String(typedRoundOff).trim() !== '' && Number.isFinite(Number(typedRoundOff))
+  const total = typed ? r2(rawTotal + Number(typedRoundOff)) : (rounding ? Math.round(rawTotal) : rawTotal)
   const roundOff = r2(total - rawTotal)
   return { items: lines, subTotal, gstLines, cgst, sgst, igst, taxTotal, rawTotal, total, roundOff }
 }
