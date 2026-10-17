@@ -10,6 +10,8 @@
 //   2. bank payments that were booked to Salaries & Wages → settle Salary Payable (2150) instead, so salary is not counted twice
 //   3. the Wayzim recharge invoices: salary + expense lines → credit the EOR ledger (2160), administration fee stays Sales
 //   5. PF paid in Jun-Sep 2026 that was booked as a transfer to the director (2910); Zoho has them as Provident Fund payments (2610)
+//   6. TDS paid in 2025 through the director ("TDS DEBT RETURN" ₹1,20,418 on 15 Sep, "TDS REFUND" ₹3,400 on 7 May) → TDS Payable, as Zoho journals 171 and 181
+//   7. Pluxee meal-voucher loads ("face value", booked to Travel): the salary slips already charge the meal allowance and credit a liability (2630); paying Pluxee clears it
 //   4. staff-cost bills already coded to "EOR Services Cost (recharged)" (5105: Greytip, Pluxee, hotels …) → the same EOR ledger, as in Zoho
 import { r2, num } from './financeConstants.js'
 import { ZOHO_PAYROLL } from './zohoPayrollData.js'
@@ -65,6 +67,27 @@ export function buildPayrollMirror(raw) {
       detail: 'Zoho debits this bill to the Business EOR Purchase Services ledger (it is recharged to Wayzim), not to an expense.',
       fields: { items: v.items.map(i => (eff(i) === '5105' ? { ...i, accountCode: '2160' } : i)), ...(v.purchaseAccountCode === '5105' ? { purchaseAccountCode: '2160' } : {}) } })
   }
+  // 7. Pluxee face-value loads → clear the meal-allowance liability
+  for (const v of raw?.vouchers || []) {
+    if (v.voucherType !== 'purchase' || v.status === 'cancelled' || !/pluxee|sodexo|sedexo/i.test(v.partyName || '')) continue
+    const hit = (i) => /face value/i.test(i.description || '') && ((i.accountCode || v.purchaseAccountCode) !== '2630')
+    if (!(v.items || []).some(hit)) continue
+    out.push({ key: 'meal' + v.id, group: 'Meal-voucher loads → Meal allowance liability', kind: 'update', id: v.id, before: v, amount: num(v.total), title: `${v.voucherNumber} · ${v.date} · ${v.partyName}`,
+      detail: 'The face value loaded on the cards is already charged through the salary slips (credit: meal allowance, 2630); Zoho debits that liability here, not an expense.',
+      fields: { items: v.items.map(i => (hit(i) ? { ...i, accountCode: '2630' } : i)) } })
+  }
+
+  // 6. TDS paid through the director's account
+  const TDS = { 'UIPL/PAY/25-26/206': 120418, 'UIPL/PAY/25-26/191': 3400 }
+  for (const v of raw?.vouchers || []) {
+    if (v.voucherType !== 'payment' || v.status === 'cancelled' || v.partyId || !TDS[v.voucherNumber] || Math.abs(num(v.amount) - TDS[v.voucherNumber]) > 0.5) continue
+    const al = v.accountLines || []
+    if (al.length !== 1 || al[0].accountCode !== '2910') continue
+    out.push({ key: 'tds' + v.id, group: 'TDS payments booked to the director → TDS Payable', kind: 'update', id: v.id, before: v, amount: num(v.amount), title: `${v.voucherNumber} · ${v.date}`,
+      detail: `${(v.narration || '').slice(0, 60)} — Zoho books this ₹${num(v.amount).toLocaleString('en-IN')} as a TDS payment (TDS Payable), not a transfer to the director.`,
+      fields: { accountLines: [{ ...al[0], accountCode: '2500', description: 'TDS paid' }] } })
+  }
+
   // 5. PF payments booked to the director's account
   const PF = { 'UIPL/PAY/26-27/095': 151316, 'UIPL/PAY/26-27/103': 152223, 'UIPL/PAY/26-27/107': 152083, 'UIPL/PAY/26-27/111': 137279 }
   for (const v of raw?.vouchers || []) {
