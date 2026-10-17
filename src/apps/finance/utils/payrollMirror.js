@@ -8,7 +8,8 @@
 // Our books had only the bank side (salary paid → expense, PF and TDS paid → liability with nothing accrued). This file proposes:
 //   1. the slip journals (data from Zoho: utils/zohoPayrollData.js), as ordinary journal entries
 //   2. bank payments that were booked to Salaries & Wages → settle Salary Payable (2150) instead, so salary is not counted twice
-//   3. the Wayzim recharge invoices → credit the EOR ledger (2160) instead of Sales
+//   3. the Wayzim recharge invoices: salary + expense lines → credit the EOR ledger (2160), administration fee stays Sales
+//   5. PF paid in Jun-Sep 2026 that was booked as a transfer to the director (2910); Zoho has them as Provident Fund payments (2610)
 //   4. staff-cost bills already coded to "EOR Services Cost (recharged)" (5105: Greytip, Pluxee, hotels …) → the same EOR ledger, as in Zoho
 import { r2, num } from './financeConstants.js'
 import { ZOHO_PAYROLL } from './zohoPayrollData.js'
@@ -43,18 +44,36 @@ export function buildPayrollMirror(raw) {
 
   // 3. Wayzim recharge invoices
   for (const i of raw?.invoices || []) {
-    if (i.status === 'cancelled' || i.revenueAccountCode || !/wayzim/i.test(`${i.billToName || ''} ${i.customerName || ''}`)) continue
+    if (i.status === 'cancelled' || i.revenueSplit || !/wayzim/i.test(`${i.billToName || ''} ${i.customerName || ''}`)) continue
+    const its = i.items || []
+    if (!its.some(x => /^EOR EMPLOYEE SALARIES/i.test(x.description || ''))) continue          // only the monthly recharge invoices, not other sales to Wayzim
+    const line = (x) => r2(num(x.taxable) || num(x.amount) || num(x.qty || 1) * num(x.rate))
+    const eor = r2(its.filter(x => !/^administration fee/i.test(x.description || '')).reduce((t, x) => t + line(x), 0))
+    const sub = r2(num(i.subTotal))
+    if (!(eor > 0) || eor > sub + 0.01) continue
+    const admin = r2(sub - eor)
     out.push({ key: 'inv' + i.id, group: 'Wayzim invoices → EOR ledger', kind: 'invoice', id: i.id, amount: num(i.total), title: `${i.invoiceNumber} · ${i.invoiceDate}`,
-      detail: 'Zoho credits this recharge invoice to the Business EOR Purchase Services ledger, not to Sales.', fields: { revenueAccountCode: '2160' } })
+      detail: `Zoho credits the salary and expense lines (₹${eor.toLocaleString('en-IN')}) to the Business EOR Purchase Services ledger; the administration fee (₹${admin.toLocaleString('en-IN')}) stays in Sales.`,
+      fields: { revenueSplit: [{ accountCode: '2160', amount: eor }, ...(admin > 0 ? [{ accountCode: '4000', amount: admin }] : [])] } })
   }
-  // 4. bills of EOR staff costs → the EOR ledger
+  // 4. bills (and vendor credits) of EOR staff costs → the EOR ledger
   for (const v of raw?.vouchers || []) {
-    if (v.voucherType !== 'purchase' || v.status === 'cancelled') continue
+    if (!['purchase', 'debit_note'].includes(v.voucherType) || v.status === 'cancelled') continue
     const eff = (i) => i.accountCode || v.purchaseAccountCode
     if (!(v.items || []).some(i => eff(i) === '5105')) continue
     out.push({ key: 'bill' + v.id, group: 'EOR staff-cost bills → EOR ledger', kind: 'update', id: v.id, before: v, amount: num(v.total), title: `${v.voucherNumber} · ${v.date} · ${v.partyName}`,
       detail: 'Zoho debits this bill to the Business EOR Purchase Services ledger (it is recharged to Wayzim), not to an expense.',
       fields: { items: v.items.map(i => (eff(i) === '5105' ? { ...i, accountCode: '2160' } : i)), ...(v.purchaseAccountCode === '5105' ? { purchaseAccountCode: '2160' } : {}) } })
+  }
+  // 5. PF payments booked to the director's account
+  const PF = { 'UIPL/PAY/26-27/095': 151316, 'UIPL/PAY/26-27/103': 152223, 'UIPL/PAY/26-27/107': 152083, 'UIPL/PAY/26-27/111': 137279 }
+  for (const v of raw?.vouchers || []) {
+    if (v.voucherType !== 'payment' || v.status === 'cancelled' || v.partyId || !PF[v.voucherNumber] || Math.abs(num(v.amount) - PF[v.voucherNumber]) > 0.5) continue
+    const al = v.accountLines || []
+    if (al.length !== 1 || al[0].accountCode !== '2910') continue
+    out.push({ key: 'pf' + v.id, group: 'PF payments booked to the director → PF Payable', kind: 'update', id: v.id, before: v, amount: num(v.amount), title: `${v.voucherNumber} · ${v.date}`,
+      detail: `${(v.narration || '').slice(0, 60)} — Zoho books this ₹${num(v.amount).toLocaleString('en-IN')} as a Provident Fund payment, not a transfer to the director.`,
+      fields: { accountLines: [{ ...al[0], accountCode: '2610', description: 'Provident fund paid' }] } })
   }
   return out
 }

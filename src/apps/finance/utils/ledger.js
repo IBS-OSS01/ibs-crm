@@ -158,9 +158,10 @@ export function deriveInvoiceLines(invoice, accounts) {
     ...(invoice.fx?.currency && invoice.fx.currency !== 'INR' ? { currency: invoice.fx.currency, fcAmount: Number(invoice.fx.total) || 0, fxRate: Number(invoice.fx.rate) || 0 } : {}),
   })
 
-  const rev = acct(accounts, invoice.revenueAccountCode || '4000')      // e.g. Wayzim's EOR recharge invoices credit the EOR ledger instead of Sales
   const subTotal = Number(invoice.subTotal) || 0
-  lines.push({ ...rev, debit: 0, credit: subTotal })
+  // Wayzim's EOR recharge invoices: the salary and expense lines credit the EOR ledger (a pass-through), the administration fee stays income
+  const split = Array.isArray(invoice.revenueSplit) && invoice.revenueSplit.length ? invoice.revenueSplit : [{ accountCode: invoice.revenueAccountCode || '4000', amount: subTotal }]
+  split.forEach(sp => lines.push({ ...acct(accounts, sp.accountCode || '4000'), debit: 0, credit: Number(sp.amount) || 0 }))
 
   ;(invoice.gstLines || []).forEach(g => {
     const label = g.label || ''
