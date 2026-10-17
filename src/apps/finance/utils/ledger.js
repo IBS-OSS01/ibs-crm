@@ -50,6 +50,7 @@ export const SEED_ACCOUNTS = [
   { code: '2610', name: 'PF Payable (employee + employer)', type: 'liability', normalBalance: 'credit', isSystem: true },
   { code: '2620', name: 'ESIC Payable (employee + employer)', type: 'liability', normalBalance: 'credit', isSystem: true },
   { code: '2630', name: 'Other Salary Deductions Payable', type: 'liability', normalBalance: 'credit', isSystem: true },
+  { code: '2160', name: 'Business EOR Purchase Services (Wayzim recharge)', type: 'liability', normalBalance: 'credit', isSystem: true },   // Zoho's EOR ledger: recharge invoices credit it, EOR staff salary debits it
   { code: '2400', name: 'GST Payable (Output)',           type: 'liability', normalBalance: 'credit' },
   { code: '2401', name: 'Output CGST Payable',            type: 'liability', normalBalance: 'credit', parentCode: '2400', isSystem: true },
   { code: '2402', name: 'Output SGST Payable',            type: 'liability', normalBalance: 'credit', parentCode: '2400', isSystem: true },
@@ -99,7 +100,7 @@ export const SEED_ACCOUNTS = [
 // `virtual:true`) instead of depending on someone having re-seeded the CoA.
 export const REQUIRED_ACCOUNT_CODES = [
   '1100', '1110', '1520', '1200', '1301', '1302', '1303', '1310', '1400',
-  '2100', '2150', '2401', '2402', '2403', '2404', '2500', '2610', '2620', '2630', '1950', '5110', '5115', '5116', '5117', '5200',
+  '2100', '2150', '2160', '2401', '2402', '2403', '2404', '2500', '2610', '2620', '2630', '1950', '5110', '5115', '5116', '5117', '5200',
   '3200', '4000', '4925', '4950', '5000', '5010', '5900', '5925', '5950',
 ]
 export const mergeRequiredAccounts = (dbAccounts = []) => {
@@ -157,7 +158,7 @@ export function deriveInvoiceLines(invoice, accounts) {
     ...(invoice.fx?.currency && invoice.fx.currency !== 'INR' ? { currency: invoice.fx.currency, fcAmount: Number(invoice.fx.total) || 0, fxRate: Number(invoice.fx.rate) || 0 } : {}),
   })
 
-  const rev = acct(accounts, '4000')
+  const rev = acct(accounts, invoice.revenueAccountCode || '4000')      // e.g. Wayzim's EOR recharge invoices credit the EOR ledger instead of Sales
   const subTotal = Number(invoice.subTotal) || 0
   lines.push({ ...rev, debit: 0, credit: subTotal })
 

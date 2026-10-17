@@ -6,6 +6,10 @@ import { fmtAmt, normName, todayStr } from '../utils/financeConstants.js'
 import { downloadXlsx, downloadCsv, printReport } from '../utils/exportUtils.js'
 import { ReportShell, CompanyToggle, ExportBar, StatCard, Empty, inputCls, cardCls, AsOfDate } from '../components/FinanceUI.jsx'
 import { useVoucherModal } from '../components/useVoucherModal.jsx'
+import ZohoFixModal from '../components/ZohoFixModal.jsx'
+import { buildZohoFixes } from '../utils/zohoFixes.js'
+import { buildPayrollMirror } from '../utils/payrollMirror.js'
+import { invalidateFinanceCache } from '../hooks/useFinanceData.js'
 
 export default function Outstanding() {
   const { kind: kindParam } = useParams()
@@ -18,6 +22,8 @@ export default function Outstanding() {
   const [ageBy, setAgeBy] = useState('due')
   const [expanded, setExpanded] = useState({})
   const [q, setQ] = useState('')
+  const [showFix, setShowFix] = useState(false)
+  const zohoFixes = useMemo(() => (raw ? [...buildZohoFixes(raw), ...buildPayrollMirror(raw)] : []), [raw])
 
   const { parties, totals } = useMemo(
     () => computeOutstanding(allLines, { kind, company, asOf, ageBy }),
@@ -67,6 +73,7 @@ export default function Outstanding() {
           <option value="due">Age by due date</option><option value="bill">Age by bill date</option>
         </select>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search party…" className={`${inputCls} w-48`} />
+        {zohoFixes.length > 0 && <button onClick={() => setShowFix(true)} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200">Fix {zohoFixes.length} entr{zohoFixes.length === 1 ? 'y' : 'ies'} that differ from Zoho</button>}
       </>}>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label={`Total ${label.toLowerCase()}`} value={`₹${fmtAmt(totals.total)}`} tone="blue" sub={`${parties.length} parties`} />
@@ -128,6 +135,7 @@ export default function Outstanding() {
         </table>
       </div>
       {modal}
+      {showFix && <ZohoFixModal proposals={zohoFixes} company={company} onClose={() => { setShowFix(false); invalidateFinanceCache(); reload() }} onDone={() => invalidateFinanceCache()} />}
     </ReportShell>
   )
 }

@@ -60,6 +60,11 @@ export function suggestEntry(line, ctx) {
     if (isCredit && /INT\.?\s*ON|INTEREST/i.test(d)) return out({ accountCode: '4910', reason: `Interest on ${fdHit.name}` })
     return out({ kind: 'contra', otherBankId: fdHit.id, reason: isCredit ? `Sweep-in from ${fdHit.name}` : `Sweep-out to ${fdHit.name}` })
   }
+  // 0b. a transfer to / from this bank's fixed deposit that the narrative only describes in words ("Fixed deposit transfer"), and the interest on it
+  const bankName = String((ctx.banks || []).find(b => b.id === ctx.thisBankId)?.name || '').toLowerCase()
+  const myFd = (ctx.fds || []).find(f => f.linkedBankId && f.linkedBankId === ctx.thisBankId) || (bankName && (ctx.fds || []).find(f => String(f.name || '').toLowerCase().includes(bankName.split(/\s+/)[0]))) || null
+  if (myFd && /FIXED\s+DEPOSIT\s+TRANSFA?R|FD\s+TRANSFA?R/i.test(d)) return out({ kind: 'contra', otherBankId: myFd.id, reason: isCredit ? `Sweep-in from ${myFd.name}` : `Sweep-out to ${myFd.name}` })
+  if (isCredit && /INTEREST\s+ON\s+(FD|FIXED)|FD\s+INTEREST/i.test(d)) return out({ accountCode: '4910', reason: 'Interest on fixed deposit' })
   // 1. money moving between our own accounts → contra
   if (/UDISHTHA INNOVATIONS/i.test(d)) {
     const nums = d.match(/\d{9,}/g) || []
@@ -76,10 +81,12 @@ export function suggestEntry(line, ctx) {
   // 3. bank charges
   if (!isCredit && (/Bank Charges|IMP BILL COMM|Annual fee/i.test(d) || /SVC/.test(line.trnType || ''))) return out({ accountCode: '5170', reason: 'Bank charges' })
   // 4. salaries
-  if (!isCredit && /\bSALARY\b|SAL DIFF|AUTOPAY OUT/i.test(d)) return out({ accountCode: '5110', reason: /AUTOPAY/i.test(d) ? 'Salary batch' : 'Salary' })
+  if (!isCredit && /\bSALARY\b|SAL DIFF|AUTOPAY OUT/i.test(d) && !/\bTDS\b|PROVIDENT|\bPF\b|\bGST\b|PROFESSIONAL TAX|\bPTRC\b/i.test(d)) return out({ accountCode: '5110', reason: /AUTOPAY/i.test(d) ? 'Salary batch' : 'Salary' })
   // 4b. statutory dues paid through net banking (the narrative names the person who made the payment, so check this before the directors rule)
   if (!isCredit && /\bGST TAX PAYMENT\b|\bGST PAYMENT\b/i.test(d)) return out({ accountCode: '2400', reason: 'GST paid to the government (split into CGST / SGST / IGST when you file)' })
   if (!isCredit && /\bTDS\b/i.test(d) && !/REFUND|DEBT/i.test(d)) return out({ accountCode: '2500', reason: 'TDS paid to the government' })
+  if (!isCredit && /\bGST\s*3\s*B\b|GSTR[-\s]?3B/i.test(d)) return out({ accountCode: '2400', reason: 'GST return payment (split into CGST / SGST / IGST when you file)' })
+  if (!isCredit && /PROVIDENT\s+FUND|\bEPF\b|\bPF\s+(PAYMENT|CHALLAN|CONTRIBUTION)\b/i.test(d)) return out({ accountCode: '2610', reason: 'Provident fund paid to the government' })
   if (!isCredit && /\bPTRC\b|PROFESSIONAL TAX/i.test(d)) return out({ accountCode: '2630', reason: 'Professional tax paid' })
   // 4b-2. tax challans (CBDT / OLTAS), bank-guarantee commission and stamp paper, courier, domains and printing
   if (!isCredit && /CBDT|\bOLTAS\b/i.test(d)) return out({ accountCode: '2500', reason: 'Tax paid to the government by challan (CBDT) — TDS' })

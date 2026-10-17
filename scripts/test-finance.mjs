@@ -709,6 +709,17 @@ section('Zoho expenses → tied to bank payments or new entries')
   ok(o.parties.length === 0 && o.totals.advance === 0, 'outstanding: an allocation to another record\'s invoice settles that invoice — no stray advance')
 }
 
+// ── Zoho-style statement text for the HDFC account (statutory payments, FD transfers, FD interest)
+{
+  const ctx = { customers: [], vendors: [], banks: [{ id: 'h', name: 'HDFC current Account' }], fds: [{ id: 'fdh', name: 'FD HDFC', linkedBankId: 'h' }, { id: 'fdy', name: 'FD YES BANK', linkedBankId: 'y' }], thisBankId: 'h', employees: [] }
+  const z = (desc, credit, debit) => suggestEntry({ date: '2025-10-07', description: desc, credit, debit }, ctx)
+  ok(z('Tds Payable - SEP 25', 0, 141195).accountCode === '2500' && z('Provident fund - 2025 OCT', 0, 155654).accountCode === '2610' && z('GST 3 B -june 25', 0, 7411).accountCode === '2400' && z('PROFESSIONAL TAX - 2025 JULY', 0, 2000).accountCode === '2630', 'rules: statutory payments written the way Zoho references them (TDS, PF, GST 3B, professional tax)')
+  ok(z('Tds Payable - Jan 26 sALARY', 0, 120418).accountCode === '2500' && z('SALARY NOV -2025 · ALOK', 0, 5).accountCode === '5110', 'rules: a TDS payment whose reference says SALARY is still TDS, not salary')
+  const fin = z('FIxed deposit transfar', 4185, 0), fout = z('FIxed deposit transfar', 0, 100000)
+  ok(fin.kind === 'contra' && fin.otherBankId === 'fdh' && fout.kind === 'contra' && fout.otherBankId === 'fdh', 'rules: "Fixed deposit transfer" goes to this bank\'s own fixed deposit, in and out')
+  ok(z('INTEREST ON FD', 227, 0).accountCode === '4910', 'rules: interest on FD is interest income')
+}
+
 // ── Re-checking parked bank entries with today's rules
 {
   const ctx = { customers: [], vendors: [], banks: [], fds: [], employees: ['Sandeep Kharbanda'], thisBankId: 'y' }

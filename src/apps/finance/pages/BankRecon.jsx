@@ -18,6 +18,7 @@ import { customerOptions, vendorOptions } from '../components/formShared.jsx'
 import { useVoucherModal } from '../components/useVoucherModal.jsx'
 import { fmtAmt, todayStr } from '../utils/financeConstants.js'
 import { downloadXlsx } from '../utils/exportUtils.js'
+import { readSheetFile } from '../utils/readSheetFile.js'
 import { ReportShell, CompanyToggle, ExportBar, Badge, Empty, cardCls, inputCls, thCls, btnPrimary, btnGhost, useFinancePerms } from '../components/FinanceUI.jsx'
 
 const Th = ({ children, right }) => <th className={`${thCls} ${right ? 'text-right' : 'text-left'}`}>{children}</th>
@@ -83,7 +84,8 @@ export default function BankRecon() {
           parsed = parseScannedStatement(await ocrPdfPages(f, (p, n) => setMsg(`Reading the scanned statement… page ${p} of ${n} (first time it also downloads the reader, ~15 MB)`)))
         }
       } else {
-        const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true })
+        // a CSV is read as plain text: letting the spreadsheet reader guess dates turns 06/07/2026 into the wrong day / month
+        const wb = /.csv$/i.test(f.name) ? await readSheetFile(f) : XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true })
         parsed = parseBankStatement(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: false, dateNF: 'yyyy-mm-dd' }))
       }
       const { lines, error, meta } = parsed

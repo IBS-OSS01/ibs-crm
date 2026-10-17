@@ -23,7 +23,7 @@ export default function BankEntriesModal({ lines, company, bank, banks, fds = []
   const ledgers = useMemo(() => (accounts || []).filter(a => a.isActive !== false && !['1100', '1110'].includes(a.code)).sort((a, b) => a.code.localeCompare(b.code)), [accounts])
   const lineById = useMemo(() => Object.fromEntries(lines.map(l => [l.id, l])), [lines])
 
-  const [rows, setRows] = useState(() => suggestAll(lines, { customers, vendors, fds: fds.map(f => ({ id: f.id, name: f.name, accountNumber: f.accountNumber })), banks: banks.map(b => ({ id: b.id, name: b.name, bankName: b.bankName, accountNumber: b.accountNumber })), employees: (raw?.hrEmployees || []).map(e => e.name).filter(Boolean), thisBankId: bank.id })
+  const [rows, setRows] = useState(() => suggestAll(lines, { customers, vendors, fds: fds.map(f => ({ id: f.id, name: f.name, accountNumber: f.accountNumber, linkedBankId: f.linkedBankId })), banks: banks.map(b => ({ id: b.id, name: b.name, bankName: b.bankName, accountNumber: b.accountNumber })), employees: (raw?.hrEmployees || []).map(e => e.name).filter(Boolean), thisBankId: bank.id })
     .map(r => ({ ...r, include: !(r.kind === 'contra' && !r.otherBankId) })))
   const [filter, setFilter] = useState('all')
   const [editing, setEditing] = useState('')
