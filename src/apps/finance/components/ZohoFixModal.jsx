@@ -29,6 +29,7 @@ export default function ZohoFixModal({ proposals, company, onClose, onDone }) {
           if (p.kind === 'create') await createVoucher(p.data, { user, profile: userProfile, lockedUpTo })
           else if (p.kind === 'journal') await addDoc(collection(db, 'finance_journal_entries'), { ...p.data, createdBy: user?.uid || '', createdByName: userProfile?.name || user?.email || '', createdAt: new Date().toISOString() })
           else if (p.kind === 'invoice') await updateDoc(doc(db, 'finance_invoices', p.id), p.fields)
+          else if (p.kind === 'invoiceCreate') await addDoc(collection(db, 'finance_invoices'), { ...p.data, createdAt: new Date().toISOString(), createdBy: user?.uid || '' })
           else await updateVoucher(p.id, p.before, { ...p.fields, date: p.before.date }, { user, profile: userProfile, lockedUpTo })
           done++
         } catch (e) { failed.push(`${p.title}: ${e.message}`) }

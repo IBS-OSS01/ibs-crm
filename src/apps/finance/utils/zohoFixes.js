@@ -8,6 +8,7 @@
 //   5b. the ₹90,000 paid to the clearing agent on 3 Jul 2025: Zoho kept it in a "Vendor Clearing Account" and paid four vendor bills out of it
 //   5d. ₹15,988 of a transfer to the director (17 Nov 2025) that he paid on to Bhakti Electricals
 //   5c. airline bills that MakeMyTrip paid (Zoho journals 192 / 193 moved the payable from the airline to MakeMyTrip)
+//   5e. invoices raised in Zoho in October 2026 that are not in our books yet (UI/SL/26-27/16 Instakart, /17 Wayzim), the ₹73,700 credit note that Zoho charges to Transport
 //   6. receipts: a refund booked as a customer receipt, and an on-account Instakart receipt settled against its invoice
 import { r2, num } from './financeConstants.js'
 
@@ -192,6 +193,39 @@ export function buildZohoFixes(raw) {
     out.push({ key: ik.id, group: 'Receipts', kind: 'update', id: ik.id, before: ik, amount: num(ik.partyAmount || ik.amount), title: `${ik.voucherNumber} · ${ik.date} · ${ik.partyName}`,
       detail: 'Unapplied advance of the customer settled against its open invoice UI/SL/26-27/12 (₹10,71,440), as Zoho has it.',
       fields: { allocations: [{ billKey: 'invoice:' + inv.id, docNumber: inv.invoiceNumber, amount: rd(num(ik.partyAmount || ik.amount)) }] } })
+  }
+  // 5e. Zoho invoices of October 2026 that we do not have, and the credit note Zoho books to Transportation Expense
+  const invs = raw?.invoices || []
+  const haveInv = (n) => invs.some(i => i.invoiceNumber === n && i.status !== 'cancelled')
+  const tplW = invs.find(i => i.invoiceNumber === 'UI/SL/26-27/15'), tplI = invs.find(i => i.invoiceNumber === 'UI/SL/26-27/12')
+  const clone = (t) => { const c = JSON.parse(JSON.stringify(t)); ['id', 'sourceOrderId', 'sourceOrderNumber', 'zohoInvoiceId', 'revenueSplit', 'revenueAccountCode', 'updatedAt', 'updatedBy'].forEach(k => delete c[k]); return c }
+  if (tplW && !haveInv('UI/SL/26-27/17')) {
+    const rates = [1105705, 77399, 138369, 9685], items = tplW.items.map((it, k) => ({ ...it, rate: rates[k], qty: 1 }))
+    out.push({ key: 'newinv17', group: 'Invoices raised in Zoho that are not in our books', kind: 'invoiceCreate', amount: 1346833.12, title: '2026-10-16 · UI/SL/26-27/17 · Wayzim Technology',
+      detail: 'EOR payments for the month: salaries ₹11,05,705 + expenses ₹1,38,369 (→ EOR ledger) and administration fees ₹87,084 (→ Sales); GST ₹15,675.12; total ₹13,46,833.12, due 26 Oct.',
+      data: { ...clone(tplW), invoiceNumber: 'UI/SL/26-27/17', invoiceDate: '2026-10-16', dueDate: '2026-10-26', zohoInvoiceId: '3807682000000643045', items, subTotal: 1331158, roundOff: 0, total: 1346833.12, totalInWords: '',
+        gstLines: [{ label: 'CGST 9%', rate: 9, base: 87084, amount: 7837.56 }, { label: 'SGST 9%', rate: 9, base: 87084, amount: 7837.56 }], revenueSplit: [{ accountCode: '2160', amount: 1244074 }, { accountCode: '4000', amount: 87084 }], status: 'sent', source: 'zoho-import' } })
+  }
+  if (tplI && !haveInv('UI/SL/26-27/16')) {
+    out.push({ key: 'newinv16', group: 'Invoices raised in Zoho that are not in our books', kind: 'invoiceCreate', amount: 857393.41, title: '2026-10-01 · UI/SL/26-27/16 · Instakart (Mumbai)',
+      detail: 'CMC - comprehensive maintenance contract 24x7, Saidham project Q1 (1 Oct - 31 Dec 2026): 3 × ₹2,42,201.53 = ₹7,26,604.59 + GST ₹1,30,788.82; total ₹8,57,393.41, PO26203139198, due 31 Oct.',
+      data: { ...clone(tplI), invoiceNumber: 'UI/SL/26-27/16', invoiceDate: '2026-10-01', dueDate: '2026-10-31', poNumber: 'PO26203139198', zohoInvoiceId: '3807682000000643003', status: 'sent', source: 'zoho-import',
+        items: [{ sku: '', description: 'CMC - comprehensive maintenance contract - 24*7 — Maintenance services for Saidham Project - Q1, 01 OCT 2026 - 31 DEC 2026', unit: 'nos', stockItemId: '', rate: 242201.53, gstRate: 18, discountPct: '', hsnCode: '998717', qty: 3 }],
+        subTotal: 726604.59, roundOff: 0, total: 857393.41, totalInWords: '', gstLines: [{ label: 'CGST 9%', rate: 9, base: 726604.59, amount: 65394.41 }, { label: 'SGST 9%', rate: 9, base: 726604.59, amount: 65394.41 }] } })
+  }
+  const cn2 = byNo['UIPL/CRN/25-26/002']
+  if (cn2 && (cn2.items || []).length && !(cn2.items || []).every(i => i.accountCode === '5120')) {
+    out.push({ key: cn2.id, group: 'Credit note that Zoho books to Transport, not Sales', kind: 'update', id: cn2.id, before: cn2, amount: num(cn2.total), title: `${cn2.voucherNumber} · ${cn2.date} · ${cn2.partyName}`,
+      detail: 'Zoho books this ₹73,700 "deficiency in services" credit note as Transportation Expense, not as a reduction of Sales.',
+      fields: { items: cn2.items.map(i => ({ ...i, accountCode: '5120' })) } })
+  }
+  // the Instakart advance: Zoho applied ₹2,72,400 to /12 and kept ₹6,15,000 as credit, which now settles the new invoice /16
+  const inv16 = invs.find(i => i.invoiceNumber === 'UI/SL/26-27/16' && i.status !== 'cancelled'), inv12 = invs.find(i => i.invoiceNumber === 'UI/SL/26-27/12')
+  const rc = byNo['UIPL/RCT/26-27/017']
+  if (inv16 && inv12 && rc && (rc.allocations || []).length === 1 && Math.abs(num(rc.allocations[0].amount) - num(rc.partyAmount || rc.amount)) < 0.5 && rc.allocations[0].billKey === 'invoice:' + inv12.id) {
+    out.push({ key: 'rc17b', group: 'Receipts', kind: 'update', id: rc.id, before: rc, amount: num(rc.partyAmount || rc.amount), title: `${rc.voucherNumber} · ${rc.date} · ${rc.partyName}`,
+      detail: 'Split the advance as Zoho has it: ₹2,72,400 against UI/SL/26-27/12 and the remaining ₹6,15,000 against the new invoice UI/SL/26-27/16.',
+      fields: { allocations: [{ billKey: 'invoice:' + inv12.id, docNumber: inv12.invoiceNumber, amount: 272400 }, { billKey: 'invoice:' + inv16.id, docNumber: inv16.invoiceNumber, amount: rd(num(rc.partyAmount || rc.amount) - 272400) }] } })
   }
   return out
 }
