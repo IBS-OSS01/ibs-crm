@@ -12,6 +12,9 @@
 //   5. PF paid in Jun-Sep 2026 that was booked as a transfer to the director (2910); Zoho has them as Provident Fund payments (2610)
 //   6. TDS paid in 2025 through the director ("TDS DEBT RETURN" ₹1,20,418 on 15 Sep, "TDS REFUND" ₹3,400 on 7 May) → TDS Payable, as Zoho journals 171 and 181
 //   7. Pluxee meal-voucher loads ("face value", booked to Travel): the salary slips already charge the meal allowance and credit a liability (2630); paying Pluxee clears it
+//   8. Zoho journal 354 (8 Aug 2025): the annual PTEC / PTRC ₹10,000 is accrued (Dr Duties & Taxes, Cr Professional Tax) before the four ₹2,500 payments
+//   9. three ₹4,400 Sodexo meal reimbursements of 3 Jun 2025 (Zoho journals 194-196, accrued through the slips) → settle Salary Payable
+//  10. ₹10,909 received back from an employee on 2 Sep 2026 (Zoho journal 496, "extra return" of August salary) → credit Salary Payable
 //   4. staff-cost bills already coded to "EOR Services Cost (recharged)" (5105: Greytip, Pluxee, hotels …) → the same EOR ledger, as in Zoho
 import { r2, num } from './financeConstants.js'
 import { ZOHO_PAYROLL } from './zohoPayrollData.js'
@@ -67,6 +70,30 @@ export function buildPayrollMirror(raw) {
       detail: 'Zoho debits this bill to the Business EOR Purchase Services ledger (it is recharged to Wayzim), not to an expense.',
       fields: { items: v.items.map(i => (eff(i) === '5105' ? { ...i, accountCode: '2160' } : i)), ...(v.purchaseAccountCode === '5105' ? { purchaseAccountCode: '2160' } : {}) } })
   }
+  // 8. annual professional tax accrued in Zoho (journal 354)
+  if (!have.has('ZB-JV-354')) {
+    out.push({ key: 'ZB-JV-354', group: 'Other payroll items from Zoho', kind: 'journal', amount: 10000, title: '2025-08-08 · Zoho journal 354',
+      detail: 'PTEC and PTRC annual professional tax — Duties & Taxes (expense) Dr 10,000 · Professional Tax payable (2630) Cr 10,000. Our books have the four ₹2,500 payments but not this accrual.',
+      data: { reference: 'ZB-JV-354', date: '2025-08-08', company: 'UIPL', memo: 'Zoho Books journal 354 — PTEC and PTRC Annual', sourceType: 'zoho-import', status: 'posted',
+        lines: [{ accountCode: '5900', accountName: 'Miscellaneous Expenses', debit: 10000, credit: 0, description: 'PTEC / PTRC annual (Zoho: Duties & Taxes)' }, { accountCode: '2630', accountName: NAMES[2630], debit: 0, credit: 10000, description: 'PTEC / PTRC annual' }] } })
+  }
+  // 9. Sodexo meal reimbursements paid in June 2025 · 10. salary returned in Sept 2026
+  const SODEXO = { 'UIPL/PAY/25-26/196': 4400, 'UIPL/PAY/25-26/197': 4400, 'UIPL/PAY/25-26/198': 4400 }
+  for (const v of raw?.vouchers || []) {
+    if (v.status === 'cancelled' || v.partyId) continue
+    const al = v.accountLines || []
+    if (v.voucherType === 'payment' && SODEXO[v.voucherNumber] && Math.abs(num(v.amount) - SODEXO[v.voucherNumber]) < 0.5 && al.length === 1 && al[0].accountCode !== '2150') {
+      out.push({ key: 'sdx' + v.id, group: 'Other payroll items from Zoho', kind: 'update', id: v.id, before: v, amount: num(v.amount), title: `${v.voucherNumber} · ${v.date}`,
+        detail: `${(v.narration || '').slice(0, 60)} — a meal reimbursement to staff; the salary slips already carry it (Zoho journals 194-196), so this pays Salary Payable, not ${al[0].accountCode}.`,
+        fields: { accountLines: [{ ...al[0], accountCode: '2150', description: 'Sodexo meal reimbursement paid' }] } })
+    }
+    if (v.voucherType === 'receipt' && v.voucherNumber === 'UIPL/RCT/26-27/026' && Math.abs(num(v.amount) - 10909) < 0.5 && al.length === 1 && al[0].accountCode !== '2150') {
+      out.push({ key: 'ret' + v.id, group: 'Other payroll items from Zoho', kind: 'update', id: v.id, before: v, amount: num(v.amount), title: `${v.voucherNumber} · ${v.date}`,
+        detail: `${(v.narration || '').slice(0, 40)} — Zoho journal 496 books this ₹10,909 as an extra August salary paid out and returned (Salary Payable), not as money from the director.`,
+        fields: { accountLines: [{ ...al[0], accountCode: '2150', description: 'Salary returned (extra payment)' }] } })
+    }
+  }
+
   // 7. Pluxee face-value loads → clear the meal-allowance liability
   for (const v of raw?.vouchers || []) {
     if (v.voucherType !== 'purchase' || v.status === 'cancelled' || !/pluxee|sodexo|sedexo/i.test(v.partyName || '')) continue
