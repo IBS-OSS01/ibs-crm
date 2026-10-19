@@ -29,6 +29,10 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
   const [vendorId, setVendorId] = useState(initial?.partyId || '')
   const vendor = vendors.find(v => v.id === vendorId)
   const [expected, setExpected] = useState(initial?.expectedDate || '')
+  const [refNumber, setRefNumber] = useState(initial?.refNumber || '')
+  const [subject, setSubject] = useState(initial?.subject || '')
+  const [shipPref, setShipPref] = useState(initial?.shipmentPreference || '')
+  const [payDays, setPayDays] = useState(initial?.creditDays ?? null)        // null = the vendor's own terms
   const [warehouseId, setWarehouseId] = useState(initial?.warehouseId || '')
   const [terms, setTerms] = useState(initial?.terms || '')
   const [tnc, setTnc] = useState(initial?.termsAndConditions ?? PO_TERMS)       // every purchase order carries the standard terms; editable per order
@@ -54,9 +58,9 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
       const t = computeVoucherTotals(lines, { supplyType, applyGst, roundOff: roundEdit })
       return {
         voucherType: 'purchase_order', company, date, partyType: 'vendor', partyId: vendor.id, partyName: vendor.name, partyGstin: vendor.gstin,
-        expectedDate: expected, warehouseId, terms: terms.trim(), termsAndConditions: tnc, applyGst, supplyType,
+        refNumber: refNumber.trim(), subject: subject.trim(), shipmentPreference: shipPref.trim(), expectedDate: expected, warehouseId, terms: terms.trim(), termsAndConditions: tnc, applyGst, supplyType,
         items: t.items, gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal, roundOff: t.roundOff, roundOffManual: roundEdit !== '', total: t.total, narration: narration.trim(), closed,
-        creditDays: creditDaysFromTerms(vendor.paymentTerms), dueDate: addDays(expected || date, creditDaysFromTerms(vendor.paymentTerms)),
+        creditDays: payDays ?? creditDaysFromTerms(vendor.paymentTerms), dueDate: addDays(expected || date, payDays ?? creditDaysFromTerms(vendor.paymentTerms)),
       }
     },
   })
@@ -69,12 +73,20 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
       </Band>
       <Body>
         <FRow label="Purchase Order#" req><ReadBox mono>{initial && !initial._clone ? initial.voucherNumber : 'Assigned when saved'}</ReadBox></FRow>
-        <FRow label="Order Date" req>
+        <FRow label="Reference#"><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={`${formInputCls} max-w-sm`} /></FRow>
+        <FRow label="Date" req>
           <div className="flex items-center gap-4 flex-wrap">
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className={`${formInputCls} max-w-[11rem]`} required />
-            <span className="text-sm text-slate-700">Expected delivery</span><input type="date" value={expected} onChange={e => setExpected(e.target.value)} className={`${formInputCls} max-w-[11rem]`} min={date} />
+            <span className="text-sm text-slate-700">Delivery Date</span><input type="date" value={expected} onChange={e => setExpected(e.target.value)} className={`${formInputCls} max-w-[11rem]`} min={date} />
           </div>
         </FRow>
+        <FRow label="Payment Terms">
+          <select value={String(payDays ?? (vendor ? creditDaysFromTerms(vendor.paymentTerms) : 0))} onChange={e => setPayDays(Number(e.target.value))} className={`${formInputCls} max-w-[11rem]`}>
+            {[['Due on Receipt', 0], ['Net 15', 15], ['Net 30', 30], ['Net 45', 45], ['Net 60', 60]].map(([l, d]) => <option key={l} value={d}>{l}</option>)}
+          </select>
+        </FRow>
+        <FRow label="Shipment Preference"><input value={shipPref} onChange={e => setShipPref(e.target.value)} placeholder="Choose the shipment preference or type to add" className={`${formInputCls} max-w-sm`} /></FRow>
+        <FRow label="Subject"><input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Let your vendor know what this order is for" maxLength={250} className={`${formInputCls} max-w-xl`} /></FRow>
         {(raw.warehouses || []).length > 0 && <FRow label="Deliver to godown"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={`${formInputCls} max-w-sm`}><option value="">Default</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></FRow>}
         <hr className="border-slate-200" />
         <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={applyGst} onChange={e => setApplyGst(e.target.checked)} />Show GST on this order</label>

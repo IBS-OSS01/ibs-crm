@@ -19,36 +19,54 @@ const bankKeyOf = (code, id) => (code === '1110' ? (id ? `cash:${id}` : 'cash') 
 // In a foreign currency the bill shows what is still owed in that currency and the amounts you type are in it too.
 const bookInr = (b, fcAmt) => (b.fcPending !== undefined && num(fcAmt) >= b.fcPending - 0.005 ? b.pending : r2(num(fcAmt) * num(b.fxRate)))
 
-function AllocationTable({ bills, alloc, setAlloc, fx }) {
+function AllocationTable({ bills, alloc, setAlloc, fx, noun = 'Bill' }) {
   const isFc = !!fx?.isFc
-  if (!bills.length) return <p className="text-xs text-slate-400">{isFc ? `No pending ${fx.currency} bills for this party — the amount will be recorded as an advance / on-account.` : 'No pending bills for this party — the amount will be recorded as an advance / on-account.'}</p>
+  if (!bills.length) return <p className="text-xs text-slate-400">{isFc ? `No pending ${fx.currency} ${noun.toLowerCase()}s for this party — the amount will be recorded as an advance / on-account.` : `No pending ${noun.toLowerCase()}s for this party — the amount will be recorded as an advance / on-account.`}</p>
   const setAmt = (b, v) => setAlloc({ ...alloc, [b.billKey]: v })
+  const total = r2(bills.reduce((t, b) => t + num(alloc[b.billKey]), 0))
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-xs text-slate-500 uppercase"><tr>
-          <th className="text-left px-3 py-2">Bill</th><th className="text-left px-3 py-2">Date</th><th className="text-left px-3 py-2">Due</th>
-          <th className="text-right px-3 py-2">Pending{isFc ? ` (${fx.symbol})` : ''}</th>{isFc && <th className="text-right px-3 py-2">Booked at</th>}<th className="text-right px-3 py-2 w-36">Settle now{isFc ? ` (${fx.symbol})` : ''}</th><th className="w-16" />
+          <th className="text-left px-3 py-2">Date</th><th className="text-left px-3 py-2">{noun === 'Invoice' ? 'Invoice Number' : 'Bill#'}</th>
+          <th className="text-right px-3 py-2">{noun} Amount</th>{isFc && <th className="text-right px-3 py-2">Booked at</th>}
+          <th className="text-right px-3 py-2">Amount Due{isFc ? ` (${fx.symbol})` : ''}</th><th className="text-right px-3 py-2 w-36">Payment{isFc ? ` (${fx.symbol})` : ''}</th><th className="w-16" />
         </tr></thead>
         <tbody className="divide-y divide-slate-100">
           {bills.map(b => {
             const max = isFc ? b.fcPending : b.pending
             return (
               <tr key={b.billKey}>
+                <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">{b.date}</td>
                 <td className="px-3 py-1.5 font-mono text-xs">{b.docNo}{b.externalRef ? <span className="text-slate-400"> ({b.externalRef})</span> : null}</td>
-                <td className="px-3 py-1.5 text-slate-500">{b.date}</td>
-                <td className={`px-3 py-1.5 ${b.daysOverdue > 0 ? 'text-red-600' : 'text-slate-500'}`}>{b.dueDate}{b.daysOverdue > 0 ? ` (${b.daysOverdue}d)` : ''}</td>
-                <td className="px-3 py-1.5 text-right">{fmtAmt(max)}</td>
+                <td className="px-3 py-1.5 text-right text-slate-500">{fmtAmt(b.original ?? b.pending)}</td>
                 {isFc && <td className="px-3 py-1.5 text-right text-xs text-slate-500">@ {b.fxRate} = ₹{fmtAmt(b.pending)}</td>}
+                <td className="px-3 py-1.5 text-right">{fmtAmt(max)}{b.daysOverdue > 0 && <span className="block text-[10px] text-red-600">overdue {b.daysOverdue}d · due {b.dueDate}</span>}</td>
                 <td className="px-3 py-1.5"><input type="number" min="0" step="any" max={max} value={alloc[b.billKey] ?? ''} onChange={e => setAmt(b, e.target.value)} className="w-full px-2 py-1 border border-slate-300 rounded-md text-sm text-right" /></td>
                 <td className="px-1"><button type="button" className="text-xs text-blue-600 hover:underline" onClick={() => setAmt(b, max)}>full</button></td>
               </tr>
             )
           })}
         </tbody>
+        <tfoot><tr className="bg-slate-50 font-semibold"><td className="px-3 py-2" colSpan={isFc ? 4 : 3}>Total :</td><td className="px-3 py-2 text-right">{fmtAmt(total)}</td><td colSpan={2} /></tr></tfoot>
       </table>
     </div>
   )
+}
+
+export const PAYMENT_MODES = ['Cash', 'Cheque', 'Bank Transfer', 'Bank Remittance', 'UPI', 'Card', 'Other']
+const defaultMode = (bank) => (bank?.code === '1110' ? 'Cash' : 'Bank Transfer')
+
+// Pay the oldest bills first with a typed amount (Zoho does this when "Payment Made / Amount Received" is typed); the rest is an advance.
+function autoAllocate(bills, amount, isFc) {
+  let left = num(amount); const alloc = {}
+  for (const b of [...bills].sort((x, y) => (x.date || '').localeCompare(y.date || ''))) {
+    if (left <= 0) break
+    const max = isFc ? b.fcPending : b.pending
+    const t = Math.min(left, max)
+    if (t > 0) { alloc[b.billKey] = String(r2(t)); left = r2(left - t) }
+  }
+  return { alloc, rest: left > 0.004 ? String(r2(left)) : '' }
 }
 
 // Shared by payment / receipt: bills for the chosen party, with the voucher's own
@@ -127,6 +145,8 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
   const [refNumber, setRefNumber] = useState(initial?.refNumber || '')
   const [narration, setNarration] = useState(initial?.narration || '')
   const [costCentreId, setCostCentreId] = useState(initial?.costCentreId || '')
+  const [payMode, setPayMode] = useState(initial?.paymentMode || '')
+  const [topTyped, setTopTyped] = useState(null)          // the "Payment Made" amount as typed; null = show what the table adds up to
   const draft = useAttachmentDraft()
   const fx = useFx(raw, date, initial)
   const bills = useBills({ allLines, kind: 'payable', company, party: mode === 'vendor' ? vendor : null, date, initial, fx })
@@ -143,6 +163,9 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
   const st = useMemo(() => settlement({ fx, bills: mode === 'vendor' ? bills : [], alloc, onAccount: mode === 'vendor' ? onAccount : 0, accLines }), [fx.isFc, fx.rate, bills, alloc, onAccount, accLines, mode]) // eslint-disable-line react-hooks/exhaustive-deps
   const partyAmount = mode === 'vendor' ? st.partyAmount : 0
   const accSum = st.accSum
+  const typedTotal = r2(bills.reduce((t, b) => t + num(alloc[b.billKey]), 0) + num(onAccount))
+  const setAllocManual = (a) => { setTopTyped(null); setAlloc(a) }
+  const onTopAmount = (v) => { setTopTyped(v); const r = autoAllocate(bills, v, fx.isFc); setAlloc(r.alloc); setOnAccount(r.rest) }
   const tdsFinal = finalTds(tds, partyAmount + (mode === 'expense' ? accSum : 0))
   const bankAmt = r2(st.partyMoney + accSum - tdsFinal.amount)      // what really leaves the bank (rupees)
   const payAccounts = useMemo(() => accounts.filter(a => ['expense', 'asset', 'liability'].includes(a.type) && !['1100', '1110', '1200', '2100', '2500'].includes(a.code)), [accounts])
@@ -164,7 +187,7 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
       return {
         voucherType: 'payment', company, date,
         ...(mode === 'vendor' ? { partyType: 'vendor', partyId: vendor.id, partyName: vendor.name } : {}),
-        partyAmount, allocations, accountLines: lines, tds: tdsF,
+        partyAmount, allocations, accountLines: lines, tds: tdsF, paymentMode: payMode || defaultMode(bank),
         bankAccountCode: bank.code, bankAccountId: bank.id, refNumber: refNumber.trim(), narration: narration.trim(), amount: bankAmt, costCentreId,
         currency: fx.currency, fxRate: fx.isFc ? fx.rate : 1, ...(fx.isFc ? { bankAmountInr: bankAmt, onAccountFc: mode === 'vendor' ? num(onAccount) : 0 } : { bankAmountInr: null, onAccountFc: 0 }),
       }
@@ -173,31 +196,30 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
 
   return (
     <FormShell title={initial && !initial._clone ? `Edit Payment — ${initial.voucherNumber}` : 'Payment Voucher'} subtitle="Money going out — settle vendor bills, pay direct expenses, deduct TDS." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
-      <HeaderFields company={company} setCompany={c => { setCompany(c); setBankKey(undefined) }} date={date} setDate={setDate} locked={!!initial && !initial._clone}
+      <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm w-fit">
+        {[['vendor', 'Payment Made (vendor)'], ['expense', 'Expense']].map(([k, l]) => <button type="button" key={k} onClick={() => setMode(k)} className={`px-3 py-1.5 font-medium ${mode === k ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{l}</button>)}
+      </div>
+      {mode === 'vendor' && <Field label="Vendor Name *" className="max-w-xl"><SearchSelect value={vendorId} onChange={v => { setVendorId(v); setAlloc({}); setTopTyped(null) }} className={formInputCls} placeholder="Select Vendor" options={vendors.map(v => ({ value: v.id, label: v.name }))} /></Field>}
+      <HeaderFields dateLabel="Payment Date" company={company} setCompany={c => { setCompany(c); setBankKey(undefined) }} date={date} setDate={setDate} locked={!!initial && !initial._clone}
         extra={<>
-          <Field label="Paid from *"><select value={bank?.key || ''} onChange={e => setBankKey(e.target.value)} className={formInputCls}>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>
-          <Field label="Cheque / UTR no."><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
+          <Field label="Payment #"><div className={`${formInputCls} bg-slate-100 text-slate-500`}>{initial && !initial._clone ? initial.voucherNumber : 'Auto-numbered on save'}</div></Field>
+          {mode === 'vendor' && <Field label={`Payment Made (${fx.symbol}) *`}><input type="number" min="0" step="any" value={topTyped ?? (typedTotal > 0 ? String(typedTotal) : '')} onChange={e => onTopAmount(e.target.value)} disabled={!vendor} placeholder={vendor ? '' : 'select a vendor'} className={formInputCls} /></Field>}
+          <Field label="Payment Mode"><select value={payMode || defaultMode(bank)} onChange={e => setPayMode(e.target.value)} className={formInputCls}>{PAYMENT_MODES.map(m => <option key={m}>{m}</option>)}</select></Field>
+          <Field label="Paid Through *"><select value={bank?.key || ''} onChange={e => { setBankKey(e.target.value); setPayMode('') }} className={formInputCls}>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>
+          <Field label="Reference#"><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
         </>} />
       <CurrencyBar fx={fx} date={date} label="Paying in" />
-      <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm w-fit">
-        {[['vendor', 'Pay a vendor'], ['expense', 'Direct expense / other']].map(([k, l]) => <button type="button" key={k} onClick={() => setMode(k)} className={`px-3 py-1.5 font-medium ${mode === k ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{l}</button>)}
-      </div>
-      {mode === 'vendor' && (
-        <>
-          <Field label="Vendor *"><SearchSelect value={vendorId} onChange={v => { setVendorId(v); setAlloc({}) }} className={formInputCls} placeholder="Type to search vendor…" options={vendors.map(v => ({ value: v.id, label: v.name }))} /></Field>
-          {vendor && <>
-            <label className={labelCls}>Against pending bills</label>
-            <AllocationTable bills={bills} alloc={alloc} setAlloc={setAlloc} fx={fx} />
-            <Field label={`Advance / on account (${fx.symbol})`} className="max-w-xs"><input type="number" min="0" step="any" value={onAccount} onChange={e => setOnAccount(e.target.value)} className={formInputCls} /></Field>
-          </>}
-        </>
-      )}
-      <AccountLines symbol={fx.symbol} lines={accLines} setLines={setAccLines} accounts={payAccounts} label={mode === 'vendor' ? 'Other charges paid in the same payment (optional)' : 'Expense / ledger being paid'} />
+      {mode === 'vendor' && vendor && <>
+        <label className={labelCls}>Bills for this vendor</label>
+        <AllocationTable bills={bills} alloc={alloc} setAlloc={setAllocManual} fx={fx} noun="Bill" />
+        <Field label={`Amount in excess — advance / on account (${fx.symbol})`} className="max-w-xs"><input type="number" min="0" step="any" value={onAccount} onChange={e => { setTopTyped(null); setOnAccount(e.target.value) }} className={formInputCls} /></Field>
+      </>}
+      <AccountLines symbol={fx.symbol} lines={accLines} setLines={setAccLines} accounts={payAccounts} label={mode === 'vendor' ? 'Other charges paid in the same payment (optional)' : 'Expense Account * / Amount * (Zoho: expense account and amount)'} />
       <TdsBlock raw={raw} vendor={vendor} date={date} base={partyAmount + (mode === 'expense' ? accSum : 0)} tds={tds} setTds={setTds} fy={fyOf(date)}
         partyId={vendor?.id} currentDocId={initial?.id} />
       <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
       <AttachmentPanel entityType="payment" entityId={initial?.id} company={company} draft={draft} label="Bill / receipt for this payment or expense" />
-      <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
+      <Field label="Notes (internal use, not visible to the vendor)"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
       <div className="ml-auto w-full max-w-sm space-y-1 text-sm">
         {mode === 'vendor' && <SumRow label={fx.isFc ? 'Bills cleared (₹ at booking rate)' : 'To vendor (gross)'} value={partyAmount} />}
         {fx.isFc && mode === 'vendor' && <SumRow label={`Paid to vendor (₹ at ${fx.rate})`} value={st.partyMoney} />}
@@ -233,6 +255,9 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
   const bank = banks.find(b => b.key === bankKey) || banks[0]
   const [refNumber, setRefNumber] = useState(initial?.refNumber || '')
   const [narration, setNarration] = useState(initial?.narration || '')
+  const [payMode, setPayMode] = useState(initial?.paymentMode || '')
+  const [bankCharges, setBankCharges] = useState(initial?.bankCharges || '')
+  const [topTyped, setTopTyped] = useState(null)
   const draft = useAttachmentDraft()
   const fx = useFx(raw, date, initial)
   const bills = useBills({ allLines, kind: 'receivable', company, party: customer, date, initial, fx })
@@ -255,7 +280,11 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
   const partyAmount = mode === 'customer' ? st.partyAmount : 0
   const accSum = st.accSum
   const tdsAmt = tdsOn ? r2(num(tdsAmount)) : 0
-  const bankAmt = r2(st.partyMoney - tdsAmt + accSum)      // rupees that really arrive in the bank
+  const bankChg = r2(num(bankCharges))
+  const typedTotal = r2(bills.reduce((t, b) => t + num(alloc[b.billKey]), 0) + num(onAccount))
+  const setAllocManual = (a) => { setTopTyped(null); setAlloc(a) }
+  const onTopAmount = (v) => { setTopTyped(v); const r = autoAllocate(bills, v, fx.isFc); setAlloc(r.alloc); setOnAccount(r.rest) }
+  const bankAmt = r2(st.partyMoney - tdsAmt + accSum - bankChg)      // rupees that really arrive in the bank
 
   const { save, saving, error } = useVoucherSave({
     initial, onSaved, draft,
@@ -273,6 +302,7 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
         voucherType: 'receipt', company, date, ...(customer ? { partyType: 'customer', partyId: customer.id, partyName: customer.name } : {}), ...(company === 'UIPL' && customer ? groupFlag(raw, customer.name) : { interCompany: null }),
         partyAmount, allocations, accountLines: lines,
         tdsReceivable: tdsOn ? { applicable: true, section: tdsSection, amount: tdsAmt } : { applicable: false },
+        bankCharges: bankChg, paymentMode: payMode || defaultMode(bank),
         bankAccountCode: bank.code, bankAccountId: bank.id, refNumber: refNumber.trim(), narration: narration.trim(), amount: bankAmt,
         currency: fx.currency, fxRate: fx.isFc ? fx.rate : 1, ...(fx.isFc ? { bankAmountInr: bankAmt, onAccountFc: mode === 'customer' ? num(onAccount) : 0 } : { bankAmountInr: null, onAccountFc: 0 }),
       }
@@ -281,24 +311,32 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
 
   return (
     <FormShell title={initial && !initial._clone ? `Edit Receipt — ${initial.voucherNumber}` : 'Receipt Voucher'} subtitle="Money coming in — settle customer invoices, record advances, and book TDS the customer deducted." onSubmit={save} onCancel={onCancel} saving={saving} error={error}>
-      <HeaderFields company={company} setCompany={c => { setCompany(c); setBankKey(undefined); setCustomerId(''); setAlloc({}) }} date={date} setDate={setDate} locked={!!initial && !initial._clone}
+      <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm w-fit">
+        {[['customer', 'Payment Received (customer)'], ['other', 'Other receipt (FD maturity, interest, refund)']].map(([k, l]) => <button type="button" key={k} onClick={() => setMode(k)} className={`px-3 py-1.5 font-medium ${mode === k ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{l}</button>)}
+      </div>
+      {mode === 'customer' && <Field label="Customer Name *" className="max-w-xl"><SearchSelect value={customerId} onChange={v => { setCustomerId(v); setAlloc({}); setTopTyped(null) }} className={formInputCls} placeholder="Select Customer" options={customers.map(c => ({ value: c.key, label: c.name }))} /></Field>}
+      {mode === 'other' && <p className="text-xs text-slate-500 -mt-2">Pick the ledgers below: for example credit the Fixed Deposit account for the principal that came back and Interest Income for the interest. If the bank deducted TDS, choose "Yes, TDS" and enter the amount.</p>}
+      <HeaderFields dateLabel="Payment Date" company={company} setCompany={c => { setCompany(c); setBankKey(undefined); setCustomerId(''); setAlloc({}) }} date={date} setDate={setDate} locked={!!initial && !initial._clone}
         extra={<>
-          <Field label="Received in *"><select value={bank?.key || ''} onChange={e => setBankKey(e.target.value)} className={formInputCls}>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>
-          <Field label="Cheque / UTR no."><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
+          <Field label="Payment #"><div className={`${formInputCls} bg-slate-100 text-slate-500`}>{initial && !initial._clone ? initial.voucherNumber : 'Auto-numbered on save'}</div></Field>
+          {mode === 'customer' && <Field label={`Amount Received (${fx.symbol}) *`}><input type="number" min="0" step="any" value={topTyped ?? (typedTotal > 0 ? String(typedTotal) : '')} onChange={e => onTopAmount(e.target.value)} disabled={!customer} placeholder={customer ? '' : 'select a customer'} className={formInputCls} /></Field>}
+          <Field label="Bank Charges (if any)"><input type="number" min="0" step="any" value={bankCharges} onChange={e => setBankCharges(e.target.value)} className={formInputCls} /></Field>
+          <Field label="Payment Mode"><select value={payMode || defaultMode(bank)} onChange={e => setPayMode(e.target.value)} className={formInputCls}>{PAYMENT_MODES.map(m => <option key={m}>{m}</option>)}</select></Field>
+          <Field label="Deposit To *"><select value={bank?.key || ''} onChange={e => { setBankKey(e.target.value); setPayMode('') }} className={formInputCls}>{banks.map(b => <option key={b.key} value={b.key}>{b.label}</option>)}</select></Field>
+          <Field label="Reference#"><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={formInputCls} /></Field>
         </>} />
       <CurrencyBar fx={fx} date={date} label="Received in" />
-      <div className="flex rounded-lg border border-slate-300 overflow-hidden text-sm w-fit">
-        {[['customer', 'From a customer'], ['other', 'Other (FD maturity, interest, refund)']].map(([k, l]) => <button type="button" key={k} onClick={() => setMode(k)} className={`px-3 py-1.5 font-medium ${mode === k ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{l}</button>)}
-      </div>
-      {mode === 'customer' && <Field label="Customer *"><SearchSelect value={customerId} onChange={v => { setCustomerId(v); setAlloc({}) }} className={formInputCls} placeholder="Type to search customer…" options={customers.map(c => ({ value: c.key, label: c.name }))} /></Field>}
-      {mode === 'other' && <p className="text-xs text-slate-500 -mt-2">Pick the ledgers below: for example credit the Fixed Deposit account for the principal that came back and Interest Income for the interest. If the bank deducted TDS, tick the TDS box and enter the amount.</p>}
       {customer && <>
-        <label className={labelCls}>Against pending invoices</label>
-        <AllocationTable bills={bills} alloc={alloc} setAlloc={setAlloc} fx={fx} />
-        <Field label={`Advance / on account (${fx.symbol})`} className="max-w-xs"><input type="number" min="0" step="any" value={onAccount} onChange={e => setOnAccount(e.target.value)} className={formInputCls} /></Field>
+        <label className={labelCls}>Invoices for this customer</label>
+        <AllocationTable bills={bills} alloc={alloc} setAlloc={setAllocManual} fx={fx} noun="Invoice" />
+        <Field label={`Amount in excess — advance / on account (${fx.symbol})`} className="max-w-xs"><input type="number" min="0" step="any" value={onAccount} onChange={e => { setTopTyped(null); setOnAccount(e.target.value) }} className={formInputCls} /></Field>
       </>}
       <div className="rounded-xl border border-slate-200 p-3 space-y-2 bg-slate-50/50">
-        <label className="flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={tdsOn} onChange={e => setTdsOn(e.target.checked)} />{mode === 'customer' ? 'Customer deducted TDS' : 'TDS deducted before paying me (e.g. bank on FD interest)'} (credited to my Form 26AS — TDS receivable)</label>
+        <label className={labelCls}>Tax deducted?</label>
+        <div className="flex gap-5 text-sm text-slate-700">
+          <label className="flex items-center gap-2"><input type="radio" name="taxded" checked={!tdsOn} onChange={() => setTdsOn(false)} />No Tax deducted</label>
+          <label className="flex items-center gap-2"><input type="radio" name="taxded" checked={tdsOn} onChange={() => setTdsOn(true)} />Yes, TDS (Income Tax){mode !== 'customer' ? ' — deducted before paying me, e.g. by the bank on FD interest' : ''} <span className="text-xs text-slate-400">(credited to my Form 26AS — TDS receivable)</span></label>
+        </div>
         {tdsOn && <div className="grid grid-cols-2 gap-3 max-w-lg">
           <Field label="Section"><select value={tdsSection} onChange={e => setTdsSection(e.target.value)} className={formInputCls}><option value="">— select —</option>{sections.map(s => <option key={s.code} value={s.code}>{s.code}</option>)}</select></Field>
           <Field label="TDS amount (₹)"><input type="number" min="0" step="any" value={tdsAmount} onChange={e => setTdsAmount(e.target.value)} className={formInputCls} /></Field>
@@ -306,13 +344,14 @@ export function ReceiptForm({ data, initial, onSaved, onCancel }) {
       </div>
       <AccountLines symbol={fx.symbol} lines={accLines} setLines={setAccLines} accounts={incomeAccounts} label={mode === 'customer' ? 'Other income / ledgers received in the same receipt (optional)' : 'Ledgers this money belongs to (principal, interest...)'} />
       <AttachmentPanel entityType="receipt" entityId={initial?.id} company={company} draft={draft} label="Proof of receipt (bank advice, cheque photo)" />
-      <Field label="Narration"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
+      <Field label="Notes (internal use, not visible to the customer)"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
       <div className="ml-auto w-full max-w-sm space-y-1 text-sm">
         {mode === 'customer' && <SumRow label={fx.isFc ? 'Invoices cleared (₹ at booking rate)' : 'Settled (customer account)'} value={partyAmount} />}
         {fx.isFc && mode === 'customer' && <SumRow label={`Received from customer (₹ at ${fx.rate})`} value={st.partyMoney} />}
         {fx.isFc && Math.abs(st.fxDiff) > 0.004 && <SumRow label={st.fxDiff > 0 ? 'Exchange gain' : 'Exchange loss'} value={Math.abs(st.fxDiff)} tone={st.fxDiff > 0 ? 'text-green-700' : 'text-red-600'} />}
         {accSum > 0 && <SumRow label="Other ledgers (₹)" value={accSum} />}
         {tdsAmt > 0 && <SumRow label="Less: TDS deducted at source" value={-tdsAmt} tone="text-red-600" />}
+        {bankChg > 0 && <SumRow label="Less: Bank charges" value={-bankChg} tone="text-red-600" />}
         <SumRow label="Received in bank / cash" value={bankAmt} strong />
       </div>
     </FormShell>

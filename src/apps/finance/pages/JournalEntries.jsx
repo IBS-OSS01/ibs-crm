@@ -5,8 +5,9 @@ import { useAuth } from '../../../context/AuthContext'
 
 const today = () => new Date().toISOString().slice(0, 10)
 const getFY = () => { const d = new Date(); const y = d.getFullYear(); const m = d.getMonth() + 1; const s = m >= 4 ? y : y - 1; return `${String(s).slice(2)}-${String(s + 1).slice(2)}` }
-const newLine = () => ({ accountCode: '', debit: '', credit: '', description: '' })
-const emptyForm = { date: today(), company: 'UIPL', memo: '' }
+const newLine = () => ({ accountCode: '', description: '', contactName: '', debit: '', credit: '' })
+const emptyForm = { date: today(), company: 'UIPL', memo: '', refNo: '', reportingMethod: 'Accrual and Cash' }
+const REPORTING = ['Accrual and Cash', 'Accrual Only', 'Cash Only']
 
 const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 const lbl = 'block text-xs font-medium text-slate-600 mb-1'
@@ -81,12 +82,16 @@ export default function JournalEntries() {
         date: form.date,
         company: form.company,
         memo: form.memo,
+        referenceNo: (form.refNo || '').trim(),
+        reportingMethod: form.reportingMethod,
+        currency: 'INR',
         lines: usable.map(l => ({
           accountCode: l.accountCode,
           accountName: accounts.find(a => a.code === l.accountCode)?.name || l.accountCode,
           debit: Number(l.debit) || 0,
           credit: Number(l.credit) || 0,
           description: l.description || '',
+          ...(l.contactName ? { contactName: l.contactName.trim() } : {}),
         })),
         sourceType: 'manual',
         status: 'posted',
@@ -134,21 +139,37 @@ export default function JournalEntries() {
         <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 p-4 space-y-4">
           {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
           <form onSubmit={handleSave} className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <label className={lbl}>Date *</label>
+                <input type="date" className={inp} value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} />
+              </div>
+              <div>
+                <label className={lbl}>Journal#</label>
+                <div className={`${inp} bg-slate-100 text-slate-500`}>Auto-numbered on save</div>
+              </div>
+              <div>
+                <label className={lbl}>Reference#</label>
+                <input className={inp} value={form.refNo} onChange={e => setForm(p => ({ ...p, refNo: e.target.value }))} />
+              </div>
               <div>
                 <label className={lbl}>Entity</label>
                 <select className={inp} value={form.company} onChange={e => setForm(p => ({ ...p, company: e.target.value }))}>
                   <option>UIPL</option>
                 </select>
               </div>
-              <div>
-                <label className={lbl}>Date</label>
-                <input type="date" className={inp} value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} />
+              <div className="col-span-2 md:col-span-2">
+                <label className={lbl}>Notes *</label>
+                <input className={inp} value={form.memo} onChange={e => setForm(p => ({ ...p, memo: e.target.value }))}
+                  placeholder="Max. 500 characters — e.g. Opening balance as of 1 Apr 2025" maxLength={500} />
               </div>
               <div>
-                <label className={lbl}>Memo</label>
-                <input className={inp} value={form.memo} onChange={e => setForm(p => ({ ...p, memo: e.target.value }))}
-                  placeholder="e.g. Opening balance as of 1 Apr 2025" />
+                <label className={lbl}>Currency</label>
+                <div className={`${inp} bg-slate-100 text-slate-500`}>INR - Indian Rupee</div>
+              </div>
+              <div>
+                <label className={lbl}>Reporting Method</label>
+                <select className={inp} value={form.reportingMethod} onChange={e => setForm(p => ({ ...p, reportingMethod: e.target.value }))}>{REPORTING.map(r => <option key={r}>{r}</option>)}</select>
               </div>
             </div>
 
@@ -161,11 +182,12 @@ export default function JournalEntries() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider">
                   <tr>
-                    <th className="px-3 py-2 text-left" style={{ width: '32%' }}>Account</th>
-                    <th className="px-3 py-2 text-left" style={{ width: '28%' }}>Description</th>
-                    <th className="px-3 py-2" style={{ width: '16%' }}>Debit</th>
-                    <th className="px-3 py-2" style={{ width: '16%' }}>Credit</th>
-                    <th className="px-3 py-2" style={{ width: '8%' }}></th>
+                    <th className="px-3 py-2 text-left" style={{ width: '26%' }}>Account</th>
+                    <th className="px-3 py-2 text-left" style={{ width: '24%' }}>Description</th>
+                    <th className="px-3 py-2 text-left" style={{ width: '18%' }}>Contact (Name)</th>
+                    <th className="px-3 py-2 text-right" style={{ width: '13%' }}>Debits</th>
+                    <th className="px-3 py-2 text-right" style={{ width: '13%' }}>Credits</th>
+                    <th className="px-3 py-2" style={{ width: '6%' }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -178,6 +200,7 @@ export default function JournalEntries() {
                         </select>
                       </td>
                       <td className="px-3 py-2"><input className={inp} value={l.description} onChange={e => updateLine(idx, 'description', e.target.value)} /></td>
+                      <td className="px-3 py-2"><input className={inp} value={l.contactName || ''} onChange={e => updateLine(idx, 'contactName', e.target.value)} placeholder="customer / vendor" /></td>
                       <td className="px-3 py-2"><input type="number" min="0" className={inp} value={l.debit} onChange={e => updateLine(idx, 'debit', e.target.value)} /></td>
                       <td className="px-3 py-2"><input type="number" min="0" className={inp} value={l.credit} onChange={e => updateLine(idx, 'credit', e.target.value)} /></td>
                       <td className="px-3 py-2 text-center">
@@ -189,10 +212,21 @@ export default function JournalEntries() {
                   ))}
                 </tbody>
                 <tfoot>
+                  <tr className="bg-slate-50">
+                    <td className="px-3 py-2 text-right font-semibold text-slate-600" colSpan={3}>Sub Total</td>
+                    <td className="px-3 py-2 text-right font-semibold">{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    <td className="px-3 py-2 text-right font-semibold">{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    <td></td>
+                  </tr>
                   <tr className={isBalanced ? 'bg-green-50' : 'bg-red-50'}>
-                    <td className="px-3 py-2 text-right font-bold text-slate-600" colSpan={2}>Total</td>
-                    <td className={`px-3 py-2 font-bold ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>₹{totalDebit.toLocaleString('en-IN')}</td>
-                    <td className={`px-3 py-2 font-bold ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>₹{totalCredit.toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-2 text-right font-bold text-slate-700" colSpan={3}>Total (₹)</td>
+                    <td className={`px-3 py-2 text-right font-bold ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    <td className={`px-3 py-2 text-right font-bold ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td className="px-3 py-1.5 text-right text-xs text-slate-500" colSpan={4}>Difference</td>
+                    <td className={`px-3 py-1.5 text-right text-xs ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>{Math.abs(totalDebit - totalCredit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                     <td></td>
                   </tr>
                 </tfoot>
@@ -218,10 +252,11 @@ export default function JournalEntries() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider">
             <tr>
-              <th className="text-left px-4 py-3">Reference</th>
+              <th className="text-left px-4 py-3">Journal#</th>
               <th className="text-left px-4 py-3">Date</th>
+              <th className="text-left px-4 py-3">Reference#</th>
               <th className="text-left px-4 py-3">Entity</th>
-              <th className="text-left px-4 py-3">Memo</th>
+              <th className="text-left px-4 py-3">Notes</th>
               <th className="text-right px-4 py-3">Amount</th>
               {isAdmin && <th className="text-right px-4 py-3">Actions</th>}
             </tr>
@@ -231,6 +266,7 @@ export default function JournalEntries() {
               <tr key={je.id}>
                 <td className="px-4 py-3 font-mono text-slate-600">{je.reference}</td>
                 <td className="px-4 py-3 text-slate-500">{je.date}</td>
+                <td className="px-4 py-3 text-slate-500">{je.referenceNo || "—"}</td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded-lg text-xs font-bold ${je.company === 'UIPL' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>{je.company}</span>
                 </td>
@@ -244,7 +280,7 @@ export default function JournalEntries() {
               </tr>
             ))}
             {entries.length === 0 && (
-              <tr><td colSpan={isAdmin ? 6 : 5} className="text-center py-8 text-slate-400">No manual journal entries yet.</td></tr>
+              <tr><td colSpan={isAdmin ? 7 : 6} className="text-center py-8 text-slate-400">No manual journal entries yet.</td></tr>
             )}
           </tbody>
         </table>

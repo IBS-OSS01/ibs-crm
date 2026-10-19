@@ -187,12 +187,14 @@ export function deriveVoucherLines(v, accounts) {
     const accLines = (v.accountLines || []).filter(l => num(l.amount) > 0)
     const accSum = r2(accLines.reduce((s, l) => s + num(l.amount), 0))
     const tdsRec = v.tdsReceivable?.applicable ? r2(num(v.tdsReceivable.amount)) : 0
-    const bankAmt = r2(partyAmt - tdsRec + accSum)
+    const bankCharges = r2(num(v.bankCharges))
+    const bankAmt = r2(partyAmt - tdsRec + accSum - bankCharges)
     const bankCode = v.bankAccountCode || '1100'
     const bankGot = v.bankAmountInr !== undefined && v.bankAmountInr !== null && v.bankAmountInr !== '' ? r2(num(v.bankAmountInr)) : bankAmt
     const fxDiff = r2(bankGot - bankAmt)      // more rupees received than the receivable we cleared = gain
     lines.push(line(accounts, bankCode, bankGot, 0, isCashBank(bankCode) && v.bankAccountId ? { bankAccountId: v.bankAccountId } : {}))
     if (tdsRec) lines.push(line(accounts, '1310', tdsRec, 0, { tdsSection: v.tdsReceivable.section || '' }))
+    if (bankCharges > 0) lines.push(line(accounts, '5170', bankCharges, 0, { description: 'Bank charges on receipt' }))
     if (partyAmt > 0) {
       const allocs = (v.allocations || []).filter(a => num(a.amount) > 0)
       let allocated = 0

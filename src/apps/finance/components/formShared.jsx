@@ -158,13 +158,13 @@ export function CostCentreSelect({ raw, value, onChange }) {
   return <Field label="Cost centre"><select value={value || ''} onChange={e => onChange(e.target.value)} className={formInputCls}><option value="">None</option>{list.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
 }
 
-export function HeaderFields({ company, setCompany, date, setDate, locked, extra }) {
+export function HeaderFields({ company, setCompany, date, setDate, locked, extra, dateLabel = 'Date' }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       <Field label="Company">
         <select value={company} onChange={e => setCompany(e.target.value)} disabled={locked} className={formInputCls}>{useAllowedCompanies().map(c => <option key={c}>{c}</option>)}</select>
       </Field>
-      <Field label="Date"><input type="date" value={date} onChange={e => setDate(e.target.value)} className={formInputCls} required /></Field>
+      <Field label={dateLabel}><input type="date" value={date} onChange={e => setDate(e.target.value)} className={formInputCls} required /></Field>
       {extra}
     </div>
   )

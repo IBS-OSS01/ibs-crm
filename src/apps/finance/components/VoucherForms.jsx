@@ -18,6 +18,8 @@ import {
 const cleanItems = (items) => items.filter(i => (i.description || '').trim() || num(i.rate) > 0)
 const lineFrom = (i) => ({ description: i.description || '', hsnCode: i.hsnCode || '', qty: i.qty ?? 1, unit: i.unit || 'pcs', rate: i.rateFc ?? i.rate ?? '', discountPct: i.discountPct ?? 0, gstRate: i.gstRate ?? 18, stockItemId: i.stockItemId || '', sku: i.sku || '', accountCode: i.accountCode || '', ...(i.poLine !== undefined ? { poLine: i.poLine } : {}) })
 
+const TERMS = [['Due on Receipt', 0], ['Net 15', 15], ['Net 30', 30], ['Net 45', 45], ['Net 60', 60]]
+
 // ═══ PURCHASE ═══════════════════════════════════════════════════════════════
 export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
   const { raw, accounts } = data
@@ -30,6 +32,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
   const [refNumber, setRefNumber] = useState(seed?.refNumber || '')
   const [refDate, setRefDate] = useState(seed?.refDate || '')
   const [creditDays, setCreditDays] = useState(seed?.creditDays ?? 0)
+  const [subject, setSubject] = useState(seed?.subject || '')
   const [applyGst, setApplyGst] = useState(seed ? (seed.gstLines || []).length > 0 || seed.applyGst !== false : true)
   const [rcm, setRcm] = useState(!!seed?.rcm)
   const [itcEligible, setItcEligible] = useState(seed?.itcEligible !== false)
@@ -77,7 +80,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
       return {
         voucherType: 'purchase', company, date, partyType: 'vendor', partyId: vendor.id, partyName: vendor.name, partyGstin: vendor.gstin,
         partyState: vendor.state, partyStateCode: vendorState, placeOfSupplyCode: compState, companyStateCode: compState, supplyType,
-        refNumber: refNumber.trim(), refDate, creditDays: num(creditDays), dueDate: addDays(date, creditDays),
+        refNumber: refNumber.trim(), refDate, subject: subject.trim(), creditDays: num(creditDays), dueDate: addDays(date, creditDays),
         applyGst, rcm, itcEligible, purchaseAccountCode: '5000', warehouseId, costCentreId, ...(seed?.purchaseOrderId ? { purchaseOrderId: seed.purchaseOrderId, purchaseOrderNumber: seed.purchaseOrderNumber || '' } : {}),
         items: t.items.map(i => ({ ...i, accountCode: i.accountCode || '5000' })), gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal,
         roundOff: t.roundOff, roundOffManual: !fx.isFc && roundEdit !== '', total: t.total, tds: finalTds(tds, t.subTotal), narration: narration.trim(),
@@ -101,10 +104,19 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
         <FRow label="Bill Date" req>
           <div className="flex items-center gap-4 flex-wrap">
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className={`${formInputCls} max-w-[11rem]`} required />
-            <span className="text-sm text-slate-700">Credit days</span><input type="number" min="0" value={creditDays} onChange={e => setCreditDays(e.target.value)} className={`${formInputCls} max-w-[6rem]`} />
             <span className="text-sm text-slate-700">Due Date</span><div className={`${formInputCls} max-w-[11rem] bg-slate-100`}>{addDays(date, creditDays) || '—'}</div>
           </div>
         </FRow>
+        <FRow label="Payment Terms">
+          <div className="flex items-center gap-3 flex-wrap">
+            <select value={TERMS.some(t => t[1] === num(creditDays)) ? String(num(creditDays)) : 'custom'} onChange={e => e.target.value !== 'custom' && setCreditDays(Number(e.target.value))} className={`${formInputCls} max-w-[11rem]`}>
+              {TERMS.map(([l, d]) => <option key={l} value={d}>{l}</option>)}
+              {!TERMS.some(t => t[1] === num(creditDays)) && <option value="custom">Custom ({num(creditDays)} days)</option>}
+            </select>
+            <span className="text-xs text-slate-400">or credit days</span><input type="number" min="0" value={creditDays} onChange={e => setCreditDays(e.target.value)} className={`${formInputCls} max-w-[6rem]`} />
+          </div>
+        </FRow>
+        <FRow label="Subject"><input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Enter a subject within 250 characters" maxLength={250} className={`${formInputCls} max-w-xl`} /></FRow>
         <FRow label="Vendor invoice date"><input type="date" value={refDate} onChange={e => setRefDate(e.target.value)} className={`${formInputCls} max-w-[11rem]`} /></FRow>
         <hr className="border-slate-200" />
         <div className="flex gap-5 flex-wrap text-sm text-slate-600">
@@ -151,6 +163,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
   const [partyKey, setPartyKey] = useState(initial ? normName(initial.partyName) : '')
   const [refId, setRefId] = useState(initial?.refInvoiceId || initial?.refPurchaseId || '')
   const [reasonCode, setReasonCode] = useState(initial?.reasonCode || '01')
+  const [refNumber, setRefNumber] = useState(initial?.refNumber || '')
   const [items, setItems] = useState(initial?.items?.length ? initial.items.map(lineFrom) : [newLine()])
   const [applyGst, setApplyGst] = useState(initial ? initial.applyGst !== false : true)
   const [supplyType, setSupplyType] = useState(initial?.supplyType || 'intra')
@@ -219,7 +232,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
         ...(isCredit
           ? { refInvoiceId: original?.id || '', refInvoiceNumber: original?.invoiceNumber || '', refInvoiceDate: original?.invoiceDate || '', placeOfSupplyCode: original?.posStateCode || '' }
           : { refPurchaseId: original?.id || '', refInvoiceNumber: original?.refNumber || original?.voucherNumber || '', refInvoiceDate: original?.refDate || original?.date || '' }),
-        reasonCode, reason: CN_REASONS.find(r => r[0] === reasonCode)?.[1] || '', applyGst, supplyType, itcEligible, costCentreId,
+        refNumber: refNumber.trim(), reasonCode, reason: CN_REASONS.find(r => r[0] === reasonCode)?.[1] || '', applyGst, supplyType, itcEligible, costCentreId,
         companyStateCode: companyStateCode(raw, company),
         items: t.items, gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal, roundOff: t.roundOff, roundOffManual: !fx.isFc && roundEdit !== '', total: t.total, narration: narration.trim(),
         currency: fx.currency, fxRate: fx.isFc ? fx.rate : 1, fc: fx.isFc ? t.fc : null,
@@ -248,6 +261,7 @@ export function NoteForm({ type, data, initial, onSaved, onCancel }) {
       </Band>
       <Body>
         <FRow label={`${label}#`} req><ReadBox mono>{initial && !initial._clone ? initial.voucherNumber : 'Assigned when saved'}</ReadBox></FRow>
+        <FRow label="Reference#"><input value={refNumber} onChange={e => setRefNumber(e.target.value)} className={`${formInputCls} max-w-sm`} /></FRow>
         <FRow label={`${label} Date`} req><input type="date" value={date} onChange={e => setDate(e.target.value)} className={`${formInputCls} max-w-[11rem]`} required /></FRow>
         <hr className="border-slate-200" />
         <div className="flex gap-5 flex-wrap items-center text-sm text-slate-600">

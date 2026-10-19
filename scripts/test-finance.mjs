@@ -114,6 +114,9 @@ v = { id: 'r1', voucherType: 'receipt', voucherNumber: 'RCT/1', company: 'UIPL',
   partyAmount: 10000, allocations: [{ billKey: 'invoice:i1', docNumber: 'INV/1', amount: 10000 }], tdsReceivable: { applicable: true, amount: 200, section: '194C' } }
 L = deriveVoucherLines(v, accounts)
 ok(balanced(L), 'receipt balances'); eq(sumBy(L, '1100', 'debit'), 9800, 'Dr bank net of TDS'); eq(sumBy(L, '1310', 'debit'), 200, 'Dr TDS receivable'); eq(sumBy(L, '1200', 'credit'), 10000, 'Cr receivable gross')
+v = { ...v, bankCharges: 59 }
+L = deriveVoucherLines(v, accounts)
+ok(balanced(L), 'receipt with bank charges balances'); eq(sumBy(L, '1100', 'debit'), 9741, 'Dr bank net of TDS and bank charges'); eq(sumBy(L, '5170', 'debit'), 59, 'Dr bank charges expense')
 v = { id: 'c1', voucherType: 'contra', voucherNumber: 'CON/1', company: 'UIPL', date: '2026-06-03', amount: 5000, fromAccountCode: '1110', toAccountCode: '1100', toBankAccountId: 'bank1' }
 L = deriveVoucherLines(v, accounts)
 ok(balanced(L), 'contra balances'); eq(sumBy(L, '1100', 'debit'), 5000, 'Dr bank'); eq(sumBy(L, '1110', 'credit'), 5000, 'Cr cash')
