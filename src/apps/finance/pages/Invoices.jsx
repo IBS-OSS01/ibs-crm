@@ -45,7 +45,7 @@ const emptyForm = {
   shipToName: '', shipToAddress: '', shipToCity: '', shipToState: '', shipToPincode: '', shipToGstin: '',
   posState: '', posStateCode: '', applyGst: true,
   interCompany: null, isExport: false, exportType: 'WOPAY', shippingBillNo: '', shippingBillDate: '', portCode: '',
-  notes: '', termsAndConditions: '', subject: '',
+  notes: '', termsAndConditions: '', subject: '', expectedShipmentDate: '', deliveryMethod: '',
 }
 
 // one labelled row of the invoice form: label on the left (red when required), field on the right
@@ -550,7 +550,7 @@ export default function Invoices() {
         {/* invoice details */}
         <div className="px-6 py-5 space-y-4">
           <FRow label={`${docLbl}#`} req><div className="max-w-sm px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-mono text-slate-700">{editingId ? (invoices.find(i => i.id === editingId)?.invoiceNumber || '') : 'Assigned when saved'}</div></FRow>
-          <FRow label="Order Number"><input className={`${inp} max-w-sm`} value={form.poNumber} onChange={e => setForm(p => ({ ...p, poNumber: e.target.value }))} /></FRow>
+          <FRow label={form.invoiceType === 'SO' ? 'Reference#' : 'Order Number'}><input className={`${inp} max-w-sm`} value={form.poNumber} onChange={e => setForm(p => ({ ...p, poNumber: e.target.value }))} /></FRow>
           <FRow label={`${docLbl} Date`} req>
             <div className="flex items-center gap-4 flex-wrap">
               <input type="date" className={`${inp} max-w-[11rem]`} value={form.invoiceDate} onChange={e => setForm(p => ({ ...p, invoiceDate: e.target.value }))} />
@@ -560,6 +560,10 @@ export default function Invoices() {
               <input type="date" className={`${inp} max-w-[11rem]`} value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} />
             </div>
           </FRow>
+          {form.invoiceType === 'SO' && <>
+            <FRow label="Expected Shipment Date"><input type="date" className={`${inp} max-w-[11rem]`} value={form.expectedShipmentDate || ''} onChange={e => setForm(p => ({ ...p, expectedShipmentDate: e.target.value }))} /></FRow>
+            <FRow label="Delivery Method"><input className={`${inp} max-w-sm`} value={form.deliveryMethod || ''} onChange={e => setForm(p => ({ ...p, deliveryMethod: e.target.value }))} placeholder="Select a delivery method or type to add" /></FRow>
+          </>}
           <hr className="border-slate-200" />
           <FRow label="Subject"><textarea className={`${inp} max-w-xl h-16 resize-none`} value={form.subject || ''} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} placeholder="Let your customer know what this invoice is for" /></FRow>
           <hr className="border-slate-200" />

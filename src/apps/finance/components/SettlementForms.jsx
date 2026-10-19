@@ -146,6 +146,10 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
   const [narration, setNarration] = useState(initial?.narration || '')
   const [costCentreId, setCostCentreId] = useState(initial?.costCentreId || '')
   const [payMode, setPayMode] = useState(initial?.paymentMode || '')
+  const [expVendor, setExpVendor] = useState(initial?.expenseVendor || '')
+  const [expInvoice, setExpInvoice] = useState(initial?.invoiceNo || '')
+  const [expType, setExpType] = useState(initial?.expenseType || 'Services')
+  const [expSac, setExpSac] = useState(initial?.sacCode || '')
   const [topTyped, setTopTyped] = useState(null)          // the "Payment Made" amount as typed; null = show what the table adds up to
   const draft = useAttachmentDraft()
   const fx = useFx(raw, date, initial)
@@ -188,6 +192,7 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
         voucherType: 'payment', company, date,
         ...(mode === 'vendor' ? { partyType: 'vendor', partyId: vendor.id, partyName: vendor.name } : {}),
         partyAmount, allocations, accountLines: lines, tds: tdsF, paymentMode: payMode || defaultMode(bank),
+        ...(mode === 'expense' ? { expenseVendor: expVendor.trim(), invoiceNo: expInvoice.trim(), expenseType: expType, sacCode: expSac.trim() } : {}),
         bankAccountCode: bank.code, bankAccountId: bank.id, refNumber: refNumber.trim(), narration: narration.trim(), amount: bankAmt, costCentreId,
         currency: fx.currency, fxRate: fx.isFc ? fx.rate : 1, ...(fx.isFc ? { bankAmountInr: bankAmt, onAccountFc: mode === 'vendor' ? num(onAccount) : 0 } : { bankAmountInr: null, onAccountFc: 0 }),
       }
@@ -214,7 +219,15 @@ export function PaymentForm({ data, initial, onSaved, onCancel }) {
         <AllocationTable bills={bills} alloc={alloc} setAlloc={setAllocManual} fx={fx} noun="Bill" />
         <Field label={`Amount in excess — advance / on account (${fx.symbol})`} className="max-w-xs"><input type="number" min="0" step="any" value={onAccount} onChange={e => { setTopTyped(null); setOnAccount(e.target.value) }} className={formInputCls} /></Field>
       </>}
-      <AccountLines symbol={fx.symbol} lines={accLines} setLines={setAccLines} accounts={payAccounts} label={mode === 'vendor' ? 'Other charges paid in the same payment (optional)' : 'Expense Account * / Amount * (Zoho: expense account and amount)'} />
+      {mode === 'expense' && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Field label="Vendor"><input value={expVendor} onChange={e => setExpVendor(e.target.value)} placeholder="who was paid (optional)" className={formInputCls} /></Field>
+          <Field label="Invoice#"><input value={expInvoice} onChange={e => setExpInvoice(e.target.value)} className={formInputCls} /></Field>
+          <Field label="Expense Type"><select value={expType} onChange={e => setExpType(e.target.value)} className={formInputCls}><option>Goods</option><option>Services</option></select></Field>
+          <Field label={expType === 'Goods' ? 'HSN Code' : 'SAC'}><input value={expSac} onChange={e => setExpSac(e.target.value)} className={formInputCls} /></Field>
+        </div>
+      )}
+      <AccountLines symbol={fx.symbol} lines={accLines} setLines={setAccLines} accounts={payAccounts} label={mode === 'vendor' ? 'Other charges paid in the same payment (optional)' : 'Expense Account and Amount *'} />
       <TdsBlock raw={raw} vendor={vendor} date={date} base={partyAmount + (mode === 'expense' ? accSum : 0)} tds={tds} setTds={setTds} fy={fyOf(date)}
         partyId={vendor?.id} currentDocId={initial?.id} />
       <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
