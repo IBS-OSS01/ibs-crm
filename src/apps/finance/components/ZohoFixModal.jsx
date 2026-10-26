@@ -22,15 +22,21 @@ export default function ZohoFixModal({ proposals, company, onClose, onDone }) {
   const run = async () => {
     setBusy(true); setProgress(0)
     let done = 0; const failed = []
+    const made = {}                                     // proposal key -> the document just created (new vendors and bills that later entries refer to)
+    const allocs = (p) => (p.allocFromBills || []).filter(a => made[a.bill]?.voucherNumber).map(a => ({ billKey: 'purchase:' + made[a.bill].id, docNumber: made[a.bill].voucherNumber, amount: a.amount }))
     try {
       const lockedUpTo = await getBooksLockDate(company)
       for (const p of chosen) {
         try {
-          if (p.kind === 'create') await createVoucher(p.data, { user, profile: userProfile, lockedUpTo })
+          if (p.kind === 'vendorCreate') { const r = await addDoc(collection(db, 'finance_vendors'), { ...p.data, createdAt: new Date().toISOString(), createdBy: user?.uid || '' }); made[p.key] = { id: r.id } }
+          else if (p.kind === 'create') {
+            const data = { ...p.data, ...(p.vendorKey && made[p.vendorKey] ? { partyId: made[p.vendorKey].id } : {}), ...(p.allocFromBills ? { allocations: allocs(p) } : {}) }
+            made[p.key] = await createVoucher(data, { user, profile: userProfile, lockedUpTo })
+          }
           else if (p.kind === 'journal') await addDoc(collection(db, 'finance_journal_entries'), { ...p.data, createdBy: user?.uid || '', createdByName: userProfile?.name || user?.email || '', createdAt: new Date().toISOString() })
           else if (p.kind === 'invoice') await updateDoc(doc(db, 'finance_invoices', p.id), p.fields)
           else if (p.kind === 'invoiceCreate') await addDoc(collection(db, 'finance_invoices'), { ...p.data, createdAt: new Date().toISOString(), createdBy: user?.uid || '' })
-          else await updateVoucher(p.id, p.before, { ...p.fields, date: p.before.date }, { user, profile: userProfile, lockedUpTo })
+          else await updateVoucher(p.id, p.before, { ...p.fields, ...(p.allocFromBills ? { allocations: allocs(p) } : {}), date: p.fields.date || p.before.date }, { user, profile: userProfile, lockedUpTo })
           done++
         } catch (e) { failed.push(`${p.title}: ${e.message}`) }
         setProgress(n => n + 1)

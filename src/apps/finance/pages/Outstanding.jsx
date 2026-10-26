@@ -9,6 +9,7 @@ import { useVoucherModal } from '../components/useVoucherModal.jsx'
 import ZohoFixModal from '../components/ZohoFixModal.jsx'
 import { buildZohoFixes } from '../utils/zohoFixes.js'
 import { buildPayrollMirror } from '../utils/payrollMirror.js'
+import { buildZohoSync } from '../utils/zohoSync.js'
 import { invalidateFinanceCache } from '../hooks/useFinanceData.js'
 
 export default function Outstanding() {
@@ -23,7 +24,7 @@ export default function Outstanding() {
   const [expanded, setExpanded] = useState({})
   const [q, setQ] = useState('')
   const [showFix, setShowFix] = useState(false)
-  const zohoFixes = useMemo(() => (raw ? [...buildZohoFixes(raw), ...buildPayrollMirror(raw)] : []), [raw])
+  const zohoFixes = useMemo(() => (raw ? [...buildZohoFixes(raw), ...buildPayrollMirror(raw), ...buildZohoSync(raw)] : []), [raw])
 
   const { parties, totals } = useMemo(
     () => computeOutstanding(allLines, { kind, company, asOf, ageBy }),
