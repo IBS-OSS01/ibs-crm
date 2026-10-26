@@ -243,6 +243,16 @@ export function buildZohoSync(raw) {
         creditDays: po.days, dueDate: po.delivery || po.date, source: 'zoho-import' } })
   }
 
+  // ── August tickets bought through MakeMyTrip: the airline bills are owed to MakeMyTrip (Zoho: journal Dr Accounts Payable airline / Cr Accounts Payable MakeMyTrip, as journals 192 and 193)
+  const mmt = vend('MAKEMYTRIP (INDIA) PRIVATE LIMITED')
+  if (mmt) {
+    for (const [vendorName, ref] of [['SNV AVIATION PRIVATE LIMITED', '271M7K1SM0826001'], ['AIR INDIA LIMITED', '272712BP08AFR123'], ['AIR INDIA LIMITED', '272712BP08AFU594'], ['AIR INDIA LIMITED', '272712BP08AFS911']]) {
+      const b = haveBill(vendorName, ref); if (!b) continue
+      out.push({ key: 'mmt-' + b.id, group: G + ' — airline bills paid through MakeMyTrip', kind: 'update', id: b.id, before: b, amount: num(b.total), title: `${b.voucherNumber} · ${b.date} · ${vendorName} → MakeMyTrip`,
+        detail: 'We paid MakeMyTrip for this ticket, so the payable moves from the airline to MakeMyTrip (same journal Zoho passes). The GST details of the bill stay as they are.', fields: { partyId: mmt.id, partyName: mmt.vendorName || mmt.name } })
+    }
+  }
+
   // ── customs: Bills of Entry
   const NAMES = { 5185: 'Customs Duty (imports)', 1303: 'Input IGST', 1900: 'Prepaid Expenses', 2900: 'Other Current Liabilities' }
   const haveJ = new Set((raw?.journalEntries || []).map(j => j.reference))
