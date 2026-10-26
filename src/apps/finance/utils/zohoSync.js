@@ -62,9 +62,11 @@ export function buildZohoSync(raw) {
   const bank = (re) => banks.find(b => re.test(b.name || ''))
   const yes = bank(/^yes bank$/i), hsbc = bank(/hsbc/i), fdYes = bank(/^fd yes/i)
   const byNo = Object.fromEntries(vouchers.map(v => [v.voucherNumber, v]))
+  const haveJ = new Set((raw?.journalEntries || []).map(j => j.reference))
   const near = (d1, d2, days = 5) => Math.abs((new Date(d1) - new Date(d2)) / 864e5) <= days
   const bills = vouchers.filter(v => v.voucherType === 'purchase')
-  const haveBill = (vendorName, ref) => bills.find(b => SEARCH(b.partyName) === SEARCH(vendorName) && SEARCH(b.refNumber) === SEARCH(ref))
+  // the bill number alone is enough once a bill has been moved to another party (e.g. airline tickets paid through MakeMyTrip)
+  const haveBill = (vendorName, ref) => bills.find(b => SEARCH(b.refNumber) === SEARCH(ref) && (SEARCH(b.partyName) === SEARCH(vendorName) || SEARCH(b.partyName).includes('makemytrip')))
 
   // ── new vendors
   const newVendorKey = {}
@@ -253,9 +255,26 @@ export function buildZohoSync(raw) {
     }
   }
 
+  // ── Greytip bill GO/26/03/206: Zoho has 12 × ₹2,000.12 = ₹24,001.44 for the EOR ledger less a 10% discount ₹2,400.14 (Purchase Discounts), GST 3,888.23 on the rest
+  const gt = bills.find(b => b.refNumber === 'GO/26/03/206' && (b.items || []).length === 1 && Math.abs(num(b.items[0].taxable) - 21601.32) < 0.005)
+  if (gt) {
+    const item = { ...gt.items[0], qty: 12, rate: 2000.12, discountPct: 10 }
+    const t = computeVoucherTotals([item], { supplyType: gt.supplyType || 'inter', applyGst: true, roundOff: -0.53 })
+    out.push({ key: gt.id, group: G + ' — Greytip bill as in Zoho', kind: 'update', id: gt.id, before: gt, amount: num(gt.total), title: `${gt.voucherNumber} · ${gt.date} · ${gt.partyName}`,
+      detail: 'As in Zoho: 12 × ₹2,000.12 less 10% discount, taxable ₹21,601.30, IGST ₹3,888.23, round off -0.53, total ₹25,489 (here taxable ₹21,601.32, IGST ₹3,888.24).',
+      fields: { items: t.items, gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal, roundOff: t.roundOff, total: t.total } })
+    if (!haveJ.has('ZB-DISC-GO2603206')) out.push({ key: 'ZB-DISC-GO2603206', group: G + ' — Greytip bill as in Zoho', kind: 'journal', amount: 2400.14, title: `${gt.date} · discount on bill GO/26/03/206`,
+      detail: 'Zoho shows the full ₹24,001.44 in the EOR ledger and the 10% discount ₹2,400.14 separately as Purchase Discounts: Dr EOR ledger (2160), Cr Discount Received (4920).',
+      data: { reference: 'ZB-DISC-GO2603206', date: gt.date, company: 'UIPL', memo: 'Zoho bill GO/26/03/206 — 10% discount shown separately (Purchase Discounts)', sourceType: 'zoho-import', status: 'posted',
+        lines: [{ accountCode: '2160', accountName: 'Business EOR Purchase Services (Wayzim recharge)', debit: 2400.14, credit: 0, description: 'Gross of the Greytip discount' }, { accountCode: '4920', accountName: 'Discount Received', debit: 0, credit: 2400.14, description: 'Purchase discount, Greytip GO/26/03/206' }] } })
+  }
+
+  // ── the blank invoice record (only an id, no data) left behind by an earlier import
+  for (const i of raw?.invoices || []) if (i.id && Object.keys(i).filter(k => k !== 'id').length === 0)
+    out.push({ key: 'blank-' + i.id, group: G + ' — blank record', kind: 'invoiceDelete', id: i.id, amount: 0, title: `Empty invoice record ${i.id}`, detail: 'A document with no data at all (no number, party, date or amount) in the invoices list; it affects no figure. Deleted for good.' })
+
   // ── customs: Bills of Entry
   const NAMES = { 5185: 'Customs Duty (imports)', 1303: 'Input IGST', 1900: 'Prepaid Expenses', 2900: 'Other Current Liabilities' }
-  const haveJ = new Set((raw?.journalEntries || []).map(j => j.reference))
   const customsPay = byNo['UIPL/PAY/25-26/201']
   if (customsPay && (customsPay.accountLines || []).length === 1 && customsPay.accountLines[0].accountCode === '5000' && num(customsPay.accountLines[0].amount) === BOE_HSBC.total) {
     out.push({ key: customsPay.id, group: G + ' — customs (Bills of Entry)', kind: 'update', id: customsPay.id, before: customsPay, amount: BOE_HSBC.total, title: `${customsPay.voucherNumber} · ${customsPay.date} · duty challan`,

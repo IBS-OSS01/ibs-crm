@@ -2,7 +2,7 @@
 // each one is an ordinary voucher edit or a new voucher, and is kept in the audit log.
 import React, { useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
-import { collection, doc, addDoc, updateDoc } from '../../../lib/cachedFirestore'
+import { collection, doc, addDoc, updateDoc, deleteDoc } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
 import { createVoucher, updateVoucher, cancelVoucher, getBooksLockDate } from '../utils/voucherService.js'
 import { invalidateFinanceCache } from '../hooks/useFinanceData.js'
@@ -33,6 +33,7 @@ export default function ZohoFixModal({ proposals, company, onClose, onDone }) {
             const data = { ...p.data, ...(p.vendorKey && made[p.vendorKey] ? { partyId: made[p.vendorKey].id } : {}), ...(p.allocFromBills ? { allocations: allocs(p) } : {}) }
             made[p.key] = await createVoucher(data, { user, profile: userProfile, lockedUpTo })
           }
+          else if (p.kind === 'invoiceDelete') await deleteDoc(doc(db, 'finance_invoices', p.id))
           else if (p.kind === 'cancel') await cancelVoucher(p.id, p.before, p.detail, { user, profile: userProfile, lockedUpTo })
           else if (p.kind === 'journal') await addDoc(collection(db, 'finance_journal_entries'), { ...p.data, createdBy: user?.uid || '', createdByName: userProfile?.name || user?.email || '', createdAt: new Date().toISOString() })
           else if (p.kind === 'invoice') await updateDoc(doc(db, 'finance_invoices', p.id), p.fields)
