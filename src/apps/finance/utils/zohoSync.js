@@ -39,6 +39,19 @@ const POS = [
   { vendor: 'SUYOG ENTERPRISES', ref: 'PO/26-27/00008', date: '2026-10-23', delivery: '2026-10-30', days: 30, items: [['SK 90LP/4 BRE20 HL TF — geared brake motor 1.5 kW, IP55, 230/400 V', 13, 52800, '84128020'], ['Transportation charges — freight up to Bhiwandi, Mumbai; P & F 2%', 1, 23228, '996749']], total: 837361.04 },
 ]
 
+// Zoho "Bill of Entry" (customs): imports whose duty and IGST were paid to Customs. Zoho posts  Dr Customs Duty (duty) + Dr Input IGST  against the
+// account the money left from. [BoE no, date, total paid, IGST, paid from, where the credit goes]
+//   · 2982287 — paid straight from HSBC (voucher PAY/25-26/201, which we had booked as Purchases)
+//   · four DHL-cleared consignments — DHL paid Customs and billed us; those DHL bills carry the duty / IGST in Prepaid Expenses (1900). Zoho's BoE credits
+//     "Vendor Clearing Account" and journals 348-350 move that to Prepaid Expenses; BoE 18634 (Jul 2026) has no such journal yet, so it stays in the clearing account (2900).
+const BOE = [
+  ['18193', '2025-09-04', 27133, 19061.9, '1900'],
+  ['10059', '2025-09-05', 29765.4, 20911.4, '1900'],
+  ['10379', '2026-02-11', 37563, 25305.29, '1900'],
+  ['18634', '2026-07-09', 24347, 15701.44, '2900'],
+]
+const BOE_HSBC = { no: '2982287', total: 2988514, igst: 2081993.22 }
+
 export function buildZohoSync(raw) {
   const out = []
   const vouchers = (raw?.vouchers || []).filter(v => v.status !== 'cancelled')
@@ -228,6 +241,26 @@ export function buildZohoSync(raw) {
       data: { voucherType: 'purchase_order', company: 'UIPL', date: po.date, partyType: 'vendor', partyId: v?.id || '', partyName: v ? (v.vendorName || v.name) : po.vendor, partyGstin: v?.gstin || NEW_VENDORS.find(n => n.name === po.vendor)?.gstin || '', refNumber: po.ref, subject: '', shipmentPreference: '', expectedDate: po.delivery,
         warehouseId: '', terms: '', termsAndConditions: '', applyGst: true, supplyType: 'intra', items: t.items, gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal, roundOff: t.roundOff, roundOffManual: true, total: t.total, narration: `Zoho purchase order ${po.ref}`, closed: false,
         creditDays: po.days, dueDate: po.delivery || po.date, source: 'zoho-import' } })
+  }
+
+  // ── customs: Bills of Entry
+  const NAMES = { 5185: 'Customs Duty (imports)', 1303: 'Input IGST', 1900: 'Prepaid Expenses', 2900: 'Other Current Liabilities' }
+  const haveJ = new Set((raw?.journalEntries || []).map(j => j.reference))
+  const customsPay = byNo['UIPL/PAY/25-26/201']
+  if (customsPay && (customsPay.accountLines || []).length === 1 && customsPay.accountLines[0].accountCode === '5000' && num(customsPay.accountLines[0].amount) === BOE_HSBC.total) {
+    out.push({ key: customsPay.id, group: G + ' — customs (Bills of Entry)', kind: 'update', id: customsPay.id, before: customsPay, amount: BOE_HSBC.total, title: `${customsPay.voucherNumber} · ${customsPay.date} · duty challan`,
+      detail: `Customs duty paid from HSBC for Bill of Entry 2982287 (port INNSA1). Zoho books ₹${r2(BOE_HSBC.total - BOE_HSBC.igst).toLocaleString('en-IN')} as Customs Duty and ₹${BOE_HSBC.igst.toLocaleString('en-IN')} IGST as Input IGST (claimable); here all of it is in Purchases.`,
+      fields: { accountLines: [{ accountCode: '5185', amount: r2(BOE_HSBC.total - BOE_HSBC.igst), description: 'Customs duty, social welfare surcharge and fine — Bill of Entry 2982287' }, { accountCode: '1303', amount: BOE_HSBC.igst, description: 'IGST on import — Bill of Entry 2982287' }] } })
+  }
+  for (const [no, date, total, igst, cr] of BOE) {
+    const reference = `ZB-BOE-${no}`
+    if (haveJ.has(reference)) continue
+    const duty = r2(total - igst)
+    out.push({ key: reference, group: G + ' — customs (Bills of Entry)', kind: 'journal', amount: total, title: `${date} · Bill of Entry ${no} (DHL)`,
+      detail: `Customs duty ₹${duty.toLocaleString('en-IN')} + IGST ₹${igst.toLocaleString('en-IN')} paid to Customs by DHL: Dr Customs Duty, Dr Input IGST, Cr ${cr === '1900' ? 'Prepaid Expenses (the duty lines of the DHL bill; Zoho journals 348-350)' : 'Vendor Clearing (Other Current Liabilities) — no clearing journal in Zoho yet'}.`,
+      data: { reference, date, company: 'UIPL', memo: `Zoho Bill of Entry ${no} — customs duty paid by DHL on behalf of UIPL`, sourceType: 'zoho-import', status: 'posted',
+        lines: [{ accountCode: '5185', accountName: NAMES[5185], debit: duty, credit: 0, description: `Customs duty — BoE ${no}` }, { accountCode: '1303', accountName: NAMES[1303], debit: igst, credit: 0, description: `IGST — BoE ${no}` },
+          { accountCode: cr, accountName: NAMES[cr], debit: 0, credit: total, description: `BoE ${no}` }] } })
   }
   return out
 }

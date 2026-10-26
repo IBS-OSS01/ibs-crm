@@ -11,7 +11,7 @@ import { useVoucherModal } from '../components/useVoucherModal.jsx'
 import { ReportShell, CompanyToggle, Badge, Empty, cardCls, btnPrimary, inputCls, useFinancePerms } from '../components/FinanceUI.jsx'
 
 // cost heads that belong to delivering sales — not "just expenses"
-const SALES_COST = new Set(['5000', '5010', '5105', '5195', '5200'])
+const SALES_COST = new Set(['5000', '5010', '5105', '5185', '5195', '5200'])
 
 export default function Expenses() {
   const { canWrite } = useFinancePerms()
