@@ -11,10 +11,15 @@ const NEW_VENDORS = [
   { name: 'BHAGVANJI JIVANBHAI MANAVADRIYA', gstin: '24AFMPM6892F1Z1', pan: 'AFMPM6892F' },
   { name: 'SMARTSHIFT LOGISTICS SOLUTIONS PRIVATE LIMITED', gstin: '27AAGCR8772D1Z2', pan: 'AAGCR8772D' },
   { name: 'Qatar Airways Group (Q.C.S.C.)', gstin: '27AAAFQ0156F1ZL', pan: 'AAAFQ0156F' },
+  { name: 'AIR INDIA LIMITED', gstin: '27AACCN6194P1ZP', pan: 'AACCN6194P' },
   { name: 'SUYOG ENTERPRISES', gstin: '27AHKPB5944M1ZY', pan: 'AHKPB5944M', address: 'Shop No.7, Sr.No.56/3, Samarth Complex, Near State Bank Of India, Samarth Nagar, Pune - 411041', email: 'sales.suyogenterprises@gmail.com', phone: '+91-8983051299', city: 'Pune', pincode: '411041' },
 ]
 // [vendor, bill no, date, gstin, [account, description, rate, gst%, hsn], Zoho total]
 const BILLS = [
+  ['SNV AVIATION PRIVATE LIMITED', '271M7K1SM0826001', '2026-08-06', '27ABECS9580P1ZC', [['5125', 'Travel', 40538, 5, '']], 42564.9],
+  ['AIR INDIA LIMITED', '272712BP08AFR123', '2026-08-24', '27AACCN6194P1ZP', [['5125', 'Air ticket', 6688, 5, ''], ['5125', 'Fare components without GST', 759.6, 0, '']], 7782],
+  ['AIR INDIA LIMITED', '272712BP08AFU594', '2026-08-24', '27AACCN6194P1ZP', [['5125', 'Air ticket', 333, 5, ''], ['5125', 'Fare components without GST', 0.34, 0, '']], 350],
+  ['AIR INDIA LIMITED', '272712BP08AFS911', '2026-08-24', '27AACCN6194P1ZP', [['5125', 'Air ticket', 6688, 5, ''], ['5125', 'Fare components without GST', 759.6, 0, '']], 7782],
   ['BHAGVANJI JIVANBHAI MANAVADRIYA', 'PSM/26-27/1792', '2026-09-29', '24AFMPM6892F1Z1', [['5120', 'Transportation', 590, 18, '']], 696.2],
   ['SNV AVIATION PRIVATE LIMITED', '272M7K1SM0926002', '2026-09-17', '27ABECS9580P1ZC', [['5125', 'Travel', 1144, 5, '']], 1201.2],
   ['Onsurity Technologies Private Limited', 'INV202609940169', '2026-09-05', '29AADCO1206A1Z3', [['2160', 'EOR employee services', 3660.17, 18, '']], 4319],
@@ -98,13 +103,21 @@ export function buildZohoSync(raw) {
     out.push({ key: p52.id, group: G + ' — corrections', kind: 'update', id: p52.id, before: p52, amount: num(p52.amount), title: `${p52.voucherNumber} · ${p52.date} · ${p52.partyName}`,
       detail: 'The ₹4,319 paid on 5 Sep is for bill INV202609940169 (Sep); it had been attached to the ₹1,454 August bill.', allocFromBills: [{ bill: onsurityNew, amount: 4319 }], fields: { partyAmount: 4319, allocations: [] } })
   }
-  const b86 = bills.find(b => b.refNumber === '86' && SEARCH(b.partyName).includes('onsurity'))
+  const b86 = bills.find(b => ['86', 'INV202608919888'].includes(String(b.refNumber)) && SEARCH(b.partyName).includes('onsurity'))
   if (b86) {
-    out.push({ key: b86.id, group: G + ' — corrections', kind: 'update', id: b86.id, before: b86, amount: num(b86.total), title: `${b86.voucherNumber} · ${b86.date} · ${b86.partyName}`,
+    if (b86.refNumber === '86') out.push({ key: b86.id, group: G + ' — corrections', kind: 'update', id: b86.id, before: b86, amount: num(b86.total), title: `${b86.voucherNumber} · ${b86.date} · ${b86.partyName}`,
       detail: 'Bill number is INV202608919888 in Zoho (booked as "86" here); date 4 Aug.', fields: { refNumber: 'INV202608919888', refDate: '2026-08-04', narration: 'Zoho bill INV202608919888' } })
-    if (!vouchers.some(v => v.voucherType === 'payment' && SEARCH(v.partyName).includes('onsurity') && Math.abs(num(v.amount) - 1454) < 0.5)) {
+    const stmt = vouchers.find(v => v.voucherType === 'payment' && v.date === '2026-08-04' && !v.partyId && v.bankStatementLine && Math.abs(num(v.amount) - 1454) < 0.5)
+    const dup = vouchers.find(v => v.voucherType === 'payment' && v.date === '2026-08-04' && SEARCH(v.partyName).includes('onsurity') && Math.abs(num(v.amount) - 1454) < 0.5 && /Zoho Books payment 246/.test(v.narration || ''))
+    if (stmt) {
+      out.push({ key: stmt.id, group: G + ' — corrections', kind: 'update', id: stmt.id, before: stmt, amount: 1454, title: `${stmt.voucherNumber} · ${stmt.date}`,
+        detail: 'Yes Bank statement line "ONSURITY BANGALORE" of 4 Aug, parked in Miscellaneous Expenses → it is Zoho payment 246, the payment of bill INV202608919888.',
+        fields: { partyType: 'vendor', partyId: b86.partyId, partyName: b86.partyName, partyAmount: 1454, allocations: [{ billKey: 'purchase:' + b86.id, docNumber: b86.voucherNumber, amount: 1454 }], accountLines: [] } })
+      if (dup) out.push({ key: 'cancel-' + dup.id, group: G + ' — corrections', kind: 'cancel', id: dup.id, before: dup, amount: 1454, title: `${dup.voucherNumber} · ${dup.date} · cancel`,
+        detail: 'Duplicate of the statement line above (created from Zoho before the Yes Bank line was matched) — cancelled so the bank is not charged twice.' })
+    } else if (!dup && !vouchers.some(v => v.voucherType === 'payment' && SEARCH(v.partyName).includes('onsurity') && Math.abs(num(v.amount) - 1454) < 0.5)) {
       out.push({ key: 'zpay246', group: G + ' — vendor payments', kind: 'create', amount: 1454, title: '2026-08-04 · Onsurity Technologies · Zoho payment 246',
-        detail: 'Paid through Yes Bank (statement narrative "ONSURITY BANGALORE", ref 20260804141917745847) against bill INV202608919888 — match when the Yes Bank statement is uploaded.',
+        detail: 'Paid through Yes Bank against bill INV202608919888 — match when the Yes Bank statement is uploaded.',
         data: { voucherType: 'payment', company: 'UIPL', date: '2026-08-04', refNumber: '20260804141917745847', narration: 'Zoho Books payment 246 for bill INV202608919888', partyType: 'vendor', partyId: b86.partyId, partyName: b86.partyName, partyAmount: 1454,
           allocations: [{ billKey: 'purchase:' + b86.id, docNumber: b86.voucherNumber, amount: 1454 }], accountLines: [], bankAccountCode: '1100', bankAccountId: yes?.id || '', amount: 1454, currency: 'INR', fxRate: 1, bankAmountInr: null, onAccountFc: 0, tds: { applicable: false }, paymentMode: 'Bank Transfer' } })
     }
@@ -116,6 +129,13 @@ export function buildZohoSync(raw) {
     out.push({ key: p56.id, group: G + ' — corrections', kind: 'update', id: p56.id, before: p56, amount: num(p56.amount), title: `${p56.voucherNumber} · ${p56.date}`,
       detail: 'Zoho: HSBC bill 5834764 (₹11 fee + 18% GST = ₹12.98) paid on 15 Sep.', allocFromBills: [{ bill: billKeys['5834764'], amount: 12.98 }],
       fields: { partyType: 'vendor', partyId: h?.id || '', partyName: h ? (h.vendorName || h.name) : 'THE HONGKONG & SHANGHAI BANKING CORPORATION LTD', partyAmount: 12.98, accountLines: [], allocations: [] } })
+  }
+
+  for (const no of ['UIPL/PAY/26-27/129', 'UIPL/PAY/26-27/130']) {
+    const v = byNo[no]
+    if (v && yes && v.bankAccountId && v.bankAccountId !== yes.id && !v.bankStatementLine)
+      out.push({ key: 'bank-' + v.id, group: G + ' — corrections', kind: 'update', id: v.id, before: v, amount: num(v.amount), title: `${v.voucherNumber} · ${v.date} · ${v.partyName}`,
+        detail: 'Zoho paid this through Yes Bank, not HSBC — moved to Yes Bank so both bank balances equal Zoho\'s. Match it with the Yes Bank statement when it is uploaded.', fields: { bankAccountId: yes.id, bankAccountCode: '1100' } })
   }
 
   // ── Wayzim bill: Zoho dated 10 Oct, 10.4% TDS under section 195 on ₹1,88,559 = ₹19,610 (net ₹1,68,949)

@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { collection, doc, addDoc, updateDoc } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/firebase-config'
-import { createVoucher, updateVoucher, getBooksLockDate } from '../utils/voucherService.js'
+import { createVoucher, updateVoucher, cancelVoucher, getBooksLockDate } from '../utils/voucherService.js'
 import { invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { fmtAmt } from '../utils/financeConstants.js'
 import { btnPrimary, btnGhost, cardCls } from './FinanceUI.jsx'
@@ -33,6 +33,7 @@ export default function ZohoFixModal({ proposals, company, onClose, onDone }) {
             const data = { ...p.data, ...(p.vendorKey && made[p.vendorKey] ? { partyId: made[p.vendorKey].id } : {}), ...(p.allocFromBills ? { allocations: allocs(p) } : {}) }
             made[p.key] = await createVoucher(data, { user, profile: userProfile, lockedUpTo })
           }
+          else if (p.kind === 'cancel') await cancelVoucher(p.id, p.before, p.detail, { user, profile: userProfile, lockedUpTo })
           else if (p.kind === 'journal') await addDoc(collection(db, 'finance_journal_entries'), { ...p.data, createdBy: user?.uid || '', createdByName: userProfile?.name || user?.email || '', createdAt: new Date().toISOString() })
           else if (p.kind === 'invoice') await updateDoc(doc(db, 'finance_invoices', p.id), p.fields)
           else if (p.kind === 'invoiceCreate') await addDoc(collection(db, 'finance_invoices'), { ...p.data, createdAt: new Date().toISOString(), createdBy: user?.uid || '' })
