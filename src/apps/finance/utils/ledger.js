@@ -82,7 +82,8 @@ export const SEED_ACCOUNTS = [
   { code: '5130', name: 'Utilities',                       type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Utilities'] },
   { code: '5135', name: 'IT, Software & Internet',          type: 'expense',   normalBalance: 'debit' },
   { code: '5140', name: 'Supplies / Packaging',            type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Supplies / Packaging'] },
-  { code: '5150', name: 'Marketing',                        type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Marketing'] },
+  { code: '5145', name: 'Staff Welfare & Meals',             type: 'expense',   normalBalance: 'debit' },
+  { code: '5150', name: 'Marketing',                       type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Marketing'] },
   { code: '5160', name: 'Repairs & Maintenance',            type: 'expense',   normalBalance: 'debit',  mapsFromCategories: ['Repairs'] },
   { code: '5170', name: 'Bank Charges',                     type: 'expense',   normalBalance: 'debit' },
   { code: '5180', name: 'Interest Paid',                    type: 'expense',   normalBalance: 'debit' },
@@ -100,7 +101,7 @@ export const SEED_ACCOUNTS = [
 // `virtual:true`) instead of depending on someone having re-seeded the CoA.
 export const REQUIRED_ACCOUNT_CODES = [
   '1100', '1110', '1520', '1200', '1301', '1302', '1303', '1310', '1400',
-  '2100', '2150', '2160', '5170', '2401', '2402', '2403', '2404', '2500', '2610', '2620', '2630', '1950', '5110', '5115', '5116', '5117', '5200',
+  '2100', '2150', '2160', '5170', '5145', '2401', '2402', '2403', '2404', '2500', '2610', '2620', '2630', '1950', '5110', '5115', '5116', '5117', '5200',
   '3200', '4000', '4925', '4950', '5000', '5010', '5900', '5925', '5950',
 ]
 export const mergeRequiredAccounts = (dbAccounts = []) => {
