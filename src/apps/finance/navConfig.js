@@ -31,6 +31,7 @@ export const NAV_GROUPS = [
     { label: 'Vendors', icon: '🏪', path: '/finance/vendors', keywords: 'supplier vendor master' },
     { label: 'Purchase orders', icon: '📑', path: '/finance/vouchers/purchase_order', keywords: 'po order' },
     { label: 'Purchase bills', icon: '🛒', path: '/finance/vouchers/purchase', keywords: 'purchase bill vendor invoice itc f9' },
+    { label: 'Expenses', icon: '🧾', path: '/finance/expenses', keywords: 'expense lunch office running cost bank charges fuel direct expense' },
     { label: 'Payments (money out)', icon: '💸', path: '/finance/vouchers/payment', keywords: 'payment pay vendor expense tds f5' },
     { label: 'Debit notes (returns)', icon: '↪️', path: '/finance/vouchers/debit_note', keywords: 'debit note purchase return' },
     { label: 'What I owe', icon: '📤', path: '/finance/outstanding/payables', keywords: 'payables outstanding creditors due' },

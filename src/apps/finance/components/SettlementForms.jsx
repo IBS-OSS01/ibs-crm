@@ -131,11 +131,11 @@ const SumRow = ({ label, value, strong, tone = '' }) => (
 )
 
 // ═══ PAYMENT ════════════════════════════════════════════════════════════════
-export function PaymentForm({ data, initial, onSaved, onCancel }) {
+export function PaymentForm({ data, initial, onSaved, onCancel, startMode }) {
   const { raw, accounts, allLines } = data
   const [company, setCompany] = useState(initial?.company || 'UIPL')
   const [date, setDate] = useState(initial?.date || todayStr())
-  const [mode, setMode] = useState(initial ? (initial.partyName ? 'vendor' : 'expense') : 'vendor')
+  const [mode, setMode] = useState(initial ? (initial.partyName ? 'vendor' : 'expense') : (startMode || 'vendor'))
   const vendors = useMemo(() => vendorOptions(raw), [raw])
   const [vendorId, setVendorId] = useState(initial?.partyId || '')
   const vendor = vendors.find(v => v.id === vendorId) || (initial?.partyName && !initial.partyId ? { id: '', name: initial.partyName, pan: '' } : null)

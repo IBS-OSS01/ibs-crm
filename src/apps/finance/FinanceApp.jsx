@@ -16,6 +16,7 @@ import BalanceSheet from './pages/BalanceSheet.jsx'
 import BankAccounts from './pages/BankAccounts.jsx'
 import GstFiling from './pages/GstFiling.jsx'
 import Vouchers from './pages/Vouchers.jsx'
+import Expenses from './pages/Expenses.jsx'
 import { invalidateFinanceCache } from './hooks/useFinanceData.js'
 import { NAV_GROUPS, allNavItems } from './navConfig.js'
 import { recordVisit } from './utils/reportsCatalog.js'
@@ -252,6 +253,7 @@ export default function FinanceApp() {
           <Route path="/stock-items"     element={<StockItems />} />
           <Route path="/stock/:tab"      element={<StockReports />} />
           <Route path="/gst/:tab"        element={<GstReturns />} />
+          <Route path="/expenses"        element={<Expenses />} />
           <Route path="/vouchers/:type"  element={<Vouchers />} />
           <Route path="/parties"         element={<Parties />} />
           <Route path="/daybook"         element={<DayBook />} />
