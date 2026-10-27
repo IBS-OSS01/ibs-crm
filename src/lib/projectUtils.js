@@ -7,7 +7,7 @@
  */
 
 import { collection, getDocs } from './cachedFirestore'
-import { db } from './firebase-config'
+import { db } from './app-config'
 
 /**
  * Generate the next sequential project number for a given company and year.

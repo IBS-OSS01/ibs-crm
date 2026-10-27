@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { collection, getDocs, addDoc, updateDoc, doc, query, where } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import { notifyTaskAssigned, notifyTaskCompleted } from '../../../lib/emailNotifications'
 import { useUsers } from '../../../lib/useUsers'

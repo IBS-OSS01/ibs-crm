@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, getDocs, doc, updateDoc, deleteDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useUsers } from '../../../lib/useUsers'
 

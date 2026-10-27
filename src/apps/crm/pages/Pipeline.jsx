@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { collection, getDocs, getDoc, addDoc, doc, updateDoc, deleteDoc, setDoc } from '../../../lib/cachedFirestore'
 import { useNavigate } from 'react-router-dom'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useUsers } from '../../../lib/useUsers'
 import { CRM_TO_SE } from '../../../lib/stageMapping'

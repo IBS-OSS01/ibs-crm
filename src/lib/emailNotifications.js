@@ -65,7 +65,7 @@ const TEMPLATE_TASK_ASSIGNED  = 'template_0op9m3x'        // Task assigned templ
 const TEMPLATE_TASK_COMPLETED = 'template_514dw5r'        // Task completed template
 // ─────────────────────────────────────────────────────────────────────────────
 
-const APP_URL = 'https://uipl-erp.web.app'
+const APP_URL = typeof window !== 'undefined' ? window.location.origin : ''
 
 let _initialised = false
 

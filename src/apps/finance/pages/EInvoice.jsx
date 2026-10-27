@@ -3,7 +3,7 @@
 // IRN / e-way bill numbers it gives back against the invoice.
 import React, { useMemo, useState } from 'react'
 import { doc, updateDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { buildEInvoice, buildEwayBill, ewbBulkFile, invoiceProblems, ewayProblems } from '../utils/einvoice.js'
 import { isAccountingInvoice } from '../utils/ledger.js'

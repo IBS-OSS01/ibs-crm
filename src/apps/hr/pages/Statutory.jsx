@@ -2,7 +2,7 @@
 // (EPFO ECR text file and the ESIC monthly contribution sheet).
 import React, { useEffect, useMemo, useState } from 'react'
 import { collection, doc, getDoc, getDocs, query, where } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { mergeStatutory, payrollTotals, buildEcr, esicRows, contributionDue } from '../utils/statutory.js'
 import { downloadXlsx } from '../../finance/utils/exportUtils.js'
 

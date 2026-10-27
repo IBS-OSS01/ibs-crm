@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { collection, getDocs } from '../../../lib/cachedFirestore'
 import * as XLSX from 'xlsx'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import { readSheetFile } from '../utils/readSheetFile.js'
 import { parseZohoExpenses, matchExpenses, reclassify, toExpenseVoucher } from '../utils/zohoExpenses.js'

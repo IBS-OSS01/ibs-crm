@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { collection, getDocs, doc, addDoc, setDoc, updateDoc, deleteDoc, writeBatch, query, where } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import { ensureDefaultRoles } from '../defaultRoles'
 

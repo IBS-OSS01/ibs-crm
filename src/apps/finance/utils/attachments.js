@@ -7,7 +7,7 @@
 //     page pictures (first 10 pages), because a PDF can't be shrunk in the browser;
 //   • anything else is refused.
 import { collection, addDoc, getDocs, deleteDoc, doc, query, where } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 
 export const MAX_DOC_CHARS = 900000          // Firestore document limit is 1 MiB; leave headroom
 const IMG_TARGET = 220 * 1024

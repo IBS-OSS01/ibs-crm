@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { collection, getDocs } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 
 export default function ServicesDashboard() {
   const [stats, setStats] = useState({ locations: 0, skus: 0, pendingConsumption: 0, pendingSpare: 0 })

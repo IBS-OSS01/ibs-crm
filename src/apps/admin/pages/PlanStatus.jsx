@@ -1,18 +1,16 @@
 import React, { useEffect, useState } from 'react'
 import { collection, getCountFromServer } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 
-// Firebase Spark (free) plan daily/total limits relevant to this app.
-// Source: Firebase pricing page. Keep this in sync if Google changes quotas.
+// Cloudflare free-plan daily/total limits relevant to this app (Workers + D1 hold the data, the sign-in and the website).
+// Source: Cloudflare pricing/limits pages. Keep this in sync if Cloudflare changes quotas.
 const LIMITS = [
-  { key: 'reads', label: 'Firestore reads', limit: '50,000 / day' },
-  { key: 'writes', label: 'Firestore writes', limit: '20,000 / day' },
-  { key: 'deletes', label: 'Firestore deletes', limit: '20,000 / day' },
-  { key: 'storage', label: 'Firestore storage', limit: '1 GiB total' },
-  { key: 'hostingStorage', label: 'Hosting storage', limit: '10 GB total' },
-  { key: 'hostingTransfer', label: 'Hosting transfer', limit: '360 MB / day' },
-  { key: 'auth', label: 'Authentication (email/password)', limit: 'Unlimited, free' },
-  { key: 'functions', label: 'Cloud Functions', limit: 'Not available on free plan' },
+  { key: 'requests', label: 'Worker requests (app + data + sign-in)', limit: '100,000 / day' },
+  { key: 'reads', label: 'D1 rows read', limit: '5,000,000 / day' },
+  { key: 'writes', label: 'D1 rows written', limit: '100,000 / day' },
+  { key: 'storage', label: 'D1 storage', limit: '5 GB total' },
+  { key: 'assets', label: 'Website files (static assets)', limit: 'Free, unlimited bandwidth' },
+  { key: 'cpu', label: 'CPU time per request', limit: '10 ms (free plan)' },
 ]
 
 // Collections we count to give a rough sense of how much data has piled up.
@@ -57,29 +55,29 @@ export default function PlanStatus() {
     <div className="p-6 space-y-5 max-w-4xl">
       <div>
         <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Plan &amp; Usage</h2>
-        <p className="text-slate-500 text-sm">This app runs on Firebase's free Spark plan — no billing, no card on file.</p>
+        <p className="text-slate-500 text-sm">This app runs entirely on Cloudflare's free plan (Workers + D1) — no billing, no card on file.</p>
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
         <p className="font-bold mb-1">⚠️ Why this matters</p>
         <p>
-          Firebase's free plan has daily limits. The app itself can't auto-detect when you're close to
-          a limit — that data only lives in Firebase's own usage dashboard, which is free to view and
-          doesn't require upgrading. Check it occasionally, especially after a big bulk import or a
+          Cloudflare's free plan has daily limits. The app itself can't auto-detect when you're close to
+          a limit — that data only lives in the Cloudflare dashboard (Workers &amp; Pages → ibs-erp, and Storage &amp; Databases → D1),
+          which is free to view. Check it occasionally, especially after a big bulk import or a
           busy sales day.
         </p>
         <a
-          href="https://console.firebase.google.com/project/uipl-erp/usage"
+          href="https://dash.cloudflare.com/?to=/:account/workers/services/view/ibs-erp/production/metrics"
           target="_blank" rel="noreferrer"
           className="inline-block mt-3 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition"
         >
-          🔗 Open live usage dashboard in Firebase Console
+          🔗 Open live usage dashboard in Cloudflare
         </a>
       </div>
 
       <div className="bg-white rounded-2xl shadow-card border border-slate-200/70 overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-100">
-          <h3 className="font-bold text-slate-800 text-sm">Free plan (Spark) limits</h3>
+          <h3 className="font-bold text-slate-800 text-sm">Cloudflare free plan limits</h3>
         </div>
         <table className="w-full text-sm">
           <tbody className="divide-y divide-slate-100">
@@ -114,7 +112,7 @@ export default function PlanStatus() {
           </table>
         )}
         <p className="px-4 py-2 text-xs text-slate-400 border-t border-slate-100">
-          Record counts are a rough size signal, not a quota measurement — the real read/write/storage numbers are only in the Firebase Console link above.
+          Record counts are a rough size signal, not a quota measurement — the real request/read/write/storage numbers are only in the Cloudflare link above.
         </p>
       </div>
 

@@ -6,10 +6,11 @@
 //   POST /v1/count   { col }                                        → { n }
 //   POST /v1/commit  { ops: [{t, col, id, data?, merge?}], expect?: [{col, id, v}] } → { ok, stamps, docs }
 //
-// Every call carries the user's Firebase ID token; access follows rules.js (a port of firestore.rules).
+// Every call carries the person's session token (see auth.js — the app's own sign-in); access follows rules.js.
+// The same Worker also serves the website itself (the built app, via the ASSETS binding) — one address, no Firebase.
 // Free-plan limits shape this: ≤ 30 writes per commit, paged lists, and one tiny stamp per collection so other devices can
 // find out about changes without re-reading anything.
-import { verifyIdToken } from './auth.js'
+import { verifyToken, handleAuth, AuthError } from './auth.js'
 import { allowed } from './rules.js'
 import { applyOp, changedKeys, hasMarker, WriteError } from './docops.js'
 
@@ -29,16 +30,22 @@ function corsHeaders(req, env) {
 }
 const reply = (req, env, body, status = 200) => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders(req, env) } })
 
-// who is asking: { uid, provisioned, role } (loaded lazily — one D1 read, only when a rule needs it)
+// who is asking: { uid, provisioned, role, session } (the profile is one D1 read). A token that is present but not valid → 401, so the app signs out.
 async function whoIs(req, env) {
-  let uid = null
+  let uid = null, session = null
   const auth = req.headers.get('Authorization') || ''
   if (env.DEV_AUTH === '1' && req.headers.get('X-Dev-Uid')) uid = req.headers.get('X-Dev-Uid')      // local testing only; DEV_AUTH is never set in production
-  else if (auth.startsWith('Bearer ')) uid = (await verifyIdToken(auth.slice(7), env.FIREBASE_PROJECT_ID))?.uid || null
-  const ctx = { uid, provisioned: false, role: null }
+  else if (auth.startsWith('Bearer ')) {
+    session = await verifyToken(auth.slice(7), env.SESSION_SECRET)
+    if (!session) throw new HttpError(401, 'unauthenticated', 'Your session has expired — sign in again.')
+    uid = session.uid
+  }
+  const ctx = { uid, provisioned: false, role: null, session }
   if (uid) {
     const row = await env.DB.prepare("SELECT data FROM docs WHERE col = 'users' AND id = ?").bind(uid).first()
-    if (row) { ctx.provisioned = true; try { ctx.role = JSON.parse(row.data).role || null } catch { /* no role */ } }
+    if (row) {
+      try { const p = JSON.parse(row.data); ctx.provisioned = p.active !== false; ctx.role = ctx.provisioned ? (p.role || null) : null } catch { ctx.provisioned = true }
+    }
   }
   return ctx
 }
@@ -170,10 +177,12 @@ export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(req, env) })
     const url = new URL(req.url)
+    if (!url.pathname.startsWith('/v1/')) return env.ASSETS ? env.ASSETS.fetch(req) : new Response('Not found', { status: 404 })     // the website itself
     try {
       need(req.method === 'POST', 405, 'method-not-allowed', 'POST only')
       const body = await req.json().catch(() => ({}))
-      const ctx = await whoIs(req, env)
+      const ctx = (url.pathname === '/v1/auth/login' || url.pathname === '/v1/auth/setup') ? { uid: null, provisioned: false, role: null, session: null } : await whoIs(req, env)
+      if (url.pathname.startsWith('/v1/auth/')) return reply(req, env, await handleAuth(url.pathname, body, ctx.session, ctx, env))
       switch (url.pathname) {
         case '/v1/list': return reply(req, env, await list(body, ctx, env))
         case '/v1/get': return reply(req, env, await getOne(body, ctx, env))
@@ -183,6 +192,7 @@ export default {
         default: throw new HttpError(404, 'not-found', 'Unknown endpoint')
       }
     } catch (e) {
+      if (e instanceof AuthError) return reply(req, env, { error: { code: e.code, message: e.message } }, e.status)
       if (e instanceof HttpError) return reply(req, env, { error: { code: e.code, message: e.message } }, e.status)
       return reply(req, env, { error: { code: 'internal', message: String(e && e.message || e) } }, 500)
     }

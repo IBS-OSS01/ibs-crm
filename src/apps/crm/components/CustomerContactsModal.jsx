@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { collection, addDoc, doc, updateDoc, deleteDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 
 const emptyContact = { name: '', phone: '', email: '', designation: '', isPrimary: false }

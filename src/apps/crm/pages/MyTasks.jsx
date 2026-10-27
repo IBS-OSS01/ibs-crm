@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { collection, getDocs, updateDoc, doc, query, where } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 
 const TASK_STATUS = {

@@ -5,7 +5,7 @@
  */
 import React, { useState, useEffect, useMemo } from 'react'
 import { collection, query, where, onSnapshot, updateDoc, doc, serverTimestamp } from '../../lib/cachedFirestore'
-import { db } from '../../lib/firebase-config'
+import { db } from '../../lib/app-config'
 import { useAuth } from '../../context/AuthContext'
 import { notifyTaskCompleted } from '../../lib/emailNotifications'
 

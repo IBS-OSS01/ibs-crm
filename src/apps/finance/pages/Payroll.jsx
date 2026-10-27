@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react'
 import { addDoc, collection, deleteDoc, doc, setDoc } from '../../../lib/cachedFirestore'
 import { useNavigate, useParams } from 'react-router-dom'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { createVoucher, getBooksLockDate, VoucherError } from '../utils/voucherService.js'

@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { doc, updateDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { computeOutstanding } from '../utils/outstanding.js'
 import { COMPANIES, fmtAmt, isValidGstin, isValidPan, todayStr, num } from '../utils/financeConstants.js'

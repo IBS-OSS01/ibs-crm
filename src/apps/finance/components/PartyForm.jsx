@@ -3,7 +3,7 @@
 // page use (crm_customers / finance_vendors), so every screen sees the same record.
 import React, { useState } from 'react'
 import { addDoc, collection, doc, updateDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import { INDIA_STATES } from '../utils/indiaConstants.js'
 import { fetchGstinDetails } from '../utils/gstLookup.js'

@@ -37,7 +37,7 @@ const EMAILJS_SERVICE_ID      = 'service_nanuhzc'
 const TEMPLATE_PROJ_ASSIGNED  = 'YOUR_PROJECT_ASSIGNED_TEMPLATE_ID'   // ← fill this
 const TEMPLATE_PROJ_REMINDER  = 'YOUR_PROJECT_REMINDER_TEMPLATE_ID'   // ← fill this
 
-const APP_URL = 'https://uipl-erp.web.app'
+const APP_URL = typeof window !== 'undefined' ? window.location.origin : ''
 
 let _init = false
 async function getEJS() {

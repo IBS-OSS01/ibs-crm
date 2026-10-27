@@ -1,6 +1,13 @@
-name = "ibs-api"
+name = "ibs-erp"
 main = "src/index.js"
 compatibility_date = "2025-01-01"
+
+# the website itself: the built app (npm run build → ../dist) is served by this same Worker; only /v1/* runs Worker code first
+[assets]
+directory = "../dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/v1/*"]
 
 [[d1_databases]]
 binding = "DB"
@@ -8,5 +15,6 @@ database_name = "ibs-data"
 database_id = "d1500240-b726-4fcc-ae30-59a3687b54e3"
 
 [vars]
-FIREBASE_PROJECT_ID = "uipl-erp"
-ALLOWED_ORIGINS = "https://uipl-erp.web.app,https://uipl-erp.firebaseapp.com,http://localhost:5173,http://localhost:4173"
+ALLOWED_ORIGINS = "https://ibs-erp.sankharbanda.workers.dev,http://localhost:5173,http://localhost:4173"
+
+# secret (never in this file): wrangler secret put SESSION_SECRET   — the key that signs session tokens

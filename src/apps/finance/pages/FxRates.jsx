@@ -2,7 +2,7 @@
 import React, { useMemo, useState } from 'react'
 import { addDoc, collection, deleteDoc, doc } from '../../../lib/cachedFirestore'
 import { useNavigate, useParams } from 'react-router-dom'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { computeOutstanding } from '../utils/outstanding.js'

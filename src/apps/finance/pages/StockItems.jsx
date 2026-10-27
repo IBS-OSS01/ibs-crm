@@ -2,7 +2,7 @@
 // method, minimum stock and opening stock per godown.
 import React, { useMemo, useState } from 'react'
 import { addDoc, collection, doc, setDoc, updateDoc, writeBatch } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { OPENING_DEFAULT_DATE } from '../utils/stockEngine.js'

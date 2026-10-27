@@ -54,7 +54,7 @@ export default function DataExport() {
           <p className="text-xs text-slate-400">GST returns, TDS statements, stock reports and bank reconciliation each have their own Excel export on their pages.</p>
         </div>
       </div>
-      <p className="text-xs text-slate-400">Today is {todayStr()}. Backups of the underlying data are held by Firebase; this page exports a readable copy, not a restorable database dump.</p>
+      <p className="text-xs text-slate-400">Today is {todayStr()}. The data itself lives in Cloudflare D1 (use Cloudflare's D1 export or Time Travel for a full backup); this page exports a readable copy, not a restorable database dump.</p>
     </ReportShell>
   )
 }

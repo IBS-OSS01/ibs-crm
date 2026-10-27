@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { doc, updateDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 
 // ── Constants ─────────────────────────────────────────────────────────────────

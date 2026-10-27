@@ -68,14 +68,14 @@ const MANAGER_ROLES = ['admin','sales_manager','sales_director','project_manager
 const OPEN_KEY = 'finance.nav.open2'
 const loadOpen = () => { try { return JSON.parse(localStorage.getItem(OPEN_KEY) || 'null') } catch { return null } }
 
-// The app keeps what it has read from Firebase (so pages open instantly and the free daily read quota lasts). Changes made by
+// The app keeps what it has read from the server (so pages open instantly and the free daily read quota lasts). Changes made by
 // someone else, or from another device, appear after a few hours — or right away when this is pressed.
 function RefreshData({ compact }) {
   const [busy, setBusy] = useState(false)
   const t = dataCacheInfo().oldest
   const when = t ? new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''
   const go = async () => {
-    if (!window.confirm('Re-read all the finance data from the server now?\n\nThis uses a few thousand of the free daily Firebase reads. Your own saves already show up without this — use it only to pick up changes made by someone else or from another device.')) return
+    if (!window.confirm('Re-read all the finance data from the server now?\n\nThis uses a few thousand of the free daily database reads. Your own saves already show up without this — use it only to pick up changes made by someone else or from another device.')) return
     setBusy(true); await clearDataCache(); window.location.reload()
   }
   return (

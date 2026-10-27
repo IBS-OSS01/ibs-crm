@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { collection, getDocs } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import ActivityFeedModal from '../components/ActivityFeedModal.jsx'
 

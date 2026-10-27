@@ -3,7 +3,7 @@
 // to open the voucher it belongs to.
 import React, { useEffect, useMemo, useState } from 'react'
 import { collection, getDocs } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/firebase-config'
+import { db } from '../../../lib/app-config'
 import { useFinanceData } from '../hooks/useFinanceData.js'
 import { buildVoucherIndex } from '../utils/voucherIndex.js'
 import { listStatementFiles, downloadStatementFile } from '../utils/statementFiles.js'

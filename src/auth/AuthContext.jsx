@@ -2,7 +2,7 @@
  * IBS CRM — Permission Layer v1
  * src/auth/AuthContext.jsx
  *
- * Canonical auth context. Loads the Firebase Auth user and their Firestore
+ * Canonical auth context. Loads the signed-in user (lib/session.js) and their
  * profile (users/{uid}), merges them into `currentUser`, and exposes permission
  * helpers backed by src/auth/permissions.js.
  *
@@ -11,9 +11,9 @@
  */
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc } from '../lib/cachedFirestore'
-import { auth, db } from '../lib/firebase-config'
+import { auth, db } from '../lib/app-config'
+import { takeDisabledNote } from '../lib/session'
 import { hasPermission, canView, canEdit, MODULES, RIGHTS } from './permissions'
 import { prefetchUsers } from '../lib/useUsers'
 
@@ -26,13 +26,13 @@ const slugify = (name = '') => name.toLowerCase().trim().replace(/[\s-]+/g, '_')
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 export function AuthProvider({ children }) {
-  const [user, setUser]                   = useState(null)   // Firebase Auth user
-  const [userProfile, setUserProfile]     = useState(null)   // Firestore users/{uid}
+  const [user, setUser]                   = useState(null)   // signed-in login
+  const [userProfile, setUserProfile]     = useState(null)   // users/{uid} profile
   const [loading, setLoading]             = useState(true)
   const [disabledMessage, setDisabledMessage] = useState('')
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+    const unsubscribe = auth.onAuthStateChanged(async (authUser) => {
       try {
         if (authUser) {
           const snap    = await getDoc(doc(db, 'users', authUser.uid))
@@ -66,6 +66,8 @@ export function AuthProvider({ children }) {
         } else {
           setUser(null)
           setUserProfile(null)
+          const note = takeDisabledNote()      // the server switched this login off while the app was open
+          if (note) setDisabledMessage(note)
         }
       } catch (e) {
         console.error('AuthContext error:', e)
@@ -124,9 +126,9 @@ export function AuthProvider({ children }) {
   // ── Context value ─────────────────────────────────────────────────────────────
   const value = {
     // Auth state
-    user,           // Firebase Auth user object
-    currentUser,    // Merged auth + Firestore profile (convenience)
-    userProfile,    // Raw Firestore profile
+    user,           // signed-in login
+    currentUser,    // Merged login + profile (convenience)
+    userProfile,    // Raw profile
     loading,
     disabledMessage,
     clearDisabledMessage,
