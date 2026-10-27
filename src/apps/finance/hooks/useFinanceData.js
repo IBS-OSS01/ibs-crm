@@ -51,7 +51,7 @@ export const CORE_KEYS = [
   'invoices', 'payments', 'orders', 'expenses', 'payables', 'accounts', 'journalEntries',
   'vouchers', 'vendors', 'customers', 'bankAccounts',
   // inventory — needed by every report because stock value feeds Stock in Hand / cost of goods
-  'stockItems', 'warehouses', 'stockAdjustments', 'stockTransfers', 'consumptionRequests', 'fxRates',
+  'stockItems', 'stockLevels', 'warehouses', 'stockAdjustments', 'stockTransfers', 'consumptionRequests', 'fxRates',
 ]
 
 const SETTINGS_TTL_MS = 10 * 60_000       // the two company-settings documents; a save of settings drops this copy
