@@ -249,7 +249,7 @@ export function buildZohoSync(raw) {
   const mmt = vend('MAKEMYTRIP (INDIA) PRIVATE LIMITED')
   if (mmt) {
     for (const [vendorName, ref] of [['SNV AVIATION PRIVATE LIMITED', '271M7K1SM0826001'], ['AIR INDIA LIMITED', '272712BP08AFR123'], ['AIR INDIA LIMITED', '272712BP08AFU594'], ['AIR INDIA LIMITED', '272712BP08AFS911']]) {
-      const b = haveBill(vendorName, ref); if (!b) continue
+      const b = haveBill(vendorName, ref); if (!b || b.partyId === mmt.id) continue
       out.push({ key: 'mmt-' + b.id, group: G + ' — airline bills paid through MakeMyTrip', kind: 'update', id: b.id, before: b, amount: num(b.total), title: `${b.voucherNumber} · ${b.date} · ${vendorName} → MakeMyTrip`,
         detail: 'We paid MakeMyTrip for this ticket, so the payable moves from the airline to MakeMyTrip (same journal Zoho passes). The GST details of the bill stay as they are.', fields: { partyId: mmt.id, partyName: mmt.vendorName || mmt.name } })
     }
@@ -272,6 +272,24 @@ export function buildZohoSync(raw) {
   // ── the blank invoice record (only an id, no data) left behind by an earlier import
   for (const i of raw?.invoices || []) if (i.id && Object.keys(i).filter(k => k !== 'id').length === 0)
     out.push({ key: 'blank-' + i.id, group: G + ' — blank record', kind: 'invoiceDelete', id: i.id, amount: 0, title: `Empty invoice record ${i.id}`, detail: 'A document with no data at all (no number, party, date or amount) in the invoices list; it affects no figure. Deleted for good.' })
+
+  // ── HDFC bank-fee refund of 2 Feb 2026: Zoho vendor credit "1" (₹5,000 Bank Fees + 18% GST = ₹5,900) refunded to HDFC; we had credited the whole ₹5,900 to 2900
+  const hd = byNo['UIPL/RCT/25-26/060']
+  if (hd && (hd.accountLines || []).length === 1 && hd.accountLines[0].accountCode === '2900' && num(hd.accountLines[0].amount) === 5900) {
+    out.push({ key: hd.id, group: G + ' — HDFC refund', kind: 'update', id: hd.id, before: hd, amount: 5900, title: `${hd.voucherNumber} · ${hd.date} · HDFC current account`,
+      detail: 'Zoho vendor credit 1 from HDFC Bank (bank fees ₹5,000 + CGST ₹450 + SGST ₹450) refunded in full: credit Bank Charges ₹5,000 and Input CGST / SGST ₹450 each, instead of Other Current Liabilities ₹5,900.',
+      fields: { accountLines: [{ accountCode: '5170', amount: 5000, description: 'Bank fees refunded by HDFC (Zoho vendor credit 1)' }, { accountCode: '1301', amount: 450, description: 'CGST on refunded bank fees' }, { accountCode: '1302', amount: 450, description: 'SGST on refunded bank fees' }] } })
+  }
+
+  // ── stock: Zoho holds 20 × AARKAYMID blocks 8 mm (bought 28 Sep, bill PUR/26-27/061, ₹325 each = ₹6,500) in stock; our stock list has no record for it
+  const item8 = (raw?.stockItems || []).find(i => i.sku === 'ZB-00575490')
+  const has8 = item8 && (raw?.stockLevels || []).some(l => l.sku === 'ZB-00575490' || l.itemName === item8.name)
+  const ref5 = (raw?.stockLevels || []).find(l => l.sku === 'ZB-00575489')
+  if (item8 && !has8 && ref5) {
+    out.push({ key: 'stock-8mm', group: G + ' — stock', kind: 'stockCreate', amount: 6500, title: '20 × ' + item8.name,
+      detail: 'Zoho shows 20 pieces in stock (₹325 each, ₹6,500) — bought on 28 Sep (bill PUR/26-27/061) but never added to our stock list. Added to ' + (ref5.locationName || 'the same godown') + ', like the other AARKAYMID item.',
+      data: { itemName: item8.name, sku: item8.sku, locationId: ref5.locationId, locationName: ref5.locationName, minStock: 0, qty: 20 } })
+  }
 
   // ── customs: Bills of Entry
   const NAMES = { 5185: 'Customs Duty (imports)', 1303: 'Input IGST', 1900: 'Prepaid Expenses', 2900: 'Other Current Liabilities' }

@@ -1,17 +1,9 @@
-// The one place the app gets its database functions from. Two interchangeable backends with the same names:
-//   • ./cfBackend.js        — Cloudflare Workers + D1 (free, generous limits)
-//   • ./firestoreBackend.js — Firebase Firestore with a read cache (free plan: 50k reads / 20k writes a day for everybody)
-// Which one: build-time VITE_BACKEND=cloudflare (see .env.production), or for one browser localStorage 'ibs_backend' = 'cf' | 'firestore'
-// (handy to try Cloudflare as an admin before switching everyone).
-import * as fsb from './firestoreBackend.js'
-import * as cfb from './cfBackend.js'
+// The one place the app gets its database functions from: Cloudflare Workers + D1 (./cfBackend.js). It keeps the familiar function names
+// (collection, doc, getDocs, addDoc, updateDoc, writeBatch, runTransaction, onSnapshot …) so pages did not need rewriting.
+// Firebase is used only for sign-in (Auth) and for hosting the website — never for data.
+import * as b from './cfBackend.js'
 
-const pick = () => {
-  try { const f = localStorage.getItem('ibs_backend'); if (f === 'cf') return true; if (f === 'firestore') return false } catch { /* no storage */ }
-  return (import.meta.env && import.meta.env.VITE_BACKEND) === 'cloudflare'
-}
-export const usingCloudflare = pick()
-const b = usingCloudflare ? cfb : fsb
+export const usingCloudflare = true
 
 export const collection = b.collection
 export const doc = b.doc

@@ -33,6 +33,7 @@ export default function ZohoFixModal({ proposals, company, onClose, onDone }) {
             const data = { ...p.data, ...(p.vendorKey && made[p.vendorKey] ? { partyId: made[p.vendorKey].id } : {}), ...(p.allocFromBills ? { allocations: allocs(p) } : {}) }
             made[p.key] = await createVoucher(data, { user, profile: userProfile, lockedUpTo })
           }
+          else if (p.kind === 'stockCreate') await addDoc(collection(db, 'inventory_stocks'), { ...p.data, createdAt: new Date().toISOString(), createdBy: user?.uid || '' })
           else if (p.kind === 'invoiceDelete') await deleteDoc(doc(db, 'finance_invoices', p.id))
           else if (p.kind === 'cancel') await cancelVoucher(p.id, p.before, p.detail, { user, profile: userProfile, lockedUpTo })
           else if (p.kind === 'journal') await addDoc(collection(db, 'finance_journal_entries'), { ...p.data, createdBy: user?.uid || '', createdByName: userProfile?.name || user?.email || '', createdAt: new Date().toISOString() })

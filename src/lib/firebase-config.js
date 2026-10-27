@@ -1,6 +1,5 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
 
 // Hardcoded for production - uipl-erp project
 const firebaseConfig = {
@@ -15,6 +14,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
-export const db = getFirestore(app)
+export const db = { type: 'db' }              // placeholder: the data layer (lib/cfBackend.js) ignores it; data lives in Cloudflare D1
 export { firebaseConfig }
 export default app
