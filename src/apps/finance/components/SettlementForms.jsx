@@ -6,7 +6,7 @@ import { formInputCls, labelCls } from './FinanceUI.jsx'
 import SearchSelect from './SearchSelect.jsx'
 import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
-  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar, groupFlag,
+  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, ProjectBudgetNotice, useFx, CurrencyBar, groupFlag,
   cashBankOptions, customerOptions, vendorOptions, tdsSectionList,
   todayStr, normName, num, fmtAmt, fdOptions } from './formShared.jsx'
 import { r2 } from '../utils/financeConstants.js'
@@ -231,6 +231,7 @@ export function PaymentForm({ data, initial, onSaved, onCancel, startMode }) {
       <TdsBlock raw={raw} vendor={vendor} date={date} base={partyAmount + (mode === 'expense' ? accSum : 0)} tds={tds} setTds={setTds} fy={fyOf(date)}
         partyId={vendor?.id} currentDocId={initial?.id} />
       <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
+      <ProjectBudgetNotice data={data} costCentreId={costCentreId} excludeSourceId={initial?.id} adds={(st.lines || []).map(l => ({ accountCode: l.accountCode, amount: l.amount }))} />
       <AttachmentPanel entityType="payment" entityId={initial?.id} company={company} draft={draft} label="Bill / receipt for this payment or expense" />
       <Field label="Notes (internal use, not visible to the vendor)"><input value={narration} onChange={e => setNarration(e.target.value)} className={formInputCls} /></Field>
       <div className="ml-auto w-full max-w-sm space-y-1 text-sm">

@@ -23,17 +23,17 @@ export default function ProjectPnl() {
 
   const projects = raw?.projects || []
   const centres = (raw?.costCentres || []).filter(c => c.projectId)
-  const results = useMemo(() => centres.map(c => projectPnl(allLines, accounts, c, projects.find(p => p.id === c.projectId), { company, ...period }))
-    .sort((a, b) => (b.centre.code || '').localeCompare(a.centre.code || '')), [centres, allLines, accounts, projects, company, fy]) // eslint-disable-line react-hooks/exhaustive-deps
+  const results = useMemo(() => centres.map(c => projectPnl(allLines, accounts, c, projects.find(p => p.id === c.projectId), { company, ...period, vouchers: raw?.vouchers || [] }))
+    .sort((a, b) => (b.centre.code || '').localeCompare(a.centre.code || '')), [centres, allLines, accounts, projects, raw?.vouchers, company, fy]) // eslint-disable-line react-hooks/exhaustive-deps
   const shown = results.filter(r => !q || `${r.centre.name} ${r.project?.customerName || ''}`.toLowerCase().includes(q.toLowerCase()))
   const untagged = useMemo(() => untaggedTotals(allLines, accounts, { company, ...period }), [allLines, accounts, company, fy]) // eslint-disable-line react-hooks/exhaustive-deps
-  const tot = shown.reduce((t, r) => ({ contract: t.contract + r.contractValue, billed: t.billed + r.billed, budget: t.budget + r.budgetCost, cost: t.cost + r.actualCost }), { contract: 0, billed: 0, budget: 0, cost: 0 })
+  const tot = shown.reduce((t, r) => ({ contract: t.contract + r.contractValue, billed: t.billed + r.billed, budget: t.budget + r.budgetCost, cost: t.cost + r.actualCost, onOrder: t.onOrder + r.committedCost }), { contract: 0, billed: 0, budget: 0, cost: 0, onOrder: 0 })
 
   const exportSummary = () => downloadXlsx(`Project P&L ${company} ${fy}`, [
-    { name: 'Projects', rows: [['Project code', 'Project', 'Customer', 'Contract value', 'Billed', 'Cost budget', 'Actual cost', 'Cost used %', 'Profit to date', 'Expected profit', 'Expected margin %'],
-      ...shown.map(r => [r.centre.code, r.project?.projectName || r.centre.name, r.project?.customerName || '', r.contractValue, r.billed, r.budgetCost, r.actualCost, r.costPct ?? '', r.profitToDate, r.expectedProfit ?? '', r.expectedMargin ?? ''])] },
+    { name: 'Projects', rows: [['Project code', 'Project', 'Customer', 'Contract value', 'Billed', 'Cost budget', 'Actual cost', 'On order (open POs)', 'Cost used %', 'Profit to date', 'Expected profit', 'Expected margin %'],
+      ...shown.map(r => [r.centre.code, r.project?.projectName || r.centre.name, r.project?.customerName || '', r.contractValue, r.billed, r.budgetCost, r.actualCost, r.committedCost, r.costPct ?? '', r.profitToDate, r.expectedProfit ?? '', r.expectedMargin ?? ''])] },
     ...shown.filter(r => r.rows.length || r.incomeRows.length).map(r => ({ name: (r.centre.code || r.centre.name).replace(/[\\/?*[\]:]/g, '-').slice(0, 30), rows: [
-      ['Account', 'Budget', 'Actual', 'Remaining'], ...r.rows.map(x => [`${x.code} ${x.name}`, x.budget, x.actual, x.remaining]), [],
+      ['Account', 'Budget', 'Actual', 'On order', 'Remaining'], ...r.rows.map(x => [`${x.code} ${x.name}`, x.budget, x.actual, x.committed, x.remaining]), [],
       ['Date', 'Document', 'Description', 'Account', 'Income / cost', 'Amount'], ...r.docs.map(d => [d.date, d.doc, d.description, `${d.account.code} ${d.account.name}`, d.kind === 'income' ? 'Income' : 'Cost', d.amount])] })),
   ])
 
@@ -50,7 +50,7 @@ export default function ProjectPnl() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50/80"><tr>
             <th className={`${thCls} text-left`}>Project</th><th className={`${thCls} text-right`}>Contract value</th><th className={`${thCls} text-right`}>Billed</th>
-            <th className={`${thCls} text-right`}>Cost budget</th><th className={`${thCls} text-right`}>Actual cost</th><th className={`${thCls} text-right`}>Cost used</th>
+            <th className={`${thCls} text-right`}>Cost budget</th><th className={`${thCls} text-right`}>Actual cost</th><th className={`${thCls} text-right`} title="Purchase orders tagged to the project that are not billed yet">On order</th><th className={`${thCls} text-right`}>Cost used</th>
             <th className={`${thCls} text-right`}>Profit to date</th><th className={`${thCls} text-right`}>Expected profit</th><th className={`${thCls} text-right`}>Margin</th>
           </tr></thead>
           <tbody className="divide-y divide-slate-100">
@@ -62,22 +62,23 @@ export default function ProjectPnl() {
                   <td className="px-3 py-2 text-right">{fmtAmt(r.billed)}{r.billedPct !== null && <div className="text-xs text-slate-400">{pct(r.billedPct)}</div>}</td>
                   <td className="px-3 py-2 text-right">{r.hasBudget ? fmtAmt(r.budgetCost) : <Badge>no budget</Badge>}</td>
                   <td className="px-3 py-2 text-right">{fmtAmt(r.actualCost)}</td>
+                  <td className="px-3 py-2 text-right text-slate-500">{r.committedCost ? fmtAmt(r.committedCost) : '—'}</td>
                   <td className={`px-3 py-2 text-right ${r.costPct > 100 ? 'text-red-600 font-semibold' : ''}`}>{pct(r.costPct)}</td>
                   <td className={`px-3 py-2 text-right font-semibold ${tone(r.profitToDate)}`}>{fmtAmt(r.profitToDate)}</td>
                   <td className={`px-3 py-2 text-right font-semibold ${r.expectedProfit === null ? '' : tone(r.expectedProfit)}`}>{r.expectedProfit === null ? '—' : fmtAmt(r.expectedProfit)}</td>
                   <td className={`px-3 py-2 text-right ${r.expectedMargin === null ? '' : tone(r.expectedMargin)}`}>{pct(r.expectedMargin)}</td>
                 </tr>
-                {open === r.centre.id && <tr><td colSpan={9} className="bg-slate-50/60 p-4"><ProjectDetail r={r} accounts={accounts} canWrite={canWrite} onSaved={() => { invalidateFinanceCache(); reload() }} /></td></tr>}
+                {open === r.centre.id && <tr><td colSpan={10} className="bg-slate-50/60 p-4"><ProjectDetail r={r} accounts={accounts} canWrite={canWrite} onSaved={() => { invalidateFinanceCache(); reload() }} /></td></tr>}
               </React.Fragment>
             ))}
-            {shown.length === 0 && <tr><td colSpan={9}><Empty>{centres.length ? 'No project matches.' : 'No projects yet. Projects created from won deals in the Projects register appear here automatically (open Finance again after creating one).'}</Empty></td></tr>}
+            {shown.length === 0 && <tr><td colSpan={10}><Empty>{centres.length ? 'No project matches.' : 'No projects yet. Projects created from won deals in the Projects register appear here automatically (open Finance again after creating one).'}</Empty></td></tr>}
           </tbody>
-          {shown.length > 0 && <tfoot><tr className="bg-slate-50 font-bold"><td className="px-3 py-2">Total ({shown.length} projects)</td><td className="px-3 py-2 text-right">{fmtAmt(tot.contract)}</td><td className="px-3 py-2 text-right">{fmtAmt(tot.billed)}</td><td className="px-3 py-2 text-right">{fmtAmt(tot.budget)}</td><td className="px-3 py-2 text-right">{fmtAmt(tot.cost)}</td><td /><td className={`px-3 py-2 text-right ${tone(tot.billed - tot.cost)}`}>{fmtAmt(tot.billed - tot.cost)}</td><td /><td /></tr></tfoot>}
+          {shown.length > 0 && <tfoot><tr className="bg-slate-50 font-bold"><td className="px-3 py-2">Total ({shown.length} projects)</td><td className="px-3 py-2 text-right">{fmtAmt(tot.contract)}</td><td className="px-3 py-2 text-right">{fmtAmt(tot.billed)}</td><td className="px-3 py-2 text-right">{fmtAmt(tot.budget)}</td><td className="px-3 py-2 text-right">{fmtAmt(tot.cost)}</td><td className="px-3 py-2 text-right">{fmtAmt(tot.onOrder)}</td><td /><td className={`px-3 py-2 text-right ${tone(tot.billed - tot.cost)}`}>{fmtAmt(tot.billed - tot.cost)}</td><td /><td /></tr></tfoot>}
         </table>
       </div>
       <div className="text-xs text-slate-500 space-y-1">
         <p><b>Not tagged to any project</b> in this period: income {fmtAmt(untagged.income)}, expenses {fmtAmt(untagged.expense)} (overheads such as rent and office salaries stay here). Project figures + these = the company's own Profit &amp; Loss.</p>
-        <p>Billed = sales invoices tagged to the project (excluding GST). Expected profit = contract value − the larger of the cost budget and the actual cost so far. Profit to date = billed − actual cost.</p>
+        <p>Billed = sales invoices tagged to the project (excluding GST). On order = purchase orders tagged to the project that are not billed yet. Expected profit = contract value − the larger of the cost budget and (actual cost + on order). Profit to date = billed − actual cost.</p>
       </div>
     </ReportShell>
   )
@@ -130,11 +131,11 @@ function ProjectDetail({ r, accounts, canWrite, onSaved }) {
 
       <div className={`${cardCls} p-3 space-y-3`}>
         <h4 className="font-bold text-slate-700 text-sm">Budget vs actual</h4>
-        <table className="w-full text-sm"><thead><tr><th className={`${thCls} text-left`}>Cost head</th><th className={`${thCls} text-right`}>Budget</th><th className={`${thCls} text-right`}>Actual</th><th className={`${thCls} text-right`}>Remaining</th></tr></thead><tbody className="divide-y divide-slate-100">
-          {r.rows.map(x => <tr key={x.code} className={x.over ? 'bg-red-50/60' : ''}><td className="py-1.5">{x.name}{x.over && <span className="ml-2"><Badge>{x.budget ? 'over budget' : 'not budgeted'}</Badge></span>}</td><td className="py-1.5 text-right">{fmtAmt(x.budget)}</td><td className="py-1.5 text-right">{fmtAmt(x.actual)}</td><td className={`py-1.5 text-right ${x.remaining < 0 ? 'text-red-600 font-semibold' : ''}`}>{fmtAmt(x.remaining)}</td></tr>)}
-          {r.rows.length === 0 && <tr><td colSpan={4} className="py-3 text-center text-slate-400">No cost booked or budgeted yet.</td></tr>}
+        <table className="w-full text-sm"><thead><tr><th className={`${thCls} text-left`}>Cost head</th><th className={`${thCls} text-right`}>Budget</th><th className={`${thCls} text-right`}>Actual</th><th className={`${thCls} text-right`}>On order</th><th className={`${thCls} text-right`}>Remaining</th></tr></thead><tbody className="divide-y divide-slate-100">
+          {r.rows.map(x => <tr key={x.code} className={x.over ? 'bg-red-50/60' : ''}><td className="py-1.5">{x.name}{x.over && <span className="ml-2"><Badge>{x.budget ? 'over budget' : 'not budgeted'}</Badge></span>}</td><td className="py-1.5 text-right">{fmtAmt(x.budget)}</td><td className="py-1.5 text-right">{fmtAmt(x.actual)}</td><td className="py-1.5 text-right text-slate-500">{x.committed ? fmtAmt(x.committed) : '—'}</td><td className={`py-1.5 text-right ${x.remaining < 0 ? 'text-red-600 font-semibold' : ''}`}>{fmtAmt(x.remaining)}</td></tr>)}
+          {r.rows.length === 0 && <tr><td colSpan={5} className="py-3 text-center text-slate-400">No cost booked or budgeted yet.</td></tr>}
         </tbody>
-        {r.rows.length > 0 && <tfoot><tr className="font-bold"><td className="pt-2">Total cost</td><td className="pt-2 text-right">{fmtAmt(r.budgetCost)}</td><td className="pt-2 text-right">{fmtAmt(r.actualCost)}</td><td className="pt-2 text-right">{fmtAmt(r.budgetCost - r.actualCost)}</td></tr></tfoot>}
+        {r.rows.length > 0 && <tfoot><tr className="font-bold"><td className="pt-2">Total cost</td><td className="pt-2 text-right">{fmtAmt(r.budgetCost)}</td><td className="pt-2 text-right">{fmtAmt(r.actualCost)}</td><td className="pt-2 text-right">{fmtAmt(r.committedCost)}</td><td className="pt-2 text-right">{fmtAmt(r.budgetCost - r.actualCost - r.committedCost)}</td></tr></tfoot>}
         </table>
         {r.incomeRows.length > 0 && <table className="w-full text-sm"><thead><tr><th className={`${thCls} text-left`}>Income</th><th className={`${thCls} text-right`}>Amount</th></tr></thead><tbody>{r.incomeRows.map(x => <tr key={x.code}><td className="py-1">{x.name}</td><td className="py-1 text-right">{fmtAmt(x.amount)}</td></tr>)}</tbody></table>}
       </div>

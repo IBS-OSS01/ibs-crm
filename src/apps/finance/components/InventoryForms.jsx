@@ -13,7 +13,7 @@ import { Band, Body, FRow, ReadBox, PartyBlock, SupplyChip, ItemCard, NotesTotal
 import { PO_TERMS } from '../utils/poTerms.js'
 import { formInputCls, labelCls } from './FinanceUI.jsx'
 import {
-  Field, FormShell, HeaderFields, useVoucherSave, need,
+  Field, FormShell, HeaderFields, useVoucherSave, need, CostCentreSelect, ProjectBudgetNotice,
   vendorOptions, creditDaysFromTerms, companyStateCode, stateCodeFromName, gstinToStateCode, todayStr, num,
 } from './formShared.jsx'
 
@@ -34,6 +34,7 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
   const [shipPref, setShipPref] = useState(initial?.shipmentPreference || '')
   const [payDays, setPayDays] = useState(initial?.creditDays ?? null)        // null = the vendor's own terms
   const [warehouseId, setWarehouseId] = useState(initial?.warehouseId || '')
+  const [costCentreId, setCostCentreId] = useState(initial?.costCentreId || '')
   const [terms, setTerms] = useState(initial?.terms || '')
   const [tnc, setTnc] = useState(initial?.termsAndConditions ?? PO_TERMS)       // every purchase order carries the standard terms; editable per order
   const [applyGst, setApplyGst] = useState(initial ? initial.applyGst !== false : true)
@@ -58,7 +59,7 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
       const t = computeVoucherTotals(lines, { supplyType, applyGst, roundOff: roundEdit })
       return {
         voucherType: 'purchase_order', company, date, partyType: 'vendor', partyId: vendor.id, partyName: vendor.name, partyGstin: vendor.gstin,
-        refNumber: refNumber.trim(), subject: subject.trim(), shipmentPreference: shipPref.trim(), expectedDate: expected, warehouseId, terms: terms.trim(), termsAndConditions: tnc, applyGst, supplyType,
+        refNumber: refNumber.trim(), subject: subject.trim(), shipmentPreference: shipPref.trim(), expectedDate: expected, warehouseId, costCentreId, terms: terms.trim(), termsAndConditions: tnc, applyGst, supplyType,
         items: t.items, gstLines: t.gstLines, subTotal: t.subTotal, taxTotal: t.taxTotal, roundOff: t.roundOff, roundOffManual: roundEdit !== '', total: t.total, narration: narration.trim(), closed,
         creditDays: payDays ?? creditDaysFromTerms(vendor.paymentTerms), dueDate: addDays(expected || date, payDays ?? creditDaysFromTerms(vendor.paymentTerms)),
       }
@@ -88,6 +89,8 @@ export function PurchaseOrderForm({ data, initial, onSaved, onCancel }) {
         <FRow label="Shipment Preference"><input value={shipPref} onChange={e => setShipPref(e.target.value)} placeholder="Choose the shipment preference or type to add" className={`${formInputCls} max-w-sm`} /></FRow>
         <FRow label="Subject"><input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Let your vendor know what this order is for" maxLength={250} className={`${formInputCls} max-w-xl`} /></FRow>
         {(raw.warehouses || []).length > 0 && <FRow label="Deliver to godown"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={`${formInputCls} max-w-sm`}><option value="">Default</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></FRow>}
+        <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
+        <ProjectBudgetNotice data={data} costCentreId={costCentreId} excludePoId={initial && !initial._clone ? initial.id : undefined} adds={[{ accountCode: '5000', amount: totals.subTotal }]} />
         <hr className="border-slate-200" />
         <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={applyGst} onChange={e => setApplyGst(e.target.checked)} />Show GST on this order</label>
         <ItemCard>

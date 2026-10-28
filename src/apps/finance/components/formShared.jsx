@@ -1,5 +1,5 @@
 // Pieces shared by every voucher form.
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { createVoucher, updateVoucher, getBooksLockDate, VoucherError } from '../utils/voucherService.js'
 import { uploadAttachments } from '../utils/attachments.js'
@@ -9,6 +9,7 @@ import { COMPANIES, todayStr, fmtAmt, num, normName } from '../utils/financeCons
 import { INDIA_STATES, gstinToStateCode } from '../utils/indiaConstants.js'
 import { DEFAULT_TDS_SECTIONS, tdsRateFor, thresholdCrossed, ldcFor } from '../utils/tdsMaster.js'
 import { isValidPan } from '../utils/financeConstants.js'
+import { budgetCheck } from '../utils/projectPnl.js'
 import { formInputCls, labelCls, cardCls, btnPrimary, btnGhost } from './FinanceUI.jsx'
 
 // UIPL's customer is Wayzim itself (service fee): the documents then also appear in Wayzim's books.
@@ -150,6 +151,17 @@ export function CurrencyBar({ fx, date, totalFc, label = 'Currency' }) {
       {msg && <p className="text-xs text-slate-500 mt-1">{msg}</p>}
     </div>
   )
+}
+
+// Warns, under the project field, when this entry would take one of the project's cost heads over its budget (or near it)
+export function ProjectBudgetNotice({ data, costCentreId, adds = [], excludeSourceId, excludePoId }) {
+  const key = JSON.stringify(adds)
+  const msgs = useMemo(() => {
+    if (!costCentreId || !data) return []
+    return budgetCheck({ lines: data.allLines || [], accounts: data.accounts || [], vouchers: data.raw?.vouchers || [], centre: (data.raw?.costCentres || []).find(c => c.id === costCentreId), adds, excludeSourceId, excludePoId })
+  }, [costCentreId, key, data?.allLines, data?.raw, excludeSourceId, excludePoId]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!msgs.length) return null
+  return <div className="space-y-1">{msgs.map((m, i) => <div key={i} className={`text-sm rounded-lg border px-3 py-2 ${m.level === 'over' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>{m.level === 'over' ? '⚠ Over budget — ' : '⚠ '}{m.text}</div>)}</div>
 }
 
 export function CostCentreSelect({ raw, value, onChange }) {

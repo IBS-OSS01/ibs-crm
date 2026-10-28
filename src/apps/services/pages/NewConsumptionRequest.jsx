@@ -9,8 +9,9 @@ export default function NewConsumptionRequest() {
   const navigate = useNavigate()
   const [warehouses, setWarehouses] = useState([])
   const [items, setItems] = useState([])
+  const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ itemName: '', sku: '', qty: 1, locationId: '', reason: '' })
+  const [form, setForm] = useState({ itemName: '', sku: '', qty: 1, locationId: '', reason: '', projectId: '' })
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
 
@@ -18,10 +19,13 @@ export default function NewConsumptionRequest() {
 
   const fetchData = async () => {
     try {
-      const [whSnap, itemSnap] = await Promise.all([
+      const [whSnap, itemSnap, projSnap] = await Promise.all([
         getDocs(collection(db, 'inventory_warehouses')),
         getDocs(collection(db, 'inventory_items')),
+        getDocs(collection(db, 'projects')),
       ])
+      const pr = []; projSnap.forEach(d => { const p = d.data(); if (!p.isGeneral && p.status !== 'cancelled') pr.push({ id: d.id, ...p }) })
+      pr.sort((a, b) => (b.projectNumber || '').localeCompare(a.projectNumber || '')); setProjects(pr)
       const whs = [], itms = []
       whSnap.forEach(d => whs.push({ id: d.id, ...d.data() }))
       itemSnap.forEach(d => itms.push({ id: d.id, ...d.data() }))
@@ -41,8 +45,10 @@ export default function NewConsumptionRequest() {
     if (!form.itemName || !form.locationId) { setError('Fill in all required fields.'); return }
     setLoading(true)
     try {
+      const proj = projects.find(p => p.id === form.projectId)
       await addDoc(collection(db, 'inventory_consumption_requests'), {
         ...form, qty: parseInt(form.qty), status: 'pending',
+        ...(proj ? { projectId: proj.id, projectNumber: proj.projectNumber || '', projectName: proj.projectName || '' } : { projectId: '' }),
         requestedBy: user.uid, requestedByName: userProfile?.name || user.email,
         createdAt: new Date().toISOString(),
         reviewedBy: null, reviewedByName: null, reviewedAt: null,
@@ -103,6 +109,14 @@ export default function NewConsumptionRequest() {
             <select value={form.locationId} onChange={e => setForm(p => ({ ...p, locationId: e.target.value }))}
               className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required>
               {warehouses.map(wh => <option key={wh.id} value={wh.id}>{wh.name || wh.id}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Project (cost is charged to it)</label>
+            <select value={form.projectId} onChange={e => setForm(p => ({ ...p, projectId: e.target.value }))}
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">No project (general / overhead)</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.projectNumber} — {p.projectName}</option>)}
             </select>
           </div>
           <div>

@@ -114,7 +114,7 @@ export function collectMovements({
       const it = res.forDoc(c); if (!it) return
       const date = localDate(c.reviewedAt) || localDate(c.createdAt); if (!date) return
       const wh = whOf(c.locationId)
-      push({ type: 'out', kind: 'consumption', date, company: whCompany[wh] || 'UIPL', itemId: it.id, warehouseId: wh, qty: num(c.qty), valueMode: 'avg', voucherType: 'consumption', voucherNo: c.projectName || c.reference || 'Consumption', party: c.requestedByName || '', source: 'consumption', sourceId: c.id })
+      push({ type: 'out', kind: 'consumption', date, company: whCompany[wh] || 'UIPL', itemId: it.id, warehouseId: wh, qty: num(c.qty), valueMode: 'avg', voucherType: 'consumption', voucherNo: c.projectName || c.reference || 'Consumption', party: c.requestedByName || '', source: 'consumption', sourceId: c.id, ...(c.projectId ? { costCentreId: `proj_${c.projectId}` } : {}) })
     })
   }
 
@@ -241,14 +241,16 @@ export function deriveStockLines(valued, accounts = []) {
     if (m.transfer) return
     const delta = r2(m.inValue - m.outValue)
     if (!delta) return
-    const key = `${m.company}|${m.date}|${m.kind === 'opening' ? 'open' : 'move'}`
-    days[key] = days[key] || { company: m.company, date: m.date, opening: m.kind === 'opening', delta: 0 }
+    const cc = m.costCentreId || ''          // stock issued to a project (Services → consumption request) is charged to that project
+    const key = `${m.company}|${m.date}|${m.kind === 'opening' ? 'open' : 'move'}|${cc}`
+    days[key] = days[key] || { company: m.company, date: m.date, opening: m.kind === 'opening', cc, delta: 0 }
     days[key].delta = r2(days[key].delta + delta)
   })
   const mk = (d, code, debit, credit) => ({
     accountCode: code, accountName: name(code), debit, credit, date: d.date, company: d.company, companyInferred: false,
-    sourceType: 'stock', sourceId: `stock-${d.company}-${d.date}-${d.opening ? 'open' : 'move'}`, sourceDocNumber: d.opening ? 'Opening Stock' : 'Stock valuation',
+    sourceType: 'stock', sourceId: `stock-${d.company}-${d.date}-${d.opening ? 'open' : 'move'}${d.cc ? '-' + d.cc : ''}`, sourceDocNumber: d.opening ? 'Opening Stock' : 'Stock valuation',
     description: d.opening ? 'Opening stock value' : 'Net change in stock value (purchases in, sales/consumption out at cost)',
+    ...(d.cc ? { costCentreId: d.cc } : {}),
   })
   return Object.values(days).filter(d => d.delta !== 0).flatMap(d => {
     const counter = d.opening ? '3200' : '5010'

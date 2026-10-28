@@ -1,7 +1,7 @@
 // Finance → Payroll: post a month's salary slips (from HR) to the books, track PF / ESIC dues and payments,
 // and edit the statutory rates.
 import React, { useMemo, useState } from 'react'
-import { addDoc, collection, deleteDoc, doc, setDoc } from '../../../lib/cachedFirestore'
+import { addDoc, collection, deleteDoc, doc, setDoc, updateDoc } from '../../../lib/cachedFirestore'
 import { useNavigate, useParams } from 'react-router-dom'
 import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
@@ -9,6 +9,7 @@ import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.
 import { createVoucher, getBooksLockDate, VoucherError } from '../utils/voucherService.js'
 import { mergeStatutory, DEFAULT_STATUTORY, payrollTotals, contributionDue } from '../../hr/utils/statutory.js'
 import { fyMonths } from '../utils/tdsReports.js'
+import { payrollByProject } from '../utils/projectPnl.js'
 import { fmtAmt, fyList, currentFY, todayStr, num, r2 } from '../utils/financeConstants.js'
 import { cashBankOptions, Field } from '../components/formShared.jsx'
 import { ReportShell, CompanyToggle, Badge, Empty, cardCls, inputCls, formInputCls, thCls, btnPrimary, btnGhost, useFinancePerms } from '../components/FinanceUI.jsx'
@@ -25,7 +26,7 @@ export default function Payroll() {
   const navigate = useNavigate()
   const { user, userProfile } = useAuth()
   const { canWrite, isAdmin } = useFinancePerms()
-  const { raw, loading, reload } = useFinanceData(['statutoryChallans', 'hrSlips', 'hrEmployees'])
+  const { raw, loading, reload } = useFinanceData(['statutoryChallans', 'hrSlips', 'hrEmployees', 'costCentres'])
   const [company, setCompany] = useState('UIPL')
   const [month, setMonth] = useState(prevMonth())
   const [fy, setFy] = useState(currentFY())
@@ -37,6 +38,11 @@ export default function Payroll() {
   const empById = useMemo(() => Object.fromEntries((raw?.hrEmployees || []).map(e => [e.id, e])), [raw])
   const slips = useMemo(() => (raw?.hrSlips || []).filter(x => x.month === month && true), [raw, month, company, empById])   // UIPL is the employer of everyone, including staff who serve Wayzim
   const t = useMemo(() => payrollTotals(slips, S), [slips, S])
+  const centres = useMemo(() => (raw?.costCentres || []).filter(c => c.active !== false), [raw])
+  const byProject = useMemo(() => payrollByProject(slips, empById, t.pfAdmin), [slips, empById, t.pfAdmin])
+  const setProject = async (empId, costCentreId) => {          // remembered on the employee, so next month starts from it
+    try { await updateDoc(doc(db, 'hr_employees', empId), { projectCostCentreId: costCentreId || '' }); invalidateFinanceCache(); reload() } catch (e) { setMsg('Could not save the project: ' + e.message) }
+  }
   const posted = (raw?.vouchers || []).find(v => v.voucherType === 'payroll' && v.company === company && v.month === month && v.status !== 'cancelled')
   const banks = useMemo(() => raw ? cashBankOptions(raw, company) : [], [raw, company])
 
@@ -50,7 +56,7 @@ export default function Payroll() {
       const net = r2(t.gross - t.pfEmployee - t.esicEmployee - t.advances - t.otherDeductions)
       await createVoucher({
         voucherType: 'payroll', company, date: lastDay(month), month, total: t.gross,
-        payroll: { gross: t.gross, employerPf: t.employerPf, employerEsic: t.esicEmployer, pfCharges: t.pfCharges, net, pfPayable: t.pfPayable, esicPayable: t.esicPayable, advances: t.advances, otherDeductions: t.otherDeductions, pfEmployee: t.pfEmployee, esicEmployee: t.esicEmployee, headcount: t.count },
+        payroll: { gross: t.gross, employerPf: t.employerPf, employerEsic: t.esicEmployer, pfCharges: t.pfCharges, net, pfPayable: t.pfPayable, esicPayable: t.esicPayable, advances: t.advances, otherDeductions: t.otherDeductions, pfEmployee: t.pfEmployee, esicEmployee: t.esicEmployee, headcount: t.count, byProject },
         narration: `Payroll ${ml(month)} — ${t.count} employee(s)`,
       }, { user, profile: userProfile, lockedUpTo })
       invalidateFinanceCache(); reload(); setMsg(`Payroll for ${ml(month)} posted to the books.`)
@@ -121,13 +127,14 @@ export default function Payroll() {
                 {[['Gross salaries', t.gross], ['Net pay to staff', r2(t.gross - t.pfEmployee - t.esicEmployee - t.advances - t.otherDeductions)], ['PF to pay (all)', t.pfPayable], ['ESIC to pay (all)', t.esicPayable]].map(([l, v]) => <div key={l} className={`${cardCls} p-3`}><p className="text-xs text-slate-400 uppercase">{l}</p><p className="text-xl font-bold">₹{fmtAmt(v)}</p></div>)}
               </div>
               <div className={`${cardCls} overflow-x-auto`}>
-                <table className="w-full text-sm"><thead className="bg-slate-50/80"><tr><Th>Employee</Th><Th right>Gross</Th><Th right>PF (emp)</Th><Th right>ESIC (emp)</Th><Th right>Advances</Th><Th right>Other</Th><Th right>Net pay</Th><Th right>Employer PF + EDLI</Th><Th right>Employer ESIC</Th></tr></thead>
+                <table className="w-full text-sm"><thead className="bg-slate-50/80"><tr><Th>Employee</Th><Th right>Gross</Th><Th right>PF (emp)</Th><Th right>ESIC (emp)</Th><Th right>Advances</Th><Th right>Other</Th><Th right>Net pay</Th><Th right>Employer PF + EDLI</Th><Th right>Employer ESIC</Th><Th>Project</Th></tr></thead>
                   <tbody className="divide-y divide-slate-100">
-                    {slips.map(x => <tr key={x.id}><td className="px-3 py-2 font-medium">{x.employeeName}</td><td className="px-3 py-2 text-right">{fmtAmt(x.baseSalary)}</td><td className="px-3 py-2 text-right">{fmtAmt(x.pfEmployee)}</td><td className="px-3 py-2 text-right">{fmtAmt(x.esicEmployee)}</td><td className="px-3 py-2 text-right">{fmtAmt(x.advancesDeducted)}</td><td className="px-3 py-2 text-right">{fmtAmt(x.deductions)}</td><td className="px-3 py-2 text-right font-medium">{fmtAmt(x.netSalary)}</td><td className="px-3 py-2 text-right">{fmtAmt(num(x.pfEmployerEps) + num(x.pfEmployerEpf) + num(x.pfEdli))}</td><td className="px-3 py-2 text-right">{fmtAmt(x.esicEmployer)}</td></tr>)}
+                    {slips.map(x => <tr key={x.id}><td className="px-3 py-2 font-medium">{x.employeeName}</td><td className="px-3 py-2 text-right">{fmtAmt(x.baseSalary)}</td><td className="px-3 py-2 text-right">{fmtAmt(x.pfEmployee)}</td><td className="px-3 py-2 text-right">{fmtAmt(x.esicEmployee)}</td><td className="px-3 py-2 text-right">{fmtAmt(x.advancesDeducted)}</td><td className="px-3 py-2 text-right">{fmtAmt(x.deductions)}</td><td className="px-3 py-2 text-right font-medium">{fmtAmt(x.netSalary)}</td><td className="px-3 py-2 text-right">{fmtAmt(num(x.pfEmployerEps) + num(x.pfEmployerEpf) + num(x.pfEdli))}</td><td className="px-3 py-2 text-right">{fmtAmt(x.esicEmployer)}</td><td className="px-3 py-1"><select disabled={!canWrite || !!posted} value={empById[x.employeeId]?.projectCostCentreId || ''} onChange={e => setProject(x.employeeId, e.target.value)} className="px-2 py-1 border border-slate-300 rounded text-xs max-w-[14rem] bg-white"><option value="">— overhead —</option>{centres.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td></tr>)}
                   </tbody>
                   <tfoot><tr className="bg-slate-50 font-bold"><td className="px-3 py-2">Total ({t.count})</td><td className="px-3 py-2 text-right">{fmtAmt(t.gross)}</td><td className="px-3 py-2 text-right">{fmtAmt(t.pfEmployee)}</td><td className="px-3 py-2 text-right">{fmtAmt(t.esicEmployee)}</td><td className="px-3 py-2 text-right">{fmtAmt(t.advances)}</td><td className="px-3 py-2 text-right">{fmtAmt(t.otherDeductions)}</td><td className="px-3 py-2 text-right">{fmtAmt(t.gross - t.pfEmployee - t.esicEmployee - t.advances - t.otherDeductions)}</td><td className="px-3 py-2 text-right">{fmtAmt(t.employerPf + t.pfEdli)}</td><td className="px-3 py-2 text-right">{fmtAmt(t.esicEmployer)}</td></tr></tfoot>
                 </table>
               </div>
+              {byProject.length > 0 && <p className="text-xs text-slate-600">Charged to projects when posted: {byProject.map(b => `${centres.find(c => c.id === b.costCentreId)?.name || 'project'} — ${b.count} staff, ${fmtAmt(r2(b.gross + b.employerPf + b.employerEsic + b.pfCharges))}`).join(' · ')}. The rest stays in overheads. Projects are chosen per employee in the last column (remembered for next month).</p>}
               <p className="text-xs text-slate-500">Plus PF admin charge ₹{fmtAmt(t.pfAdmin)} (0.5% of PF wages, minimum ₹{S.pfAdminMin}). Total employer cost beyond gross: ₹{fmtAmt(t.employerPf + t.pfCharges + t.esicEmployer)}.</p>
               {missingUan.length > 0 && <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">UAN missing for {missingUan.map(x => x.employeeName).join(', ')} — needed for the EPFO ECR file (HR → Employees).</div>}
               {activeNoSlip.length > 0 && <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">No slip yet for {activeNoSlip.map(e => e.name).join(', ')}.</div>}

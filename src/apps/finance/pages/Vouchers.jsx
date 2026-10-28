@@ -44,7 +44,7 @@ export default function Vouchers() {
     const po = raw.vouchers.find(v => v.id === poId); if (!po) return null
     const vend = (raw.vendors || []).find(v => v.id === po.partyId)
     const lines = pendingPoLines(po, raw.vouchers)
-    return { company: po.company, partyId: po.partyId, warehouseId: po.warehouseId, purchaseOrderId: po.id, purchaseOrderNumber: po.voucherNumber, applyGst: po.applyGst, creditDays: creditDaysFromTerms(vend?.paymentTerms),
+    return { company: po.company, partyId: po.partyId, warehouseId: po.warehouseId, purchaseOrderId: po.id, purchaseOrderNumber: po.voucherNumber, costCentreId: po.costCentreId || '', applyGst: po.applyGst, creditDays: creditDaysFromTerms(vend?.paymentTerms),
       items: lines.map(l => ({ ...l.item, qty: l.pending, poLine: l.index })), narration: `Against ${po.voucherNumber}` }
   }, [poId, raw])
   const editing = useMemo(() => {

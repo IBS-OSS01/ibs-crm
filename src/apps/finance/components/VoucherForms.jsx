@@ -10,7 +10,7 @@ import SearchSelect from './SearchSelect.jsx'
 import { Band, Body, FRow, ReadBox, PartyBlock, SupplyChip, ItemCard, NotesTotals } from './DocLayout.jsx'
 import AttachmentPanel, { useAttachmentDraft } from './AttachmentPanel.jsx'
 import {
-  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, useFx, CurrencyBar, groupFlag,
+  Field, FormShell, HeaderFields, TdsBlock, finalTds, useVoucherSave, need, CostCentreSelect, ProjectBudgetNotice, useFx, CurrencyBar, groupFlag,
   vendorOptions, customerOptions, creditDaysFromTerms, companyStateCode, stateCodeFromName,
   todayStr, normName, num, gstinToStateCode, fmtAmt,
 } from './formShared.jsx'
@@ -127,6 +127,7 @@ export function PurchaseForm({ data, initial, prefill, onSaved, onCancel }) {
         <CurrencyBar fx={fx} date={date} totalFc={totals.total} />
         <div className="grid md:grid-cols-2 gap-3">
           <CostCentreSelect raw={raw} value={costCentreId} onChange={setCostCentreId} />
+          <div className="md:col-span-2 empty:hidden"><ProjectBudgetNotice data={data} costCentreId={costCentreId} excludeSourceId={initial?.id} excludePoId={seed?.purchaseOrderId} adds={Object.entries((totals.items || []).reduce((m, i) => { const c = i.accountCode || '5000'; m[c] = (m[c] || 0) + num(i.taxable) * (fx.isFc ? num(fx.rate) : 1); return m }, {})).map(([accountCode, amount]) => ({ accountCode, amount }))} /></div>
           {(raw.warehouses || []).length > 0 && (raw.stockItems || []).length > 0 && (
             <Field label="Receive stock into godown"><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className={formInputCls}><option value="">Default godown</option>{raw.warehouses.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}</select></Field>
           )}

@@ -1,3 +1,5 @@
+import { useFinanceData } from '../hooks/useFinanceData.js'
+import { ProjectBudgetNotice } from '../components/formShared.jsx'
 import React, { useState, useEffect } from 'react'
 import { collection, getDocs, addDoc, doc, deleteDoc, getCachedSnap } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/app-config'
@@ -19,6 +21,7 @@ export default function JournalEntries() {
   const [entries, setEntries] = useState([])
   const [accounts, setAccounts] = useState([])
   const [centres, setCentres] = useState([])
+  const fdata = useFinanceData(['costCentres'])          // the ledger, for the over-budget warning under the lines
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(emptyForm)
@@ -238,6 +241,10 @@ export default function JournalEntries() {
                 </tfoot>
               </table>
             </div>
+
+            {[...new Set(lines.filter(l => l.costCentreId).map(l => l.costCentreId))].map(cc => (
+              <ProjectBudgetNotice key={cc} data={fdata} costCentreId={cc} adds={lines.filter(l => l.costCentreId === cc && Number(l.debit) > 0).map(l => ({ accountCode: l.accountCode, amount: Number(l.debit) }))} />
+            ))}
 
             <div className="flex gap-3 items-center">
               <button type="submit" disabled={saving || !isBalanced}

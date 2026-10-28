@@ -775,5 +775,45 @@ section('Zoho expenses → tied to bank payments or new entries')
 }
 
 
+// ── project P&L: orders placed, budget warnings, payroll and stock issues by project ───────────────────────────────────────────
+{
+  const { committedFor, budgetCheck, payrollByProject } = await import('../src/apps/finance/utils/projectPnl.js')
+  const po = { id: 'po1', voucherType: 'purchase_order', status: 'active', company: 'UIPL', date: '2026-10-01', costCentreId: 'proj_p1', items: [{ description: 'x', qty: 10, rate: 1000, discountPct: 0 }] }
+  const bill = { id: 'b1', voucherType: 'purchase', status: 'active', purchaseOrderId: 'po1', items: [{ qty: 4, poLine: 0 }] }
+  eq(committedFor('proj_p1', [po, bill]).total, 6000, 'project P&L: open purchase order counts only what is not billed yet')
+  eq(committedFor('proj_p1', [{ ...po, closed: true }, bill]).total, 0, 'project P&L: a closed purchase order commits nothing')
+  eq(committedFor('proj_p1', [po, bill], { excludePoId: 'po1' }).total, 0, 'project P&L: the order being edited is left out of its own check')
+  eq(committedFor('proj_p2', [po, bill]).total, 0, 'project P&L: orders of other projects are not counted')
+  const accts = [{ code: '5000', name: 'Purchases', type: 'expense' }, { code: '5100', name: 'Salaries', type: 'expense' }]
+  const centre = { id: 'proj_p1', name: 'P1', budget: { lines: [{ accountCode: '5000', amount: 300000 }] } }
+  const spent = [{ accountCode: '5000', debit: 250000, credit: 0, costCentreId: 'proj_p1', sourceId: 'x1' }]
+  const chk = (add, extra = {}) => budgetCheck({ lines: spent, accounts: accts, vouchers: [po, bill], centre, adds: [{ accountCode: '5000', amount: add }], ...extra })
+  ok(chk(50000)[0]?.level === 'over', 'budget check: spent 250,000 + on order 6,000 + 50,000 is over the 300,000 budget')
+  eq(chk(10000).length, 0, 'budget check: 266,000 of 300,000 is quiet')
+  ok(chk(20000)[0]?.level === 'warn', 'budget check: 276,000 (92%) warns')
+  ok(chk(45000)[0]?.level === 'over' && chk(45000, { excludePoId: 'po1' })[0]?.level === 'warn', 'budget check: billing the order itself does not count it twice')
+  eq(chk(60000, { excludeSourceId: 'x1', excludePoId: 'po1' }).length, 0, 'budget check: editing a bill leaves its own amount out of the actuals')
+  ok(budgetCheck({ lines: spent, accounts: accts, centre, adds: [{ accountCode: '5100', amount: 1000 }] })[0]?.level === 'over', 'budget check: a cost head missing from the budget is flagged')
+  eq(budgetCheck({ lines: spent, accounts: accts, centre: { id: 'proj_p1', name: 'P1' }, adds: [{ accountCode: '5000', amount: 9e9 }] }).length, 0, 'budget check: nothing to warn about without a budget')
+
+  const slips = [{ employeeId: 'e1', baseSalary: 50000, pfEmployerEps: 1000, pfEmployerEpf: 500, esicEmployer: 0, pfEdli: 75, pfBase: 15000 }, { employeeId: 'e2', baseSalary: 30000, pfEmployerEps: 1000, pfEmployerEpf: 500, esicEmployer: 0, pfEdli: 75, pfBase: 15000 }]
+  const bp = payrollByProject(slips, { e1: { projectCostCentreId: 'proj_p1' }, e2: {} }, 500)
+  ok(bp.length === 1 && bp[0].gross === 50000 && bp[0].employerPf === 1500 && bp[0].pfCharges === 325 && bp[0].count === 1, 'payroll by project: the assigned employee carries own cost and half of the PF admin charge')
+
+  const pv = { ...payV, payroll: { ...payV.payroll, byProject: [{ costCentreId: 'proj_p1', gross: 40000, employerPf: 1250, employerEsic: 0, pfCharges: 100 }] } }
+  const pl = deriveVoucherLines(pv, accounts)
+  ok(balanced(pl), 'payroll by project: journal still balances')
+  eq(sumBy(pl, '5110', 'debit'), 58000, 'payroll by project: total salaries unchanged')
+  eq(pl.filter(l => l.accountCode === '5110' && l.costCentreId === 'proj_p1').reduce((t, l) => t + l.debit, 0), 40000, 'payroll by project: the project’s salaries are tagged')
+  eq(pl.filter(l => l.accountCode === '5110' && !l.costCentreId).reduce((t, l) => t + l.debit, 0), 18000, 'payroll by project: the rest stays in overheads')
+  eq(sumBy(deriveVoucherLines(payV, accounts), '5110', 'debit'), 58000, 'payroll without a project split is as before')
+
+  const sl = deriveStockLines([{ company: 'UIPL', date: '2026-10-05', kind: 'consumption', inValue: 0, outValue: 1000, costCentreId: 'proj_p1' }, { company: 'UIPL', date: '2026-10-05', kind: 'adjustment_out', inValue: 0, outValue: 500 }], accounts)
+  eq(sl.filter(l => l.accountCode === '5010' && l.costCentreId === 'proj_p1').reduce((t, l) => t + l.debit, 0), 1000, 'stock issued to a project: cost of goods is tagged to it')
+  eq(sl.filter(l => l.accountCode === '5010' && !l.costCentreId).reduce((t, l) => t + l.debit, 0), 500, 'stock issued to a project: other stock movements stay untagged')
+  ok(balanced(sl), 'stock issued to a project: stock lines balance')
+}
+
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
