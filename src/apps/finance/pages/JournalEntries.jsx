@@ -5,7 +5,7 @@ import { useAuth } from '../../../context/AuthContext'
 
 const today = () => new Date().toISOString().slice(0, 10)
 const getFY = () => { const d = new Date(); const y = d.getFullYear(); const m = d.getMonth() + 1; const s = m >= 4 ? y : y - 1; return `${String(s).slice(2)}-${String(s + 1).slice(2)}` }
-const newLine = () => ({ accountCode: '', description: '', contactName: '', debit: '', credit: '' })
+const newLine = () => ({ accountCode: '', description: '', contactName: '', costCentreId: '', debit: '', credit: '' })
 const emptyForm = { date: today(), company: 'UIPL', memo: '', refNo: '', reportingMethod: 'Accrual and Cash' }
 const REPORTING = ['Accrual and Cash', 'Accrual Only', 'Cash Only']
 
@@ -18,6 +18,7 @@ export default function JournalEntries() {
 
   const [entries, setEntries] = useState([])
   const [accounts, setAccounts] = useState([])
+  const [centres, setCentres] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(emptyForm)
@@ -30,10 +31,12 @@ export default function JournalEntries() {
 
   const load = async () => {
     try {
-      const [jeSnap, acctSnap] = await Promise.all([
+      const [jeSnap, acctSnap, ccSnap] = await Promise.all([
         getCachedSnap('finance_journal_entries'),
         getCachedSnap('finance_accounts'),
+        getCachedSnap('finance_cost_centres').catch(() => null),
       ])
+      const cc = []; ccSnap?.forEach(d => cc.push({ id: d.id, ...d.data() })); setCentres(cc.filter(c => c.active !== false))
       const j = []; jeSnap.forEach(d => j.push({ id: d.id, ...d.data() }))
       j.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
       const a = []; acctSnap.forEach(d => a.push({ id: d.id, ...d.data() }))
@@ -92,6 +95,7 @@ export default function JournalEntries() {
           credit: Number(l.credit) || 0,
           description: l.description || '',
           ...(l.contactName ? { contactName: l.contactName.trim() } : {}),
+          ...(l.costCentreId ? { costCentreId: l.costCentreId } : {}),
         })),
         sourceType: 'manual',
         status: 'posted',
@@ -182,11 +186,12 @@ export default function JournalEntries() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider">
                   <tr>
-                    <th className="px-3 py-2 text-left" style={{ width: '26%' }}>Account</th>
-                    <th className="px-3 py-2 text-left" style={{ width: '24%' }}>Description</th>
-                    <th className="px-3 py-2 text-left" style={{ width: '18%' }}>Contact (Name)</th>
-                    <th className="px-3 py-2 text-right" style={{ width: '13%' }}>Debits</th>
-                    <th className="px-3 py-2 text-right" style={{ width: '13%' }}>Credits</th>
+                    <th className="px-3 py-2 text-left" style={{ width: '22%' }}>Account</th>
+                    <th className="px-3 py-2 text-left" style={{ width: '18%' }}>Description</th>
+                    <th className="px-3 py-2 text-left" style={{ width: '16%' }}>Project</th>
+                    <th className="px-3 py-2 text-left" style={{ width: '14%' }}>Contact (Name)</th>
+                    <th className="px-3 py-2 text-right" style={{ width: '12%' }}>Debits</th>
+                    <th className="px-3 py-2 text-right" style={{ width: '12%' }}>Credits</th>
                     <th className="px-3 py-2" style={{ width: '6%' }}></th>
                   </tr>
                 </thead>
@@ -200,6 +205,7 @@ export default function JournalEntries() {
                         </select>
                       </td>
                       <td className="px-3 py-2"><input className={inp} value={l.description} onChange={e => updateLine(idx, 'description', e.target.value)} /></td>
+                      <td className="px-3 py-2"><select className={inp} value={l.costCentreId || ''} onChange={e => updateLine(idx, 'costCentreId', e.target.value)}><option value="">—</option>{centres.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td>
                       <td className="px-3 py-2"><input className={inp} value={l.contactName || ''} onChange={e => updateLine(idx, 'contactName', e.target.value)} placeholder="customer / vendor" /></td>
                       <td className="px-3 py-2"><input type="number" min="0" className={inp} value={l.debit} onChange={e => updateLine(idx, 'debit', e.target.value)} /></td>
                       <td className="px-3 py-2"><input type="number" min="0" className={inp} value={l.credit} onChange={e => updateLine(idx, 'credit', e.target.value)} /></td>
@@ -213,19 +219,19 @@ export default function JournalEntries() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-slate-50">
-                    <td className="px-3 py-2 text-right font-semibold text-slate-600" colSpan={3}>Sub Total</td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-600" colSpan={4}>Sub Total</td>
                     <td className="px-3 py-2 text-right font-semibold">{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                     <td className="px-3 py-2 text-right font-semibold">{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                     <td></td>
                   </tr>
                   <tr className={isBalanced ? 'bg-green-50' : 'bg-red-50'}>
-                    <td className="px-3 py-2 text-right font-bold text-slate-700" colSpan={3}>Total (₹)</td>
+                    <td className="px-3 py-2 text-right font-bold text-slate-700" colSpan={4}>Total (₹)</td>
                     <td className={`px-3 py-2 text-right font-bold ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                     <td className={`px-3 py-2 text-right font-bold ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                     <td></td>
                   </tr>
                   <tr>
-                    <td className="px-3 py-1.5 text-right text-xs text-slate-500" colSpan={4}>Difference</td>
+                    <td className="px-3 py-1.5 text-right text-xs text-slate-500" colSpan={5}>Difference</td>
                     <td className={`px-3 py-1.5 text-right text-xs ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>{Math.abs(totalDebit - totalCredit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                     <td></td>
                   </tr>

@@ -43,6 +43,7 @@ export const COLLECTIONS = {
   gstr2bImports: 'finance_gstr2b_imports',
   bankStatements: 'finance_bank_statement_lines',
   costCentres: 'finance_cost_centres',
+  projects: 'projects',
   budgets: 'finance_budgets',
   auditLog: 'finance_audit_log',
 }

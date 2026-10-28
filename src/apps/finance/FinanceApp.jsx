@@ -1,7 +1,10 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { clearDataCache, dataCacheInfo } from '../../lib/cachedFirestore'
+import { clearDataCache, dataCacheInfo, getCollectionCached, setDoc, updateDoc, doc } from '../../lib/cachedFirestore'
+import { db } from '../../lib/app-config'
+import { useFinancePerms } from './components/FinanceUI.jsx'
+import { projectCentreWork } from './utils/projectPnl.js'
 import FinanceDashboard from './pages/FinanceDashboard.jsx'
 import ProjectCosts from './pages/ProjectCosts.jsx'
 import CompanySettings from './pages/CompanySettings.jsx'
@@ -28,6 +31,7 @@ import TdsCompliance from './pages/TdsCompliance.jsx'
 import Statements from './pages/Statements.jsx'
 import CostCentres from './pages/CostCentres.jsx'
 import Budgets from './pages/Budgets.jsx'
+import ProjectPnl from './pages/ProjectPnl.jsx'
 import BankRecon from './pages/BankRecon.jsx'
 import BankingOverview from './pages/BankingOverview.jsx'
 import AuditTrail from './pages/AuditTrail.jsx'
@@ -94,6 +98,22 @@ export default function FinanceApp() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  const { canWrite } = useFinancePerms()
+
+  // every project of the Projects register gets its own cost centre (id proj_<projectId>) so it can be chosen on bills, payments, invoices and journals
+  useEffect(() => {
+    if (!canWrite) return
+    let alive = true
+    ;(async () => {
+      try {
+        const [projects, centres] = await Promise.all([getCollectionCached('projects'), getCollectionCached('finance_cost_centres')])
+        const work = projectCentreWork(projects, centres)
+        for (const w of work) { if (!alive) return; w.isNew ? await setDoc(doc(db, 'finance_cost_centres', w.id), w.data, { merge: true }) : await updateDoc(doc(db, 'finance_cost_centres', w.id), w.data) }
+        if (work.length) invalidateFinanceCache()
+      } catch (e) { console.warn('project cost centres:', e.message) }
+    })()
+    return () => { alive = false }
+  }, [canWrite])
 
   // Some pages write straight to Firestore without telling the shared report cache. When you leave
   // one of them, drop the cache so the next report reads the new data.
@@ -245,6 +265,7 @@ export default function FinanceApp() {
           <Route path="/analysis/:tab"   element={<Analysis />} />
           <Route path="/cost-centres"    element={<CostCentres />} />
           <Route path="/budgets"         element={<Budgets />} />
+          <Route path="/project-pnl"     element={<ProjectPnl />} />
           <Route path="/bank-recon"      element={<BankRecon />} />
           <Route path="/bank-overview"   element={<BankingOverview />} />
           <Route path="/audit"           element={<AuditTrail />} />

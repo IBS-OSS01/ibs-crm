@@ -185,6 +185,7 @@ export function deriveInvoiceLines(invoice, accounts) {
     sourceId: invoice.id,
     sourceDocNumber: invoice.invoiceNumber || invoice.id,
     description: invoice.billToName || invoice.customerId || '',
+    ...(invoice.costCentreId ? { costCentreId: invoice.costCentreId } : {}),     // the project this sale belongs to
   }))
 }
 
@@ -309,6 +310,7 @@ export function manualEntryLines(journalEntries = []) {
       sourceId: je.id,
       sourceDocNumber: je.reference || je.id,
       description: l.description || je.memo || '',
+      ...(l.costCentreId || je.costCentreId ? { costCentreId: l.costCentreId || je.costCentreId } : {}),     // project, per line (or for the whole entry)
     }))
   )
 }

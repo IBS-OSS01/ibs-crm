@@ -68,6 +68,7 @@ export const NAV_GROUPS = [
     { label: 'Ledger statement', icon: '📖', path: '/finance/ledger', keywords: 'account party statement' },
     { label: 'General ledger', icon: '📘', path: '/finance/gl', keywords: 'gl account entries' },
     { label: 'Cost centres', icon: '🎯', path: '/finance/cost-centres', keywords: 'project site department' },
+    { label: 'Project P&L & budgets', icon: '🏗️', path: '/finance/project-pnl', keywords: 'project profit loss budget margin job costing contract' },
     { label: 'Budgets', icon: '📐', path: '/finance/budgets', keywords: 'budget vs actual' },
     { label: 'Forex revaluation', icon: '💱', path: '/finance/fx/revaluation', keywords: 'foreign currency exchange gain loss year end unrealised multi currency' },
     { label: 'Exchange rates', icon: '💱', path: '/finance/fx/rates', keywords: 'currency usd eur rate multi currency forex' },
@@ -86,6 +87,7 @@ export const NAV_GROUPS = [
     { label: 'Purchase register', icon: '📉', path: '/finance/registers/purchase', keywords: 'register month-wise' },
     { label: 'Credit / debit note registers', icon: '🗂️', path: '/finance/registers/credit_note', keywords: 'register' },
     { label: 'Other registers', icon: '🗄️', path: '/finance/registers/receipt', keywords: 'receipt payment contra journal register' },
+    { label: 'Project P&L', icon: '🏗️', path: '/finance/project-pnl', keywords: 'project profit loss budget margin job costing' },
     { label: 'Project costs', icon: '📋', path: '/finance/projectcosts', keywords: 'project' },
   ]},
   { id: 'documents', label: 'Documents', icon: '🗂️', items: [

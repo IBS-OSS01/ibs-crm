@@ -39,7 +39,7 @@ const newItem = () => ({ description: '', hsnCode: '', qty: 1, unit: 'pcs', rate
 
 const emptyForm = {
   company: 'UIPL', invoiceType: 'TI', invoiceDate: today(), dueDate: today(),
-  terms: 'Due on Receipt', poNumber: '', customerId: '',
+  terms: 'Due on Receipt', poNumber: '', customerId: '', costCentreId: '',
   billToName: '', billToAddress: '', billToCity: '', billToState: '', billToPincode: '', billToGstin: '',
   sameShipTo: true,
   shipToName: '', shipToAddress: '', shipToCity: '', shipToState: '', shipToPincode: '', shipToGstin: '',
@@ -207,7 +207,7 @@ export default function Invoices() {
   const [loading, setLoading] = useState(true)
   const [sellers, setSellers] = useState({})
   const [customers, setCustomers] = useState([])
-  const fd = useFinanceData()
+  const fd = useFinanceData(['costCentres'])
   const ledgerLines = fd.allLines
   const [params, setParams] = useSearchParams()
   const [q, setQ] = useState('')                      // search box over the list on the current tab
@@ -551,6 +551,13 @@ export default function Invoices() {
         <div className="px-6 py-5 space-y-4">
           <FRow label={`${docLbl}#`} req><div className="max-w-sm px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-mono text-slate-700">{editingId ? (invoices.find(i => i.id === editingId)?.invoiceNumber || '') : 'Assigned when saved'}</div></FRow>
           <FRow label={form.invoiceType === 'SO' ? 'Reference#' : 'Order Number'}><input className={`${inp} max-w-sm`} value={form.poNumber} onChange={e => setForm(p => ({ ...p, poNumber: e.target.value }))} /></FRow>
+          {(fd.raw?.costCentres || []).some(c => c.active !== false) && (
+            <FRow label="Project" hint="Sales tagged to a project count as its billing in Finance → Project P&L">
+              <select className={`${inp} max-w-sm`} value={form.costCentreId || ''} onChange={e => setForm(p => ({ ...p, costCentreId: e.target.value }))}>
+                <option value="">None</option>{(fd.raw?.costCentres || []).filter(c => c.active !== false || c.id === form.costCentreId).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </FRow>
+          )}
           <FRow label={`${docLbl} Date`} req>
             <div className="flex items-center gap-4 flex-wrap">
               <input type="date" className={`${inp} max-w-[11rem]`} value={form.invoiceDate} onChange={e => setForm(p => ({ ...p, invoiceDate: e.target.value }))} />

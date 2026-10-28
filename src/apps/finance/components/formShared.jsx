@@ -155,7 +155,7 @@ export function CurrencyBar({ fx, date, totalFc, label = 'Currency' }) {
 export function CostCentreSelect({ raw, value, onChange }) {
   const list = (raw?.costCentres || []).filter(c => c.active !== false)
   if (!list.length) return null
-  return <Field label="Cost centre"><select value={value || ''} onChange={e => onChange(e.target.value)} className={formInputCls}><option value="">None</option>{list.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+  return <Field label="Project / cost centre"><select value={value || ''} onChange={e => onChange(e.target.value)} className={formInputCls}><option value="">None</option>{list.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
 }
 
 export function HeaderFields({ company, setCompany, date, setDate, locked, extra, dateLabel = 'Date' }) {

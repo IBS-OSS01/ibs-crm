@@ -38,7 +38,7 @@ export default function CostCentres() {
   const toggle = async (c) => { await updateDoc(doc(db, 'finance_cost_centres', c.id), { active: c.active === false }); invalidateFinanceCache(); reload() }
 
   return (
-    <ReportShell title="Cost Centres" loading={loading} subtitle="Track income and expense by project, site or department."
+    <ReportShell title="Cost Centres" loading={loading} subtitle="Track income and expense by project, site or department. Every project of the Projects register is added here by itself — see Project P&L for its budget and profit."
       exportBar={<ExportBar onXlsx={() => downloadXlsx(`Cost centres ${company}`, [{ name: 'Summary', rows: [['Cost centre', 'Income', 'Expense', 'Net'], ...rows.map(r => [r.c.name, r.s.income, r.s.expense, r.s.net])] }])} />}
       filters={<><CompanyToggle value={company} onChange={setCompany} /><DateRange from={period.from} to={period.to} onChange={setPeriod} /></>}>
       {canWrite && (

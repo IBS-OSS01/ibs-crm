@@ -743,5 +743,37 @@ section('Zoho expenses → tied to bank payments or new entries')
   ok(pg.length === 1 && pg[0].suggestion.accountCode === '1302' && fg.partyId === '' && fg.accountLines[0].accountCode === '1302', 'reclassify: bank GST booked as a payment to a vendor moves to Input GST; the real remittance stays')
 }
 
+// ── project P&L ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+{
+  const { projectCentreWork, projectPnl, untaggedTotals, projectCentreId } = await import('../src/apps/finance/utils/projectPnl.js')
+  const projects = [{ id: 'p1', projectNumber: 'UIPL/PRJ/26-27/001', projectName: 'Pune plant', contractValue: 1000000, status: 'active' }, { id: 'g', isGeneral: true, projectNumber: 'GEN' }]
+  const work = projectCentreWork(projects, [])
+  ok(work.length === 1 && work[0].id === 'proj_p1' && work[0].isNew && work[0].data.name === 'UIPL/PRJ/26-27/001 – Pune plant' && work[0].data.projectId === 'p1', 'project P&L: one cost centre per project, the General project skipped')
+  ok(projectCentreWork(projects, [{ id: 'proj_p1', name: 'UIPL/PRJ/26-27/001 – Pune plant', code: 'UIPL/PRJ/26-27/001', projectId: 'p1' }]).length === 0, 'project P&L: nothing to do when the cost centre already exists')
+  ok(projectCentreWork(projects, [{ id: 'proj_p1', name: 'old', code: '', projectId: 'p1' }]).filter(w => !w.isNew).length === 1, 'project P&L: a renamed project refreshes its cost centre name')
+  const accts = [{ code: '4000', name: 'Sales', type: 'income' }, { code: '5000', name: 'Purchases', type: 'expense' }, { code: '5100', name: 'Salaries', type: 'expense' }, { code: '1200', name: 'AR', type: 'asset' }]
+  const cc = projectCentreId('p1')
+  const L = (accountCode, debit, credit, extra = {}) => ({ accountCode, debit, credit, company: 'UIPL', date: '2026-10-05', sourceType: 'x', sourceDocNumber: 'D', ...extra })
+  const lines = [
+    L('4000', 0, 600000, { costCentreId: cc }), L('1200', 600000, 0, { costCentreId: cc }),
+    L('5000', 250000, 0, { costCentreId: cc }), L('5100', 150000, 0, { costCentreId: cc }),
+    L('5000', 5000, 0), L('4000', 0, 9000),                                        // not tagged: stays in "overheads / untagged"
+    L('5000', 70000, 0, { costCentreId: cc, date: '2025-02-01' }),                 // an earlier year
+  ]
+  const centre = { id: cc, budget: { contractValue: 1000000, lines: [{ accountCode: '5000', amount: 300000 }, { accountCode: '5100', amount: 100000 }] } }
+  const r = projectPnl(lines, accts, centre, projects[0], { company: 'UIPL' })
+  ok(r.billed === 600000 && r.actualCost === 470000 && r.budgetCost === 400000, 'project P&L: billed, actual cost and cost budget')
+  ok(r.profitToDate === 130000 && r.billedPct === 60, 'project P&L: profit to date = billed − cost; 60% of the contract billed')
+  ok(r.expectedProfit === 1000000 - 470000, 'project P&L: cost over budget → the actual cost is the forecast')
+  const h = r.rows.find(x => x.code === '5100'), m = r.rows.find(x => x.code === '5000')
+  ok(h.over && h.remaining === -50000 && m.over, 'project P&L: a cost head over its budget is flagged')
+  ok(projectPnl(lines, accts, centre, projects[0], { company: 'UIPL', from: '2026-04-01', to: '2027-03-31' }).actualCost === 400000, 'project P&L: period filter leaves out the earlier year')
+  const u = untaggedTotals(lines, accts, { company: 'UIPL' })
+  ok(u.income === 9000 && u.expense === 5000, 'project P&L: untagged income / expense reported separately')
+  ok(projectPnl(lines, accts, { id: cc }, projects[0], { company: 'UIPL' }).expectedProfit === 1000000 - 470000, 'project P&L: no budget → forecast is the actual cost so far')
+  ok(projectPnl(lines, accts, centre, projects[0], { company: 'Wayzim' }).billed === 0, 'project P&L: company filter')
+}
+
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
