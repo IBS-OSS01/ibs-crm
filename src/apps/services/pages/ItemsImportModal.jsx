@@ -124,7 +124,7 @@ export default function ItemsImportModal({ existingItems, warehouses = [], exist
     const stockByKey = new Map(existingStocks.filter(s => s.sku && s.locationId).map(s => [`${String(s.sku).toLowerCase().trim()}|${s.locationId}`, s]))
     const now = () => new Date().toISOString()
 
-    // Equipment names the master does not have yet join it (only an administrator can write the master; for others the items still keep the name)
+    // Equipment names the master does not have yet join it (if the master cannot be written the items still keep the name)
     const fresh = new Map()
     for (const r of mappedAll) if (!problems(r).length && !knownEquipment.has(eqKey(r.equipmentName)) && !fresh.has(eqKey(r.equipmentName))) fresh.set(eqKey(r.equipmentName), r)
     if (fresh.size) {

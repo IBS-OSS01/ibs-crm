@@ -9,7 +9,7 @@ const inputCls = 'w-full px-4 py-2 border border-slate-300 rounded-lg text-sm fo
 
 export default function EquipmentMaster() {
   const { userProfile } = useAuth()
-  const canEdit = userProfile?.role === 'admin'
+  const canEdit = ['admin', 'service_manager', 'project_manager'].includes(userProfile?.role)
   const [list, setList] = useState([])
   const [used, setUsed] = useState({})            // equipment key → number of spare parts using it
   const [loading, setLoading] = useState(true)
@@ -34,7 +34,7 @@ export default function EquipmentMaster() {
 
   const persist = async (next) => {
     try { await saveEquipment(next); setList(next.slice().sort((a, b) => a.name.localeCompare(b.name))); return true }
-    catch (e) { setError(/permission/i.test(e.message) ? 'Only an administrator can change the equipment master.' : 'Could not save: ' + e.message); return false }
+    catch (e) { setError(/permission/i.test(e.message) ? 'You are not allowed to change the equipment master.' : 'Could not save: ' + e.message); return false }
   }
 
   const handleSave = async (e) => {
@@ -75,7 +75,7 @@ export default function EquipmentMaster() {
         )}
       </div>
 
-      {!canEdit && <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">Only an administrator can add or change equipment. You can still pick from this list on every spare part.</div>}
+      {!canEdit && <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">Only an administrator, service manager or project manager can add or change equipment. You can still pick from this list on every spare part.</div>}
       {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
 
       {showForm && canEdit && (
