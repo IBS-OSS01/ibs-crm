@@ -3,12 +3,15 @@ import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from '../../..
 import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import ItemsImportModal, { downloadItemsTemplate } from './ItemsImportModal'
+import { makeSkuGenerator, parseImages, isHttpLink } from '../utils/spareItems'
 
-const EMPTY_FORM = { name: '', sku: '', unit: 'pcs', minStock: 0, description: '' }
+const EMPTY_FORM = { name: '', sku: '', specifications: '', make: '', equipmentName: '', unit: 'pcs', minStock: 0, imagesText: '', remarks: '', description: '' }
 
 export default function ItemsCatalog() {
   const { user, userProfile } = useAuth()
   const [items, setItems] = useState([])
+  const [warehouses, setWarehouses] = useState([])
+  const [stocks, setStocks] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -23,9 +26,16 @@ export default function ItemsCatalog() {
 
   const fetchItems = async () => {
     try {
-      const snap = await getDocs(collection(db, 'inventory_items'))
-      const data = []
+      const [snap, whSnap, stSnap] = await Promise.all([
+        getDocs(collection(db, 'inventory_items')),
+        getDocs(collection(db, 'inventory_warehouses')),
+        getDocs(collection(db, 'inventory_stocks')),
+      ])
+      const data = [], whs = [], sts = []
       snap.forEach(d => data.push({ id: d.id, ...d.data() }))
+      whSnap.forEach(d => whs.push({ id: d.id, ...d.data() }))
+      stSnap.forEach(d => sts.push({ id: d.id, ...d.data() }))
+      setWarehouses(whs); setStocks(sts)
       setItems(data.filter(i => !i.isService).sort((a, b) => (a.name || '').localeCompare(b.name || '')))   // service / charge lines live in Finance only
     } catch (err) { console.error(err) }
     finally { setLoading(false) }
@@ -33,10 +43,11 @@ export default function ItemsCatalog() {
 
   const handleSave = async (e) => {
     e.preventDefault()
-    if (!form.name || !form.sku) { setError('Name and SKU are required.'); return }
+    if (!form.name) { setError('Item name is required.'); return }
     setSaving(true)
     try {
-      const payload = { ...form, minStock: parseInt(form.minStock) || 0 }
+      const { imagesText, ...rest } = form
+      const payload = { ...rest, sku: form.sku.trim() || makeSkuGenerator(items)(), minStock: parseInt(form.minStock) || 0, images: parseImages(imagesText) }
       if (editingId) {
         await updateDoc(doc(db, 'inventory_items', editingId), {
           ...payload, updatedBy: user.uid, updatedAt: new Date().toISOString(),
@@ -60,6 +71,11 @@ export default function ItemsCatalog() {
     setForm({
       name: item.name || item.itemName || '',
       sku: item.sku || '',
+      specifications: item.specifications || '',
+      make: item.make || '',
+      equipmentName: item.equipmentName || '',
+      imagesText: (item.images || []).join('\n'),
+      remarks: item.remarks || '',
       unit: item.unit || 'pcs',
       minStock: item.minStock ?? 0,
       description: item.description || '',
@@ -92,7 +108,7 @@ export default function ItemsCatalog() {
   }
 
   const filtered = items.filter(i =>
-    !search || i.name?.toLowerCase().includes(search.toLowerCase()) || i.sku?.toLowerCase().includes(search.toLowerCase())
+    !search || [i.name, i.sku, i.make, i.equipmentName, i.specifications].some(v => String(v || '').toLowerCase().includes(search.toLowerCase()))
   )
 
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading catalog...</div>
@@ -106,7 +122,7 @@ export default function ItemsCatalog() {
         </div>
         {isManager && (
           <div className="flex gap-2">
-            <button onClick={downloadItemsTemplate}
+            <button onClick={() => downloadItemsTemplate(warehouses)}
               className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg transition">
               ⬇ Template
             </button>
@@ -125,6 +141,8 @@ export default function ItemsCatalog() {
       {showImport && (
         <ItemsImportModal
           existingItems={items}
+          warehouses={warehouses}
+          existingStocks={stocks}
           onClose={() => setShowImport(false)}
           onImported={() => { setShowImport(false); fetchItems() }}
         />
@@ -142,9 +160,24 @@ export default function ItemsCatalog() {
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">SKU *</label>
-              <input type="text" value={form.sku} onChange={e => setForm(p => ({ ...p, sku: e.target.value }))} autoComplete="off"
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+              <label className="block text-sm font-medium text-slate-700 mb-1">SKU</label>
+              <input type="text" value={form.sku} onChange={e => setForm(p => ({ ...p, sku: e.target.value }))} autoComplete="off" placeholder="Leave empty — the next SP-number is given automatically"
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Make</label>
+              <input type="text" value={form.make} onChange={e => setForm(p => ({ ...p, make: e.target.value }))} autoComplete="off"
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Equipment Name</label>
+              <input type="text" value={form.equipmentName} onChange={e => setForm(p => ({ ...p, equipmentName: e.target.value }))} autoComplete="off"
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Specifications and Models</label>
+              <input type="text" value={form.specifications} onChange={e => setForm(p => ({ ...p, specifications: e.target.value }))} autoComplete="off"
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Unit</label>
@@ -163,8 +196,13 @@ export default function ItemsCatalog() {
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-              <input type="text" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} autoComplete="off"
+              <label className="block text-sm font-medium text-slate-700 mb-1">Remarks</label>
+              <input type="text" value={form.remarks} onChange={e => setForm(p => ({ ...p, remarks: e.target.value }))} autoComplete="off"
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Images <span className="text-slate-400 font-normal">— links to the photos, one per line</span></label>
+              <textarea rows={2} value={form.imagesText} onChange={e => setForm(p => ({ ...p, imagesText: e.target.value }))}
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div className="col-span-2 flex gap-3">
@@ -182,7 +220,7 @@ export default function ItemsCatalog() {
       )}
 
       {/* Search */}
-      <input type="text" placeholder="Search by name or SKU..." value={search} onChange={e => setSearch(e.target.value)}
+      <input type="text" placeholder="Search name, SKU, make, equipment..." value={search} onChange={e => setSearch(e.target.value)}
         className="px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-72" />
 
       {/* Items Table */}
@@ -202,10 +240,14 @@ export default function ItemsCatalog() {
             <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
               <tr>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">Item Name</th>
+                <th className="px-4 py-3 text-left text-slate-600 font-medium">Specifications / Models</th>
+                <th className="px-4 py-3 text-left text-slate-600 font-medium">Make</th>
+                <th className="px-4 py-3 text-left text-slate-600 font-medium">Equipment</th>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">SKU</th>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">Unit</th>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">Min Stock</th>
-                <th className="px-4 py-3 text-left text-slate-600 font-medium">Description</th>
+                <th className="px-4 py-3 text-left text-slate-600 font-medium">Images</th>
+                <th className="px-4 py-3 text-left text-slate-600 font-medium">Remarks</th>
                 {isManager && <th className="px-4 py-3 text-left text-slate-600 font-medium">Actions</th>}
               </tr>
             </thead>
@@ -213,10 +255,19 @@ export default function ItemsCatalog() {
               {filtered.map(item => (
                 <tr key={item.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-slate-800">{item.name || item.itemName}</td>
+                  <td className="px-4 py-3 text-slate-500 text-xs">{item.specifications || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">{item.make || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">{item.equipmentName || '—'}</td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{item.sku}</td>
                   <td className="px-4 py-3 text-slate-600">{item.unit || 'pcs'}</td>
                   <td className="px-4 py-3 text-slate-600">{item.minStock ?? 0}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{item.description || '—'}</td>
+                  <td className="px-4 py-3 text-xs">
+                    {(item.images || []).length === 0 ? <span className="text-slate-400">—</span>
+                      : (item.images || []).map((u, n) => isHttpLink(u)
+                          ? <a key={n} href={u} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline mr-2">🖼 {n + 1}</a>
+                          : <span key={n} className="text-slate-500 mr-2" title={u}>🖼 {u}</span>)}
+                  </td>
+                  <td className="px-4 py-3 text-slate-500 text-xs">{item.remarks || item.description || '—'}</td>
                   {isManager && (
                     <td className="px-4 py-3">
                       <div className="flex gap-3">

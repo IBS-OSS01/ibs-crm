@@ -25,7 +25,13 @@ export function parseXlsxFile(file) {
         const sheet = wb.Sheets[wb.SheetNames[0]]
         const rows2d = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' })
         if (!rows2d.length) { resolve({ headers: [], rows: [] }); return }
-        const headers = (rows2d[0] || []).map(h => String(h ?? '').trim())
+        // a header that appears twice (e.g. two "Min Stock" columns) keeps its own column: the 2nd becomes "Min Stock (2)", the 3rd "(3)" …
+        const seen = {}
+        const headers = (rows2d[0] || []).map(h => {
+          const t = String(h ?? '').trim()
+          seen[t] = (seen[t] || 0) + 1
+          return seen[t] > 1 && t ? `${t} (${seen[t]})` : t
+        })
         const rows = rows2d.slice(1)
           .map(r => {
             const row = {}

@@ -35,11 +35,13 @@ export default function StockLevels() {
     finally { setLoading(false) }
   }
 
+  const itemOf = (s) => items.find(i => s.sku && i.sku === s.sku)
   const warehouseName = (id) => warehouses.find(w => w.id === id)?.name || id || '—'
 
   const filtered = stocks.filter(s => {
     const matchWh = selectedWarehouse === 'all' || s.locationId === selectedWarehouse
-    const matchSearch = !search || s.itemName?.toLowerCase().includes(search.toLowerCase()) || s.sku?.toLowerCase().includes(search.toLowerCase())
+    const it = itemOf(s)
+    const matchSearch = !search || [s.itemName, s.sku, s.make || it?.make, s.equipmentName || it?.equipmentName, it?.specifications].some(v => String(v || '').toLowerCase().includes(search.toLowerCase()))
     return matchWh && matchSearch
   })
 
@@ -74,7 +76,7 @@ export default function StockLevels() {
       <div className="flex gap-3 flex-wrap">
         <input
           type="text"
-          placeholder="Search item or SKU..."
+          placeholder="Search item, SKU, make, equipment..."
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
@@ -103,6 +105,8 @@ export default function StockLevels() {
             <thead className="bg-slate-50/80 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
               <tr>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">Item</th>
+                <th className="px-4 py-3 text-left text-slate-600 font-medium">Make</th>
+                <th className="px-4 py-3 text-left text-slate-600 font-medium">Equipment</th>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">SKU</th>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">Location</th>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">Qty</th>
@@ -114,6 +118,8 @@ export default function StockLevels() {
               {filtered.map(s => (
                 <tr key={s.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-slate-800">{s.itemName || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">{s.make || itemOf(s)?.make || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">{s.equipmentName || itemOf(s)?.equipmentName || '—'}</td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{s.sku || '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{warehouseName(s.locationId)}</td>
                   <td className="px-4 py-3 font-bold text-slate-800">{s.qty ?? 0}</td>

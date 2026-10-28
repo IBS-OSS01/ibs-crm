@@ -3,46 +3,67 @@ import { collection, addDoc, doc, updateDoc } from '../../../lib/cachedFirestore
 import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import { downloadXlsxTemplate, parseXlsxFile } from '../../../lib/xlsxTemplate'
+import { itemKey, makeSkuGenerator, parseImages } from '../utils/spareItems'
 
-// Columns must match the downloadable template exactly (order + labels).
-const TEMPLATE_HEADERS = ['Item Name', 'SKU', 'Unit', 'Min Stock', 'Description']
-const TEMPLATE_EXAMPLE = ['Bearing 6205', 'BRG-6205', 'pcs', 10, 'Deep groove ball bearing']
+// Columns of the downloadable template (order + labels). A * marks a required column.
+const TEMPLATE_HEADERS = ['Item Name*', 'Specifications and Models', 'Make*', 'Equipment Name*', 'Warehouse*', 'Quantity*', 'Min Stock*', 'Unit', 'Min Stock', 'Images*', 'Remarks']
 
-export function downloadItemsTemplate() {
-  downloadXlsxTemplate('spare-parts-template.xlsx', TEMPLATE_HEADERS, [TEMPLATE_EXAMPLE])
+export function downloadItemsTemplate(warehouses = []) {
+  const wh = warehouses[0]?.name || warehouses[0]?.id || 'Central Warehouse'
+  const rows = [
+    ['Bearing 6205', '6205-2RS, 25 x 52 x 15 mm', 'SKF', 'Conveyor Drive Motor', wh, 120, 10, 'pcs', '', 'https://example.com/bearing-6205.jpg', 'Deep groove ball bearing'],
+    ['V-Belt A42', 'A-section, 42 in', 'Gates', 'Cooling Tower Fan', wh, 30, 5, 'pcs', '', 'https://example.com/belt-a42-1.jpg, https://example.com/belt-a42-2.jpg', ''],
+  ]
+  downloadXlsxTemplate('spare-parts-template.xlsx', TEMPLATE_HEADERS, rows)
 }
 
-// Map a raw sheet header to one of our known fields, tolerant of case/spacing.
+// Map a raw sheet header to one of our fields, tolerant of case, spacing and the * required mark.
 const FIELD_ALIASES = {
   name: ['item name', 'name', 'item'],
-  sku: ['sku', 'part number', 'part no', 'code'],
-  unit: ['unit', 'uom'],
+  specifications: ['specifications and models', 'specifications', 'specification', 'model', 'models', 'specs'],
+  make: ['make', 'brand', 'manufacturer'],
+  equipmentName: ['equipment name', 'equipment', 'machine', 'machine name'],
+  warehouse: ['warehouse', 'location', 'site', 'store', 'godown'],
+  qty: ['quantity', 'qty', 'stock', 'on hand', 'onhand', 'count'],
   minStock: ['min stock', 'min stock level', 'minimum stock', 'reorder level'],
-  description: ['description', 'desc', 'notes'],
+  minStock2: ['min stock (2)'],               // the template has "Min Stock" twice; the 2nd is only used when the 1st is empty
+  unit: ['unit', 'uom'],
+  images: ['images', 'image', 'photo', 'photos', 'image links', 'picture'],
+  remarks: ['remarks', 'remark', 'notes', 'description', 'desc'],
+  sku: ['sku', 'part number', 'part no', 'code'],   // not in the template; honoured if a sheet still has it
 }
+const cleanHeader = (h) => String(h || '').toLowerCase().replace(/\*/g, '').replace(/\s+/g, ' ').trim()
 
 function mapRow(row, headers) {
   const findVal = (key) => {
-    const alias = FIELD_ALIASES[key].find(a => headers.some(h => h.toLowerCase().trim() === a))
-    const header = headers.find(h => h.toLowerCase().trim() === alias)
-    return header ? row[header] : ''
+    const alias = FIELD_ALIASES[key].find(a => headers.some(h => cleanHeader(h) === a))
+    const header = headers.find(h => cleanHeader(h) === alias)
+    return header ? String(row[header] ?? '').trim() : ''
   }
+  const num = (s) => { const n = parseFloat(String(s).replace(/,/g, '')); return Number.isFinite(n) ? n : null }
+  const minRaw = findVal('minStock') || findVal('minStock2')
   return {
     name: findVal('name'),
-    sku: findVal('sku'),
+    specifications: findVal('specifications'),
+    make: findVal('make'),
+    equipmentName: findVal('equipmentName'),
+    warehouse: findVal('warehouse'),
+    qtyRaw: findVal('qty'), qty: num(findVal('qty')),
+    minRaw, minStock: num(minRaw),
     unit: findVal('unit') || 'pcs',
-    minStock: findVal('minStock'),
-    description: findVal('description'),
+    images: parseImages(findVal('images')),
+    remarks: findVal('remarks'),
+    sku: findVal('sku'),
   }
 }
 
-export default function ItemsImportModal({ existingItems, onClose, onImported }) {
+export default function ItemsImportModal({ existingItems, warehouses = [], existingStocks = [], onClose, onImported }) {
   const { user } = useAuth()
   const [fileName, setFileName] = useState('')
   const [parsed, setParsed] = useState(null) // { headers, rows }
   const [parseError, setParseError] = useState('')
   const [importing, setImporting] = useState(false)
-  const [result, setResult] = useState(null) // { created, updated, skipped, errors }
+  const [result, setResult] = useState(null) // { created, updated, stocksCreated, stocksUpdated, skipped, errors }
   const fileRef = useRef()
 
   const handleFile = async (e) => {
@@ -59,68 +80,127 @@ export default function ItemsImportModal({ existingItems, onClose, onImported })
     }
   }
 
-  const preview = parsed ? parsed.rows.slice(0, 8).map(r => mapRow(r, parsed.headers)) : []
+  // The Warehouse cell is free text: match by name first (how people type it), then by id.
+  const resolveWarehouse = (raw) => {
+    const key = (raw || '').toLowerCase().trim()
+    if (!key) return null
+    return warehouses.find(w => (w.name || '').toLowerCase().trim() === key)
+        || warehouses.find(w => (w.id || '').toLowerCase().trim() === key)
+        || null
+  }
 
-  const existingBySku = new Map(
-    existingItems.filter(i => i.sku).map(i => [String(i.sku).toLowerCase().trim(), i])
-  )
+  // What is wrong with a row (empty = fine). Every column marked * must be filled.
+  const problems = (r) => {
+    const p = []
+    if (!r.name) p.push('Item Name')
+    if (!r.make) p.push('Make')
+    if (!r.equipmentName) p.push('Equipment Name')
+    if (!r.warehouse) p.push('Warehouse'); else if (!resolveWarehouse(r.warehouse)) p.push(`Warehouse "${r.warehouse}" is not set up`)
+    if (r.qty === null || r.qty < 0) p.push('Quantity')
+    if (r.minStock === null || r.minStock < 0) p.push('Min Stock')
+    if (!r.images.length) p.push('Images')
+    return p
+  }
+
+  const mappedAll = parsed ? parsed.rows.map(r => mapRow(r, parsed.headers)) : []
+  const preview = mappedAll.slice(0, 8)
+  const invalidCount = mappedAll.filter(r => problems(r).length).length
+
+  const existingByKey = new Map(existingItems.map(i => [itemKey(i), i]))
+  const existingBySku = new Map(existingItems.filter(i => i.sku).map(i => [String(i.sku).toLowerCase().trim(), i]))
+  const findExisting = (r) => (r.sku && existingBySku.get(r.sku.toLowerCase())) || existingByKey.get(itemKey(r))
 
   const handleImport = async () => {
-    if (!parsed?.rows?.length) return
+    if (!mappedAll.length) return
     setImporting(true); setResult(null)
-    let created = 0, updated = 0, skipped = 0, errors = 0
+    let created = 0, updated = 0, stocksCreated = 0, stocksUpdated = 0, skipped = 0, errors = 0
+    const nextSku = makeSkuGenerator(existingItems)
+    const itemByKey = new Map(existingByKey)
+    const stockByKey = new Map(existingStocks.filter(s => s.sku && s.locationId).map(s => [`${String(s.sku).toLowerCase().trim()}|${s.locationId}`, s]))
+    const now = () => new Date().toISOString()
 
-    for (const raw of parsed.rows) {
-      const mapped = mapRow(raw, parsed.headers)
-      const name = mapped.name?.trim()
-      const sku = mapped.sku?.trim()
-      if (!name || !sku) { skipped++; continue }
-      const minStock = parseInt(mapped.minStock) || 0
-      const payload = { name, sku, unit: mapped.unit || 'pcs', minStock, description: mapped.description || '' }
+    for (const r of mappedAll) {
+      if (problems(r).length) { skipped++; continue }
+      const wh = resolveWarehouse(r.warehouse)
       try {
-        const match = existingBySku.get(sku.toLowerCase())
+        // ── the item (catalog entry) ──
+        const fields = { name: r.name, specifications: r.specifications, make: r.make, equipmentName: r.equipmentName, unit: r.unit, minStock: r.minStock, images: r.images, remarks: r.remarks }
+        let match = (r.sku && existingBySku.get(r.sku.toLowerCase())) || itemByKey.get(itemKey(r))
+        let sku
         if (match) {
-          await updateDoc(doc(db, 'inventory_items', match.id), {
-            ...payload, updatedBy: user.uid, updatedAt: new Date().toISOString(),
-          })
-          updated++
+          sku = match.sku
+          if (match.id !== 'pending') {
+            await updateDoc(doc(db, 'inventory_items', match.id), { ...fields, updatedBy: user.uid, updatedAt: now() })
+            updated++
+          }
         } else {
-          await addDoc(collection(db, 'inventory_items'), {
-            ...payload, createdBy: user.uid, createdAt: new Date().toISOString(),
-          })
-          existingBySku.set(sku.toLowerCase(), { id: 'pending', sku }) // avoid double-creating duplicate rows in same file
+          sku = r.sku || nextSku()
+          const ref = await addDoc(collection(db, 'inventory_items'), { ...fields, sku, createdBy: user.uid, createdAt: now() })
+          itemByKey.set(itemKey(r), { id: 'pending', sku })       // a repeated row in the same file must not create a second item
           created++
+        }
+
+        // ── the stock of that item in the warehouse: the Quantity in the sheet REPLACES what is there now ──
+        const stockKey = `${String(sku).toLowerCase().trim()}|${wh.id}`
+        const stockFields = { itemName: r.name, sku, make: r.make, equipmentName: r.equipmentName, locationId: wh.id, locationName: wh.name || wh.id, qty: r.qty, minStock: r.minStock }
+        const stockMatch = stockByKey.get(stockKey)
+        if (stockMatch) {
+          await updateDoc(doc(db, 'inventory_stocks', stockMatch.id), { ...stockFields, updatedBy: user.uid, updatedAt: now() })
+          stocksUpdated++
+        } else {
+          const ref = await addDoc(collection(db, 'inventory_stocks'), { ...stockFields, createdBy: user.uid, createdAt: now() })
+          stockByKey.set(stockKey, { id: ref.id, sku, locationId: wh.id })
+          stocksCreated++
         }
       } catch (e) { errors++; console.error(e) }
     }
-    setResult({ created, updated, skipped, errors })
+    setResult({ created, updated, stocksCreated, stocksUpdated, skipped, errors })
     setImporting(false)
-    if (created > 0 || updated > 0) onImported?.()
+    if (created || updated || stocksCreated || stocksUpdated) onImported?.()
   }
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
           <div>
             <h3 className="font-bold text-slate-800 text-lg">📋 Import Spare Parts from Template</h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Existing SKUs are updated in place — new SKUs are added. No need to retype items one by one.
+              One row per spare part and warehouse — adds or updates the item and puts its quantity into that warehouse.
             </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl">✕</button>
         </div>
 
         <div className="p-5 overflow-y-auto space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+            ⚠️ The <strong>Quantity</strong> column <strong>replaces</strong> the current stock of that item in that warehouse.
+            Columns marked <strong>*</strong> must be filled in — rows missing any of them are skipped.
+            <strong> Images</strong>: paste the link(s) to the photo(s) (Google Drive / OneDrive / website), separated by commas.
+          </div>
+
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Valid warehouse names</p>
+            {warehouses.length === 0 ? (
+              <p className="text-xs text-red-600">No warehouses set up yet — add one under Services → Warehouses first.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {warehouses.map(wh => (
+                  <span key={wh.id} className="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-mono">{wh.name || wh.id}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Step 1: get the template */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex items-center justify-between gap-3">
             <div>
               <p className="font-bold mb-0.5">1. Download the Excel template</p>
-              <p>Fill it in Excel — one row per spare part — then upload it below.</p>
+              <p>Fill it in Excel — one row per spare part and warehouse — then upload it below. New items get their SKU (SP-00001 …) automatically.</p>
             </div>
-            <button onClick={downloadItemsTemplate}
+            <button onClick={() => downloadItemsTemplate(warehouses)}
               className="px-3 py-1.5 bg-white border border-blue-300 text-blue-700 text-xs font-semibold rounded-lg hover:bg-blue-100 transition whitespace-nowrap">
               ⬇ Download Template (.xlsx)
             </button>
@@ -140,19 +220,22 @@ export default function ItemsImportModal({ existingItems, onClose, onImported })
           {/* Preview + import */}
           {parsed && (
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-bold text-slate-700">{parsed.rows.length} rows detected · Preview (first 8):</p>
+              <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
+                <p className="text-sm font-bold text-slate-700">
+                  {parsed.rows.length} rows detected{invalidCount > 0 && <span className="text-red-600"> · {invalidCount} will be skipped</span>} · Preview (first 8):
+                </p>
                 {result ? (
-                  <div className="flex gap-3 text-xs font-medium px-3 py-1.5 rounded-lg bg-green-50 text-green-700">
-                    <span>➕ {result.created} added</span>
-                    <span>🔁 {result.updated} updated</span>
+                  <div className="flex flex-wrap gap-3 text-xs font-medium px-3 py-1.5 rounded-lg bg-green-50 text-green-700">
+                    <span>➕ {result.created} items added</span>
+                    <span>🔁 {result.updated} items updated</span>
+                    <span>📦 {result.stocksCreated} stock added · {result.stocksUpdated} stock updated</span>
                     {result.skipped > 0 && <span className="text-slate-500">⏭ {result.skipped} skipped</span>}
                     {result.errors > 0 && <span className="text-red-600">❌ {result.errors} errors</span>}
                   </div>
                 ) : (
-                  <button onClick={handleImport} disabled={importing}
+                  <button onClick={handleImport} disabled={importing || invalidCount === mappedAll.length}
                     className="px-5 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50">
-                    {importing ? 'Importing…' : `⬆ Import ${parsed.rows.length} Rows`}
+                    {importing ? 'Importing…' : `⬆ Import ${mappedAll.length - invalidCount} Rows`}
                   </button>
                 )}
               </div>
@@ -162,26 +245,34 @@ export default function ItemsImportModal({ existingItems, onClose, onImported })
                   <thead className="bg-slate-50/80 text-slate-500 uppercase tracking-wider">
                     <tr>
                       <th className="text-left px-3 py-2">Item Name</th>
-                      <th className="text-left px-3 py-2">SKU</th>
-                      <th className="text-left px-3 py-2">Unit</th>
-                      <th className="text-left px-3 py-2">Min Stock</th>
+                      <th className="text-left px-3 py-2">Specifications / Models</th>
+                      <th className="text-left px-3 py-2">Make</th>
+                      <th className="text-left px-3 py-2">Equipment</th>
+                      <th className="text-left px-3 py-2">Warehouse</th>
+                      <th className="text-left px-3 py-2">Qty</th>
+                      <th className="text-left px-3 py-2">Min</th>
+                      <th className="text-left px-3 py-2">Images</th>
                       <th className="text-left px-3 py-2">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {preview.map((row, i) => {
-                      const willUpdate = row.sku && existingBySku.has(row.sku.toLowerCase())
-                      const invalid = !row.name || !row.sku
+                      const p = problems(row)
+                      const willUpdate = !p.length && findExisting(row)
                       return (
-                        <tr key={i} className={invalid ? 'opacity-40 line-through' : ''}>
+                        <tr key={i} className={p.length ? 'bg-red-50/40' : ''}>
                           <td className="px-3 py-2 text-slate-700">{row.name || '—'}</td>
-                          <td className="px-3 py-2 font-mono text-slate-600">{row.sku || '—'}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.unit}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.minStock || 0}</td>
+                          <td className="px-3 py-2 text-slate-500">{row.specifications || '—'}</td>
+                          <td className="px-3 py-2 text-slate-600">{row.make || '—'}</td>
+                          <td className="px-3 py-2 text-slate-600">{row.equipmentName || '—'}</td>
+                          <td className="px-3 py-2 text-slate-600">{row.warehouse || '—'}</td>
+                          <td className="px-3 py-2 text-slate-600">{row.qty ?? '—'}</td>
+                          <td className="px-3 py-2 text-slate-600">{row.minStock ?? '—'}</td>
+                          <td className="px-3 py-2 text-slate-600">{row.images.length ? `🖼 ${row.images.length}` : '—'}</td>
                           <td className="px-3 py-2">
-                            {invalid ? <span className="text-slate-400">skip</span>
-                              : willUpdate ? <span className="text-blue-600 font-medium">update</span>
-                              : <span className="text-green-600 font-medium">new</span>}
+                            {p.length ? <span className="text-red-600">skip — {p.join(', ')}</span>
+                              : willUpdate ? <span className="text-blue-600 font-medium">update item + stock</span>
+                              : <span className="text-green-600 font-medium">new item + stock</span>}
                           </td>
                         </tr>
                       )
@@ -190,7 +281,8 @@ export default function ItemsImportModal({ existingItems, onClose, onImported })
                 </table>
               </div>
               <p className="text-xs text-slate-400 mt-2">
-                Rows are matched to existing items by SKU. A matching SKU updates that item; a new SKU creates one. Rows missing Item Name or SKU are skipped.
+                An item is recognised by Item Name + Make + Equipment Name + Specifications/Models together: the same combination updates that item, a new one creates it.
+                Stock is matched by item + warehouse.
               </p>
             </div>
           )}
