@@ -11,6 +11,7 @@ import ReorderConsolidation from './pages/ReorderConsolidation.jsx'
 import StockTransfer from './pages/StockTransfer.jsx'
 import ReceiveStock from './pages/ReceiveStock.jsx'
 import ItemsCatalog from './pages/ItemsCatalog.jsx'
+import EquipmentMaster from './pages/EquipmentMaster.jsx'
 import Locations from './pages/Locations.jsx'
 import StockAdjustment from './pages/StockAdjustment.jsx'
 import ServiceSites from './pages/ServiceSites.jsx'
@@ -30,6 +31,7 @@ const NAV_GROUPS = [
   { label: 'Inventory', items: [
     { label: 'Stock Levels',     icon: '📦', path: '/services/stock-levels' },
     { label: 'Items Catalog',    icon: '🗂️', path: '/services/items' },
+    { label: 'Equipment Master', icon: '⚙️', path: '/services/equipment' },
     { label: 'Warehouses',       icon: '🏭', path: '/services/locations' },
     { label: 'Stock Adjustment', icon: '⚖️', path: '/services/adjustment' },
     { label: 'Stock Transfer',   icon: '🔀', path: '/services/transfer' },
@@ -128,6 +130,7 @@ export default function ServicesApp() {
           <Route path="/receive"     element={<ReceiveStock />} />
           <Route path="/sites"       element={<ServiceSites />} />
           <Route path="/items"        element={<ItemsCatalog />} />
+          <Route path="/equipment"    element={<EquipmentMaster />} />
           <Route path="/locations"    element={<Locations />} />
           <Route path="/adjustment"   element={<StockAdjustment />} />
           <Route path="/my-tasks"     element={<ModuleMyTasks />} />

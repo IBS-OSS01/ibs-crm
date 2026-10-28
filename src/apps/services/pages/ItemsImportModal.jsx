@@ -1,9 +1,11 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { collection, addDoc, doc, updateDoc } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import { downloadXlsxTemplate, parseXlsxFile } from '../../../lib/xlsxTemplate'
 import { itemKey, makeSkuGenerator, parseImages } from '../utils/spareItems'
+import { loadEquipment, saveEquipment, newEquipmentId, eqKey } from '../utils/equipmentMaster'
+import { MAX_IMAGES } from '../utils/spareImages'
 
 // Columns of the downloadable template (order + labels). A * marks a required column.
 const TEMPLATE_HEADERS = ['Item Name*', 'Specifications and Models', 'Make*', 'Equipment Name*', 'Warehouse*', 'Quantity*', 'Min Stock*', 'Unit', 'Min Stock', 'Images*', 'Remarks']
@@ -65,6 +67,9 @@ export default function ItemsImportModal({ existingItems, warehouses = [], exist
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState(null) // { created, updated, stocksCreated, stocksUpdated, skipped, errors }
   const fileRef = useRef()
+  const [equipment, setEquipment] = useState([])      // the Equipment Master: a new Equipment Name in the sheet is added to it
+  useEffect(() => { loadEquipment().then(setEquipment).catch(() => {}) }, [])
+  const knownEquipment = new Set(equipment.map(e => eqKey(e.name)))
 
   const handleFile = async (e) => {
     const f = e.target.files[0]; if (!f) return
@@ -98,7 +103,7 @@ export default function ItemsImportModal({ existingItems, warehouses = [], exist
     if (!r.warehouse) p.push('Warehouse'); else if (!resolveWarehouse(r.warehouse)) p.push(`Warehouse "${r.warehouse}" is not set up`)
     if (r.qty === null || r.qty < 0) p.push('Quantity')
     if (r.minStock === null || r.minStock < 0) p.push('Min Stock')
-    if (!r.images.length) p.push('Images')
+    if (!r.images.length) p.push('Images'); else if (r.images.length > MAX_IMAGES) p.push(`Images (at most ${MAX_IMAGES})`)
     return p
   }
 
@@ -118,6 +123,16 @@ export default function ItemsImportModal({ existingItems, warehouses = [], exist
     const itemByKey = new Map(existingByKey)
     const stockByKey = new Map(existingStocks.filter(s => s.sku && s.locationId).map(s => [`${String(s.sku).toLowerCase().trim()}|${s.locationId}`, s]))
     const now = () => new Date().toISOString()
+
+    // Equipment names the master does not have yet join it (only an administrator can write the master; for others the items still keep the name)
+    const fresh = new Map()
+    for (const r of mappedAll) if (!problems(r).length && !knownEquipment.has(eqKey(r.equipmentName)) && !fresh.has(eqKey(r.equipmentName))) fresh.set(eqKey(r.equipmentName), r)
+    if (fresh.size) {
+      try {
+        const next = [...equipment, ...[...fresh.values()].map(r => ({ id: newEquipmentId(), name: r.equipmentName, make: r.make, model: '', remarks: '' }))]
+        await saveEquipment(next); setEquipment(next)
+      } catch (e) { console.error('equipment master not updated', e) }
+    }
 
     for (const r of mappedAll) {
       if (problems(r).length) { skipped++; continue }
@@ -178,7 +193,7 @@ export default function ItemsImportModal({ existingItems, warehouses = [], exist
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
             ⚠️ The <strong>Quantity</strong> column <strong>replaces</strong> the current stock of that item in that warehouse.
             Columns marked <strong>*</strong> must be filled in — rows missing any of them are skipped.
-            <strong> Images</strong>: paste the link(s) to the photo(s) (Google Drive / OneDrive / website), separated by commas.
+            <strong> Images</strong>: paste the link(s) to the photo(s) (Google Drive / OneDrive / website), separated by commas, at most {MAX_IMAGES} per item. Photos from your computer can be added on the Items Catalog screen (Edit item → Photos).
           </div>
 
           <div>
@@ -198,7 +213,7 @@ export default function ItemsImportModal({ existingItems, warehouses = [], exist
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex items-center justify-between gap-3">
             <div>
               <p className="font-bold mb-0.5">1. Download the Excel template</p>
-              <p>Fill it in Excel — one row per spare part and warehouse — then upload it below. New items get their SKU (SP-00001 …) automatically.</p>
+              <p>Fill it in Excel — one row per spare part and warehouse — then upload it below. New items get their Model Item Code (SP-00001 …) automatically; new Equipment Names are added to the Equipment Master.</p>
             </div>
             <button onClick={() => downloadItemsTemplate(warehouses)}
               className="px-3 py-1.5 bg-white border border-blue-300 text-blue-700 text-xs font-semibold rounded-lg hover:bg-blue-100 transition whitespace-nowrap">
@@ -264,7 +279,7 @@ export default function ItemsImportModal({ existingItems, warehouses = [], exist
                           <td className="px-3 py-2 text-slate-700">{row.name || '—'}</td>
                           <td className="px-3 py-2 text-slate-500">{row.specifications || '—'}</td>
                           <td className="px-3 py-2 text-slate-600">{row.make || '—'}</td>
-                          <td className="px-3 py-2 text-slate-600">{row.equipmentName || '—'}</td>
+                          <td className="px-3 py-2 text-slate-600">{row.equipmentName || '—'}{row.equipmentName && !knownEquipment.has(eqKey(row.equipmentName)) && <span className="ml-1 text-[10px] text-amber-600">new</span>}</td>
                           <td className="px-3 py-2 text-slate-600">{row.warehouse || '—'}</td>
                           <td className="px-3 py-2 text-slate-600">{row.qty ?? '—'}</td>
                           <td className="px-3 py-2 text-slate-600">{row.minStock ?? '—'}</td>

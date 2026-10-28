@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from '../../../lib/cachedFirestore'
 import { db } from '../../../lib/app-config'
 import { useAuth } from '../../../context/AuthContext'
 import ItemsImportModal, { downloadItemsTemplate } from './ItemsImportModal'
-import { makeSkuGenerator, parseImages, isHttpLink } from '../utils/spareItems'
+import { makeSkuGenerator, parseImages } from '../utils/spareItems'
+import { MAX_IMAGES, prepareSpareImage, listSpareImages, saveSpareImages, deleteSpareImage, kb } from '../utils/spareImages'
+import { loadEquipment } from '../utils/equipmentMaster'
+import ItemPhotos from '../components/ItemPhotos'
 
 const EMPTY_FORM = { name: '', sku: '', specifications: '', make: '', equipmentName: '', unit: 'pcs', minStock: 0, imagesText: '', remarks: '', description: '' }
 
@@ -20,9 +23,16 @@ export default function ItemsCatalog() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [equipment, setEquipment] = useState([])
+  const [savedPics, setSavedPics] = useState([])   // photos already stored for the item being edited
+  const [newPics, setNewPics] = useState([])       // photos picked in this form, shrunk, not saved yet
+  const [removedPics, setRemovedPics] = useState([])
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const [photoMsg, setPhotoMsg] = useState('')
+  const picRef = useRef()
   const isManager = ['admin', 'service_manager', 'project_manager'].includes(userProfile?.role)
 
-  useEffect(() => { fetchItems() }, [])
+  useEffect(() => { fetchItems(); loadEquipment().then(setEquipment).catch(() => {}) }, [])
 
   const fetchItems = async () => {
     try {
@@ -41,13 +51,40 @@ export default function ItemsCatalog() {
     finally { setLoading(false) }
   }
 
+  const resetPhotos = () => { setSavedPics([]); setNewPics([]); setRemovedPics([]); setPhotoMsg('') }
+  const linkCount = () => parseImages(form.imagesText).length
+  const photoTotal = () => savedPics.length + newPics.length + linkCount()
+
+  const addPhotos = async (files) => {
+    setPhotoMsg(''); setPhotoBusy(true)
+    const room = MAX_IMAGES - photoTotal()
+    const msgs = []
+    if (files.length > room) msgs.push(`Only ${MAX_IMAGES} photos are allowed per item — ${room > 0 ? `the first ${room} were taken` : 'remove one first'}.`)
+    for (const f of files.slice(0, Math.max(0, room))) {
+      try {
+        const p = await prepareSpareImage(f)
+        setNewPics(prev => [...prev, p])
+        msgs.push(`${f.name}: ${kb(f.size)} → ${kb(p.bytes)}`)
+      } catch (err) { msgs.push(err.message) }
+    }
+    setPhotoMsg(msgs.join(' · '))
+    setPhotoBusy(false)
+    if (picRef.current) picRef.current.value = ''
+  }
+
   const handleSave = async (e) => {
     e.preventDefault()
     if (!form.name) { setError('Item name is required.'); return }
     setSaving(true)
     try {
+      if (photoTotal() > MAX_IMAGES) { setError(`At most ${MAX_IMAGES} photos per item (uploaded photos and photo links together).`); setSaving(false); return }
       const { imagesText, ...rest } = form
-      const payload = { ...rest, sku: form.sku.trim() || makeSkuGenerator(items)(), minStock: parseInt(form.minStock) || 0, images: parseImages(imagesText) }
+      const eq = equipment.find(x => x.name === form.equipmentName)
+      const payload = {
+        ...rest, sku: form.sku.trim() || makeSkuGenerator(items)(), minStock: parseInt(form.minStock) || 0, images: parseImages(imagesText),
+        equipmentId: eq?.id || '', thumb: savedPics[0]?.thumb || newPics[0]?.thumb || '', imageCount: savedPics.length + newPics.length,
+      }
+      let savedId = editingId
       if (editingId) {
         await updateDoc(doc(db, 'inventory_items', editingId), {
           ...payload, updatedBy: user.uid, updatedAt: new Date().toISOString(),
@@ -57,8 +94,12 @@ export default function ItemsCatalog() {
       } else {
         const newItem = { ...payload, createdBy: user.uid, createdAt: new Date().toISOString() }
         const docRef = await addDoc(collection(db, 'inventory_items'), newItem)
+        savedId = docRef.id
         setItems(prev => [...prev, { id: docRef.id, ...newItem }].sort((a, b) => (a.name || '').localeCompare(b.name || '')))
       }
+      for (const id of removedPics) await deleteSpareImage(id)
+      if (newPics.length) await saveSpareImages(savedId, newPics, { user, profile: userProfile })
+      resetPhotos()
       setForm(EMPTY_FORM)
       setEditingId(null)
       setShowForm(false)
@@ -82,6 +123,8 @@ export default function ItemsCatalog() {
     })
     setEditingId(item.id)
     setShowForm(true)
+    resetPhotos()
+    if (item.imageCount) listSpareImages(item.id).then(setSavedPics).catch(err => setPhotoMsg('Could not load the saved photos: ' + err.message))
   }
 
   const handleAddNew = () => {
@@ -90,6 +133,7 @@ export default function ItemsCatalog() {
     setEditingId(null)
     setShowForm(true)
     setError('')
+    resetPhotos()
   }
 
   const handleCancelForm = () => {
@@ -97,12 +141,15 @@ export default function ItemsCatalog() {
     setEditingId(null)
     setShowForm(false)
     setError('')
+    resetPhotos()
   }
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this item?')) return
     try {
+      const it = items.find(i => i.id === id)
       await deleteDoc(doc(db, 'inventory_items', id))
+      if (it?.imageCount) listSpareImages(id).then(l => Promise.all(l.map(p => deleteSpareImage(p.id)))).catch(() => {})
       setItems(prev => prev.filter(i => i.id !== id))
     } catch (err) { alert('Error: ' + err.message) }
   }
@@ -160,7 +207,7 @@ export default function ItemsCatalog() {
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">SKU</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Model Item Code</label>
               <input type="text" value={form.sku} onChange={e => setForm(p => ({ ...p, sku: e.target.value }))} autoComplete="off" placeholder="Leave empty — the next SP-number is given automatically"
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
@@ -170,9 +217,14 @@ export default function ItemsCatalog() {
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Equipment Name</label>
-              <input type="text" value={form.equipmentName} onChange={e => setForm(p => ({ ...p, equipmentName: e.target.value }))} autoComplete="off"
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Equipment Name <span className="text-slate-400 font-normal">— from the Equipment Master</span></label>
+              <select value={form.equipmentName} onChange={e => setForm(p => ({ ...p, equipmentName: e.target.value }))}
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">— select equipment —</option>
+                {form.equipmentName && !equipment.some(x => x.name === form.equipmentName) && <option value={form.equipmentName}>{form.equipmentName} (not in master)</option>}
+                {equipment.map(x => <option key={x.id} value={x.name}>{x.name}{x.make ? ` · ${x.make}` : ''}</option>)}
+              </select>
+              {equipment.length === 0 && <p className="text-xs text-amber-600 mt-1">The Equipment Master is empty — add equipment under Inventory → Equipment Master.</p>}
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-1">Specifications and Models</label>
@@ -201,7 +253,34 @@ export default function ItemsCatalog() {
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Images <span className="text-slate-400 font-normal">— links to the photos, one per line</span></label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Photos <span className="text-slate-400 font-normal">— up to {MAX_IMAGES} per item; each is shrunk to a small size automatically ({photoTotal()} / {MAX_IMAGES} used)</span></label>
+              <div className="flex flex-wrap gap-3 items-start">
+                {savedPics.map(p => (
+                  <div key={p.id} className="relative">
+                    <img src={p.data} alt={p.name} className="w-20 h-20 object-cover rounded-lg border border-slate-200" />
+                    <button type="button" title="Remove" onClick={() => { setSavedPics(l => l.filter(x => x.id !== p.id)); setRemovedPics(l => [...l, p.id]) }}
+                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white text-xs leading-5">✕</button>
+                    <p className="text-[10px] text-slate-400 text-center">{kb(p.bytes)}</p>
+                  </div>
+                ))}
+                {newPics.map((p, n) => (
+                  <div key={n} className="relative">
+                    <img src={p.data} alt={p.name} className="w-20 h-20 object-cover rounded-lg border border-blue-300" />
+                    <button type="button" title="Remove" onClick={() => setNewPics(l => l.filter((_, k) => k !== n))}
+                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white text-xs leading-5">✕</button>
+                    <p className="text-[10px] text-blue-500 text-center">new · {kb(p.bytes)}</p>
+                  </div>
+                ))}
+                {photoTotal() < MAX_IMAGES && (
+                  <button type="button" disabled={photoBusy} onClick={() => picRef.current?.click()}
+                    className="w-20 h-20 border-2 border-dashed border-slate-300 rounded-lg text-xs text-slate-500 hover:border-blue-400 hover:text-blue-600 transition disabled:opacity-50">
+                    {photoBusy ? 'Shrinking…' : '＋ Photo'}
+                  </button>
+                )}
+                <input ref={picRef} type="file" accept="image/*" multiple className="hidden" onChange={e => addPhotos([...e.target.files])} />
+              </div>
+              {photoMsg && <p className="text-xs text-slate-500 mt-1">{photoMsg}</p>}
+              <label className="block text-xs font-medium text-slate-500 mt-3 mb-1">Photo links <span className="text-slate-400 font-normal">— optional, one per line (counts towards the {MAX_IMAGES})</span></label>
               <textarea rows={2} value={form.imagesText} onChange={e => setForm(p => ({ ...p, imagesText: e.target.value }))}
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
@@ -220,7 +299,7 @@ export default function ItemsCatalog() {
       )}
 
       {/* Search */}
-      <input type="text" placeholder="Search name, SKU, make, equipment..." value={search} onChange={e => setSearch(e.target.value)}
+      <input type="text" placeholder="Search name, code, make, equipment..." value={search} onChange={e => setSearch(e.target.value)}
         className="px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-72" />
 
       {/* Items Table */}
@@ -243,10 +322,10 @@ export default function ItemsCatalog() {
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">Specifications / Models</th>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">Make</th>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">Equipment</th>
-                <th className="px-4 py-3 text-left text-slate-600 font-medium">SKU</th>
+                <th className="px-4 py-3 text-left text-slate-600 font-medium">Model Item Code</th>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">Unit</th>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">Min Stock</th>
-                <th className="px-4 py-3 text-left text-slate-600 font-medium">Images</th>
+                <th className="px-4 py-3 text-left text-slate-600 font-medium">Photos</th>
                 <th className="px-4 py-3 text-left text-slate-600 font-medium">Remarks</th>
                 {isManager && <th className="px-4 py-3 text-left text-slate-600 font-medium">Actions</th>}
               </tr>
@@ -261,12 +340,7 @@ export default function ItemsCatalog() {
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{item.sku}</td>
                   <td className="px-4 py-3 text-slate-600">{item.unit || 'pcs'}</td>
                   <td className="px-4 py-3 text-slate-600">{item.minStock ?? 0}</td>
-                  <td className="px-4 py-3 text-xs">
-                    {(item.images || []).length === 0 ? <span className="text-slate-400">—</span>
-                      : (item.images || []).map((u, n) => isHttpLink(u)
-                          ? <a key={n} href={u} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline mr-2">🖼 {n + 1}</a>
-                          : <span key={n} className="text-slate-500 mr-2" title={u}>🖼 {u}</span>)}
-                  </td>
+                  <td className="px-4 py-3"><ItemPhotos item={item} /></td>
                   <td className="px-4 py-3 text-slate-500 text-xs">{item.remarks || item.description || '—'}</td>
                   {isManager && (
                     <td className="px-4 py-3">

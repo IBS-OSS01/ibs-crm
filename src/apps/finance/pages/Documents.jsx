@@ -33,7 +33,7 @@ export default function Documents() {
         const groups = new Map()
         att.forEach(d => {
           const a = { id: d.id, ...d.data() }
-          if (a.entityType === 'bank_statement_file') return                    // chunks of the statement files above
+          if (a.entityType === 'bank_statement_file' || a.entityType === 'spare_item') return                    // chunks of the statement files above
           const g = a.group || a.id
           if (!groups.has(g)) groups.set(g, [])
           groups.get(g).push(a)

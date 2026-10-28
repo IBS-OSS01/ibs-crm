@@ -17,27 +17,28 @@ const PDF_MAX_PAGES = 10
 const toDataUrl = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob) })
 const approxBytes = (dataUrl) => Math.round((dataUrl.length - dataUrl.indexOf(',') - 1) * 0.75)
 
-async function canvasToSmall(canvas) {
+async function canvasToSmall(canvas, target = IMG_TARGET) {
   let best = null
   for (const q of [0.72, 0.6, 0.5, 0.4, 0.3]) {
     const url = canvas.toDataURL('image/webp', q)               // browsers without WebP silently return PNG
     const out = url.startsWith('data:image/webp') ? url : canvas.toDataURL('image/jpeg', q)
     if (!best || out.length < best.length) best = out
-    if (approxBytes(out) <= IMG_TARGET) return out
+    if (approxBytes(out) <= target) return out
   }
   return best
 }
 
-export async function compressImage(file) {
+// dims = longest side to try (largest first), target = size to stop at; the defaults are for bills, other callers (item photos) pass smaller ones
+export async function compressImage(file, { dims = [1600, 1280, 1024, 800, 640], target = IMG_TARGET } = {}) {
   const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' })
   let best = null
-  for (const maxDim of [1600, 1280, 1024, 800, 640]) {
+  for (const maxDim of dims) {
     const k = Math.min(1, maxDim / Math.max(bmp.width, bmp.height))
     const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k))
     const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(bmp, 0, 0, c.width, c.height)
-    const url = await canvasToSmall(c)
+    const url = await canvasToSmall(c, target)
     if (!best || url.length < best.length) best = url
-    if (approxBytes(url) <= IMG_TARGET) break
+    if (approxBytes(url) <= target) break
   }
   bmp.close?.()
   return best
