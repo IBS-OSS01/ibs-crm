@@ -11,6 +11,7 @@ import { parseBankStatement, bookEntries, autoMatch, reconciliation, stmtSig } f
 import { readPdfPages, parseStatementPages, hasTextLayer } from '../utils/bankPdf.js'
 import { parseScannedStatement, ocrPdfPages } from '../utils/bankOcr.js'
 import { saveStatementFile, listStatementFiles, downloadStatementFile, deleteStatementFile } from '../utils/statementFiles.js'
+import { suggestEntry } from '../utils/bankEntries.js'
 import BankEntriesModal from '../components/BankEntriesModal.jsx'
 import ReclassifyModal from '../components/ReclassifyModal.jsx'
 import { reclassifyProposals } from '../utils/reclassify.js'
@@ -35,8 +36,8 @@ export default function BankRecon() {
   const [asOf, setAsOf] = useState(todayStr())
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
-  const [pick, setPick] = useState('')
-  const [showEntries, setShowEntries] = useState(false)
+  const [picks, setPicks] = useState({})                 // the book entry chosen on each statement line (one per line, never shared)
+  const [entryLines, setEntryLines] = useState(null)       // statement lines the "create entries" dialog is open for
   const [showReclass, setShowReclass] = useState(false)
   const [view, setView] = useState('all')                 // all | matched | unmatched
   const [files, setFiles] = useState([])
@@ -70,6 +71,28 @@ export default function BankRecon() {
   }), [raw, company])
   const matchedKeys = new Set(statement.map(s => s.matchedKey).filter(Boolean))
   const freeEntries = entries.filter(e => !e.opening && !matchedKeys.has(e.key))
+  const fds = useMemo(() => (raw?.bankAccounts || []).filter(b => b.type === 'fd' && b.company === company && b.active !== false), [raw, company])
+
+  // Lines the bank describes as a sweep from / to a fixed deposit, or as interest on one: say what they are,
+  // and pair each with the book entry of the same amount and direction nearest in date.
+  const dayGap = (a, b) => Math.abs(Math.round((new Date(a + 'T00:00:00') - new Date(b + 'T00:00:00')) / 86400000))
+  const candidatesFor = (s) => freeEntries.filter(x => s.credit ? x.debit > 0 : x.credit > 0)
+    .map(x => ({ x, exact: Math.abs((s.credit ? x.debit : x.credit) - (s.credit || s.debit)) < 0.005, gap: dayGap(x.date, s.date) }))
+    .sort((a, b) => (b.exact - a.exact) || (a.gap - b.gap))
+  const hints = useMemo(() => {
+    const ctx = { customers: [], vendors: [], employees: [], thisBankId: bankId,
+      fds: fds.map(f => ({ id: f.id, name: f.name, accountNumber: f.accountNumber, linkedBankId: f.linkedBankId })),
+      banks: banks.map(b => ({ id: b.id, name: b.name, bankName: b.bankName, accountNumber: b.accountNumber })) }
+    const m = {}
+    for (const s of statement) {
+      if (s.matchedKey) continue
+      const g = suggestEntry(s, ctx)
+      if (g.kind === 'contra' && fds.some(f => f.id === g.otherBankId)) m[s.id] = { type: s.credit ? 'sweep-in' : 'sweep-out', text: g.reason }
+      else if (g.accountCode === '4910') m[s.id] = { type: 'interest', text: `${g.reason} · interest income (4910)` }
+    }
+    return m
+  }, [statement, fds, banks, bankId]) // eslint-disable-line react-hooks/exhaustive-deps
+  const hintLines = statement.filter(s => hints[s.id])
 
   const onFile = async (e) => {
     const f = e.target.files?.[0]; if (!f) return
@@ -122,7 +145,21 @@ export default function BankRecon() {
     } catch (err) { setMsg('Matching failed: ' + err.message) }
     finally { setBusy(false) }
   }
-  const match = async (s, key) => { await updateDoc(doc(db, 'finance_bank_statement_lines', s.id), { matchedKey: key, matchedAt: new Date().toISOString() }); invalidateFinanceCache(); reload() }
+  const match = async (s, key) => { await updateDoc(doc(db, 'finance_bank_statement_lines', s.id), { matchedKey: key, matchedAt: new Date().toISOString() }); setPicks(p => { const n = { ...p }; delete n[s.id]; return n }); invalidateFinanceCache(); reload() }
+  // match every hinted line that has a book entry of the same amount within 10 days
+  const matchSweeps = async () => {
+    setBusy(true)
+    try {
+      const taken = new Set(matchedKeys); let n = 0
+      for (const s of hintLines) {
+        const c = candidatesFor(s).find(c => c.exact && c.gap <= 10 && !taken.has(c.x.key)); if (!c) continue
+        taken.add(c.x.key); n++
+        await updateDoc(doc(db, 'finance_bank_statement_lines', s.id), { matchedKey: c.x.key, matchedAt: new Date().toISOString() })
+      }
+      invalidateFinanceCache(); reload(); setMsg(n ? `${n} sweep / FD-interest line(s) matched to their entries.` : 'No existing entry fits these lines — use "Create sweep / interest entries".')
+    } catch (err) { setMsg('Matching failed: ' + err.message) }
+    finally { setBusy(false) }
+  }
   const clearStatement = async () => {
     if (!window.confirm('Remove ALL imported statement lines for this bank account? Matching will be lost. (Vouchers are not touched.)')) return
     setBusy(true)
@@ -176,7 +213,11 @@ export default function BankRecon() {
         <div className={`${cardCls} p-3 flex gap-3 items-center flex-wrap text-sm`}>
           <label className={`${btnGhost} cursor-pointer`}>{busy ? 'Working…' : '⬆ Import statement (PDF / Excel / CSV)'}<input type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={onFile} disabled={busy} /></label>
           <button className={btnPrimary} onClick={runAuto} disabled={busy || !statement.some(s => !s.matchedKey)}>Auto-match</button>
-          <button className={btnGhost} onClick={() => setShowEntries(true)} disabled={busy || !statement.some(s => !s.matchedKey)}>Create entries for {statement.filter(s => !s.matchedKey).length} unmatched line(s)</button>
+          <button className={btnGhost} onClick={() => setEntryLines(statement.filter(s => !s.matchedKey))} disabled={busy || !statement.some(s => !s.matchedKey)}>Create entries for {statement.filter(s => !s.matchedKey).length} unmatched line(s)</button>
+          {hintLines.length > 0 && <>
+            <button className={btnPrimary} onClick={matchSweeps} disabled={busy}>Match {hintLines.length} FD sweep / interest line(s)</button>
+            <button className={btnGhost} onClick={() => setEntryLines(hintLines)} disabled={busy}>Create sweep / interest entries</button>
+          </>}
           {proposals.length > 0 && <button className={btnGhost} onClick={() => setShowReclass(true)}>Re-check {proposals.length} parked entr{proposals.length === 1 ? 'y' : 'ies'}</button>}
           {statement.length > 0 && <button className="text-red-500 hover:underline text-xs" onClick={clearStatement}>Clear imported statement</button>}
           <span className="text-xs text-slate-400">PDF (HSBC “Statement details”, or any PDF with a Date / Debit / Credit table), Excel or CSV with Date, Narration, Withdrawal / Debit, Deposit / Credit (and Balance, for the final check).</span>
@@ -200,8 +241,8 @@ export default function BankRecon() {
         </div>
       )}
       {showReclass && <ReclassifyModal proposals={proposals} accounts={accounts} company={company} onClose={() => { setShowReclass(false); invalidateFinanceCache(); reload() }} onDone={() => invalidateFinanceCache()} />}
-      {showEntries && <BankEntriesModal lines={statement.filter(s => !s.matchedKey)} company={company} bank={{ id: bankId, name: bankName }} banks={banks} fds={(raw?.bankAccounts || []).filter(b => b.type === 'fd' && b.company === company && b.active !== false)} raw={raw} accounts={accounts}
-        onClose={() => { setShowEntries(false); invalidateFinanceCache(); reload() }} onDone={() => invalidateFinanceCache()} />}
+      {entryLines && <BankEntriesModal lines={entryLines} company={company} bank={{ id: bankId, name: bankName }} banks={banks} fds={fds} raw={raw} accounts={accounts}
+        onClose={() => { setEntryLines(null); invalidateFinanceCache(); reload() }} onDone={() => invalidateFinanceCache()} />}
 
       <div className={`${cardCls} p-5 max-w-2xl`}>
         <p className="text-xs font-bold uppercase tracking-wider text-blue-600 mb-3">Reconciliation statement — {bankName} as of {asOf}</p>
@@ -235,6 +276,8 @@ export default function BankRecon() {
                   </tr>)
               }
               const s = r.s, e = r.e
+              const cands = !r.matched && !s.matchedKey && canWrite ? candidatesFor(s) : []
+              const best = cands.find(c => c.exact && c.gap <= 10)
               return (
                 <tr key={r.key} className={!r.matched ? 'bg-amber-50/40' : ''}>
                   <td className="px-3 py-2 whitespace-nowrap">{s.date}</td><td className="px-3 py-2">{s.description}</td><td className="px-3 py-2 font-mono text-xs">{s.ref}</td>
@@ -243,13 +286,19 @@ export default function BankRecon() {
                     {e ? <span className="text-green-700">✓ <button className="underline font-mono text-xs" title="Open this voucher" onClick={() => openKey(s.matchedKey.split('|')[0])}>{e.number}</button> · {e.date}{canWrite && <button className="text-xs text-slate-400 hover:text-red-500 ml-1" onClick={() => match(s, '')}>unmatch</button>}</span>
                       : s.matchedKey ? <span className="text-amber-600">entry changed — <button className="text-xs underline" onClick={() => match(s, '')}>unmatch</button></span>
                       : canWrite ? (
-                        <span className="flex gap-1 items-center">
-                          <select value={pick} onChange={ev => setPick(ev.target.value)} className="px-2 py-1 border border-slate-300 rounded text-xs max-w-[220px]">
-                            <option value="">Pick a book entry…</option>
-                            {freeEntries.filter(x => s.credit ? x.debit > 0 : x.credit > 0).map(x => <option key={x.key} value={x.key}>{x.date} · {x.number} · {fmtAmt(x.debit || x.credit)}</option>)}
-                          </select>
-                          <button className="text-xs text-blue-600 hover:underline disabled:opacity-40" disabled={!pick} onClick={() => { match(s, pick); setPick('') }}>match</button>
-                          <button className="text-xs text-slate-500 hover:underline" onClick={() => navigate(`/finance/vouchers/${s.credit ? 'receipt' : 'payment'}?new=1`)}>+ entry</button>
+                        <span className="flex flex-col gap-1">
+                          {hints[s.id] && <span><Badge color={hints[s.id].type === 'interest' ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}>{hints[s.id].type === 'interest' ? 'FD interest' : hints[s.id].type === 'sweep-in' ? 'Sweep-in from FD' : 'Sweep-out to FD'}</Badge> <span className="text-xs text-slate-500">{hints[s.id].text}</span></span>}
+                          <span className="flex gap-1 items-center">
+                            <select value={picks[s.id] || ''} onChange={ev => setPicks(p => ({ ...p, [s.id]: ev.target.value }))} className="px-2 py-1 border border-slate-300 rounded text-xs max-w-[220px]">
+                              <option value="">{cands.length ? 'Pick a book entry…' : 'No entry of this amount / side'}</option>
+                              {cands.map(({ x, exact }) => <option key={x.key} value={x.key}>{exact ? '★ ' : ''}{x.date} · {x.number} · {fmtAmt(x.debit || x.credit)}</option>)}
+                            </select>
+                            <button className="text-xs text-blue-600 hover:underline disabled:opacity-40" disabled={!picks[s.id]} onClick={() => match(s, picks[s.id])}>match</button>
+                            {hints[s.id]
+                              ? <button className="text-xs text-slate-500 hover:underline" onClick={() => setEntryLines([s])}>+ create {hints[s.id].type === 'interest' ? 'interest' : 'sweep'} entry</button>
+                              : <button className="text-xs text-slate-500 hover:underline" onClick={() => navigate(`/finance/vouchers/${s.credit ? 'receipt' : 'payment'}?new=1`)}>+ entry</button>}
+                          </span>
+                          {best && !picks[s.id] && <button className="text-xs text-left text-green-700 hover:underline" onClick={() => match(s, best.x.key)}>✓ same amount: {best.x.number} · {best.x.date} — match</button>}
                         </span>) : <Badge color="bg-amber-100 text-amber-700">on the statement, not in books</Badge>}
                   </td>
                 </tr>)
