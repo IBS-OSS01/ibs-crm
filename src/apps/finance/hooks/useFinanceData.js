@@ -6,7 +6,7 @@
 // happens when a copy is older than its time-to-live or when the user presses "Refresh data".
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { doc, getDoc, getCollectionCached } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { deriveAllLines, manualEntryLines, assertBalanced, mergeRequiredAccounts, isAccountingInvoice } from '../utils/ledger.js'
 import { computeStock } from '../utils/stockEngine.js'
 

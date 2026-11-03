@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { collection, getDocs, addDoc, doc, updateDoc, setDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 
 const CATEGORIES = ['Travel', 'Food & Meals', 'Accommodation', 'Client Entertainment', 'Fuel', 'Stationery', 'Courier', 'Other']

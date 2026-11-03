@@ -4,7 +4,7 @@
  */
 import React, { useState, useEffect, useMemo } from 'react'
 import { collection, addDoc, serverTimestamp, getDocs, query, where } from '../../lib/cachedFirestore'
-import { db } from '../../lib/app-config'
+import { db } from '../../lib/firebase-config'
 import { useAuth } from '../../context/AuthContext'
 import { notifyTaskAssigned } from '../../lib/emailNotifications'
 import { useUsers } from '../../lib/useUsers'

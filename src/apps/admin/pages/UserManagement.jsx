@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
+import { initializeApp, getApps } from 'firebase/app'
+import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth'
 import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
-import { inviteLogin, changeLoginEmail, removeLogin, setupLink } from '../../../lib/session'
+import { auth, db, firebaseConfig } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { ensureDefaultRoles } from '../defaultRoles'
 
@@ -21,6 +22,15 @@ const RIGHTS_DISPLAY = {
 }
 
 const DEFAULT_MODULE_RIGHTS = Object.fromEntries(MODULES.map(m => [m, 'none']))
+
+// A second, independent Firebase app instance. Creating a user with the
+// client SDK automatically signs in as that new user — running it through
+// a secondary app keeps the admin's own session untouched.
+function getSecondaryAuth() {
+  const name = 'Secondary'
+  const app = getApps().find(a => a.name === name) || initializeApp(firebaseConfig, name)
+  return getAuth(app)
+}
 
 const emptyForm = { name: '', email: '', password: '', role: 'user', departments: [], companies: ['UIPL'], moduleRights: { ...DEFAULT_MODULE_RIGHTS } }
 
@@ -103,7 +113,8 @@ export default function UserManagement() {
     e.preventDefault()
     setError(''); setSuccess('')
     if (!form.name || !form.email) { setError('Name and email are required.'); return }
-    if (!editing && form.password && form.password.length < 8) { setError('Password must be at least 8 characters (or leave it empty to get a one-time link).'); return }
+    if (!editing && !form.password) { setError('A temporary password is required for new users.'); return }
+    if (!editing && form.password.length < 6) { setError('Password must be at least 6 characters.'); return }
 
     // Duplicate name check
     const dupName = users.find(u => u.id !== editing && (u.name || '').trim().toLowerCase() === form.name.trim().toLowerCase())
@@ -120,21 +131,24 @@ export default function UserManagement() {
         const before = users.find(u => u.id === editing) || {}
         const newEmail = form.email.trim()
         const emailChanged = newEmail.toLowerCase() !== (before.email || '').toLowerCase()
-        if (emailChanged) await changeLoginEmail(editing, newEmail)       // the sign-in email changes with it
         await updateDoc(doc(db, 'users', editing), {
           name: form.name,
-          ...(emailChanged ? { email: newEmail } : {}),
+          // The Firebase *login* email can't be changed from the browser. We keep the original in loginEmail so
+          // "Send reset link" still reaches the account that actually exists.
+          ...(emailChanged ? { email: newEmail, loginEmail: before.loginEmail || before.email || '' } : {}),
           role: form.role,
           departments,
           moduleRights: form.moduleRights,
           companies: form.companies,
           updatedAt: new Date().toISOString(),
         })
-        setUsers(prev => prev.map(u => u.id === editing ? { ...u, name: form.name, ...(emailChanged ? { email: newEmail } : {}), role: form.role, departments, moduleRights: form.moduleRights, companies: form.companies } : u))
-        setSuccess(emailChanged ? `User updated. Their sign-in email is now ${newEmail}.` : 'User updated.')
+        setUsers(prev => prev.map(u => u.id === editing ? { ...u, name: form.name, ...(emailChanged ? { email: newEmail, loginEmail: before.loginEmail || before.email || '' } : {}), role: form.role, departments, moduleRights: form.moduleRights, companies: form.companies } : u))
+        setSuccess(emailChanged ? `User updated. Contact email is now ${newEmail}. Their LOGIN is still ${before.loginEmail || before.email} — to change the login itself, edit it in Firebase Console → Authentication → Users (free).` : 'User updated.')
       } else {
-        const made = await inviteLogin({ email: form.email, password: form.password || undefined })
-        const uid = made.uid
+        const secondaryAuth = getSecondaryAuth()
+        const cred = await createUserWithEmailAndPassword(secondaryAuth, form.email, form.password)
+        const uid = cred.user.uid
+        await signOut(secondaryAuth)
 
         const profile = {
           name: form.name,
@@ -148,14 +162,12 @@ export default function UserManagement() {
         }
         await setDoc(doc(db, 'users', uid), profile)
         setUsers(prev => [...prev, { id: uid, ...profile }])
-        setSuccess(made.setupToken
-          ? `User created. Send ${form.name} this one-time link to choose a password (valid 7 days): ${setupLink(made.setupToken)}`
-          : `User created — share the email and temporary password with ${form.name} so they can sign in.`)
+        setSuccess(`User created — share the email and temporary password with ${form.name} so they can sign in.`)
       }
       setShowForm(false)
       resetForm()
     } catch (err) {
-      const friendly = err.code === 'email-already-in-use' ? 'That email already has a login.' : err.message
+      const friendly = err.code === 'auth/email-already-in-use' ? 'That email already has a login.' : err.message
       setError(friendly)
     } finally { setSaving(false) }
   }
@@ -171,23 +183,36 @@ export default function UserManagement() {
   }
 
   const handleResetPassword = async (u) => {
-    if (!u.email) { setError('This user has no email on file.'); return }
-    if (!window.confirm(`Make a one-time password link for ${u.name || u.email}? Send it to them yourself — it lets them choose a new password (valid 7 days, works once).`)) return
+    const loginEmail = u.loginEmail || u.email
+    if (!loginEmail) { setError('This user has no email on file.'); return }
+    if (!window.confirm(`Send a password reset link to ${loginEmail}?${u.loginEmail ? ' (their login email — the contact email was changed)' : ''}`)) return
     setError(''); setSuccess('')
     try {
-      const r = await inviteLogin({ email: u.email, uid: u.id })
-      setSuccess(`Password link for ${u.name || u.email} (valid 7 days, works once): ${setupLink(r.setupToken)}`)
+      // Sent from Firebase's own no-reply address — doesn't touch the
+      // admin's current session, just triggers an email to the user.
+      await sendPasswordResetEmail(auth, loginEmail)
+      setSuccess(`Reset link sent to ${loginEmail}.`)
     } catch (err) { setError('Error: ' + err.message) }
   }
 
+  // Free-plan-safe deletion: the client SDK can only ever delete the
+  // *currently signed-in* user's own Auth login — there is no way for an
+  // admin to delete someone else's Auth login from the browser without a
+  // Cloud Function, and Cloud Functions require the paid Blaze plan. So
+  // this removes the user everywhere the app controls (their Firestore
+  // profile, which immediately signs them out and blocks access), then
+  // hands the admin a one-click reminder to finish removing the Auth
+  // login in Firebase Console — a free, manual step that takes ~10 seconds.
   const handleDelete = async (u) => {
-    if (!window.confirm(`Remove ${u.name || u.email} from the app? They'll be signed out immediately and lose all access. Their login is deleted too.`)) return
+    if (!window.confirm(`Remove ${u.name || u.email} from the app? They'll be signed out immediately and lose all access. You'll get a reminder to also delete their login from Firebase Console (a free, manual step) right after.`)) return
     setError(''); setSuccess('')
     try {
-      await removeLogin(u.id)
       await deleteDoc(doc(db, 'users', u.id))
       setUsers(prev => prev.filter(x => x.id !== u.id))
-      setSuccess(`${u.name || u.email} was removed — their profile and login are deleted.`)
+      setSuccess(
+        `${u.name || u.email} was removed from the app. To finish deleting their login too (free, manual step): `
+        + `Firebase Console → Authentication → Users → find "${u.email}" → delete. UID: ${u.id}`
+      )
     } catch (err) {
       setError('Error: ' + err.message)
     }
@@ -249,14 +274,14 @@ export default function UserManagement() {
               <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
               <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} autoComplete="off"
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
-              {editing && <p className="text-xs text-slate-400 mt-1">This is also the sign-in email — changing it changes how they sign in (their password stays the same).</p>}
+              {editing && <p className="text-xs text-slate-400 mt-1">Changes the contact email shown in the app. The sign-in email stays {users.find(u => u.id === editing)?.loginEmail || users.find(u => u.id === editing)?.email || 'as it was'} until changed in Firebase Console.</p>}
             </div>
             {!editing && (
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Temporary Password (optional)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Temporary Password *</label>
                 <input type="text" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} autoComplete="off"
-                  placeholder="Leave empty to get a one-time link they use to choose their own password"
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  placeholder="Min 6 characters — share this with the user"
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
               </div>
             )}
             <div>
@@ -388,7 +413,7 @@ export default function UserManagement() {
                   </td>
                   <td className="px-4 py-3 text-right space-x-3 whitespace-nowrap">
                     <button onClick={() => handleEdit(u)} className="text-blue-600 hover:text-blue-700 font-medium">✏️ Edit</button>
-                    <button onClick={() => handleResetPassword(u)} className="text-indigo-600 hover:text-indigo-700 font-medium">🔑 Password link</button>
+                    <button onClick={() => handleResetPassword(u)} className="text-indigo-600 hover:text-indigo-700 font-medium">🔑 Reset Password</button>
                     <button
                       onClick={() => handleToggleActive(u)}
                       disabled={isSelf}
@@ -417,7 +442,7 @@ export default function UserManagement() {
       </div>
 
       <div className="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg p-3">
-        🗑️ Deleting a user removes their profile and their login at once; they are signed out the next time the app checks (within minutes). Switch a user off instead to keep their history and be able to turn them back on.
+        🗑️ Deleting a user here removes their app access immediately (they're signed out and locked out). To fully remove their login too, finish with the one manual step shown in the message above — done in Firebase Console, takes ~10 seconds, no extra cost.
       </div>
     </div>
   )

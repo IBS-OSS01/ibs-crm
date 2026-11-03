@@ -5,7 +5,6 @@ import Login from './components/auth/Login.jsx'
 import Layout from './components/layout/Layout.jsx'
 import IBSLogo from './components/common/IBSLogo.jsx'
 import PublicTaskView from './pages/PublicTaskView.jsx'
-import SetPassword from './components/auth/SetPassword.jsx'
 
 function ProtectedRoute() {
   const { user, loading } = useAuth()
@@ -36,7 +35,6 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/set-password" element={<SetPassword />} />
           <Route path="/task-view/:token" element={<PublicTaskView />} />
           <Route path="/*" element={<ProtectedRoute />} />
         </Routes>

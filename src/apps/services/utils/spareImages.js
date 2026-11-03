@@ -3,7 +3,7 @@
 // The pictures are stored as small documents in finance_attachments (entityType 'spare_item') — the same store the Finance
 // bills use — so the item records themselves stay light; the item only carries `thumb` (first picture) and `imageCount`.
 import { addDoc, collection, deleteDoc, doc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { compressImage, listAttachments } from '../../finance/utils/attachments'
 
 export const MAX_IMAGES = 5

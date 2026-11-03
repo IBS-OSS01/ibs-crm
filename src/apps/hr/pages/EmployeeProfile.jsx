@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { doc, getDoc, updateDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']

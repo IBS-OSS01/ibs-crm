@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, getCachedSnap } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { computeAccountBalances } from '../utils/ledger.js'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'

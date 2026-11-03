@@ -2,7 +2,7 @@
 // tag purchases / expenses / payments / sales invoices / journal lines with the project, and this page shows budget vs actual and the profit.
 import React, { useMemo, useState } from 'react'
 import { doc, updateDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { projectPnl, untaggedTotals } from '../utils/projectPnl.js'
 import { fmtAmt, fyRange, fyList, num } from '../utils/financeConstants.js'

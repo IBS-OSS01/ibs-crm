@@ -10,7 +10,7 @@ import {
   doc, getDoc, collection, query, where, getDocs,
   addDoc, updateDoc, deleteDoc, writeBatch, setDoc,
 } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { notifyProjectTaskAssigned, sendProjectTaskReminder } from '../../../lib/projectNotifications'
 import { usePeople } from '../../../lib/usePeople'

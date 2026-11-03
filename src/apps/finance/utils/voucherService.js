@@ -7,7 +7,7 @@
 //
 // Every change also appends a row to finance_audit_log (Tally's "Audit Trail").
 import { collection, doc, runTransaction, addDoc, updateDoc, deleteDoc, getDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { fyOf, VOUCHER_TYPES } from './financeConstants.js'
 import { invalidateFinanceCache } from '../hooks/useFinanceData.js'
 

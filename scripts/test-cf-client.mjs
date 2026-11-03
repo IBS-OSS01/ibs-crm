@@ -10,13 +10,13 @@ import { pathToFileURL, fileURLToPath } from 'url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dir = mkdtempSync(path.join(tmpdir(), 'cfclient-'))
-const stub = path.join(dir, 'app-config.js')
+const stub = path.join(dir, 'firebase-config.js')
 writeFileSync(stub, `export const auth = { currentUser: { uid: 'sales1', getIdToken: async () => 'x' }, authStateReady: async () => {}, onAuthStateChanged(fn) { fn({ uid: 'sales1' }) } }`)
 const out = path.join(dir, 'cfBackend.mjs')
 await build({
   entryPoints: [path.join(root, 'src/lib/cfBackend.js')], bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'error',
   define: { 'import.meta.env': '{"VITE_API_URL":"http://127.0.0.1:8787"}' },
-  plugins: [{ name: 'stub-config', setup(b) { b.onResolve({ filter: /app-config$/ }, () => ({ path: stub })) } }],
+  plugins: [{ name: 'stub-config', setup(b) { b.onResolve({ filter: /firebase-config$/ }, () => ({ path: stub })) } }],
 })
 
 // count the requests the client makes, and identify as a signed-in user for the Worker's local test mode

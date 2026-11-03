@@ -1,5 +1,5 @@
 ﻿import { doc, getDoc, collection, getDocs } from '../../lib/cachedFirestore'
-import { db } from '../../lib/app-config'
+import { db } from '../../lib/firebase-config'
 
 export async function getUser(uid) {
   const snap = await getDoc(doc(db, 'users', uid))

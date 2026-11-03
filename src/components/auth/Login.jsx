@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { signIn } from '../../lib/session'
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth'
+import { auth } from '../../lib/firebase-config'
 import { useAuth } from '../../context/AuthContext'
 import { APP_VERSION_LABEL } from '../../version'
 import IBSLogo from '../common/IBSLogo'
@@ -34,10 +35,10 @@ export default function Login() {
     clearDisabledMessage()
     setLoading(true)
     try {
-      await signIn(email, password)
+      await signInWithEmailAndPassword(auth, email, password)
       // the effect above navigates once the user + profile are loaded
-    } catch (err) {
-      setError(['too-many-attempts', 'account-disabled', 'unavailable'].includes(err.code) ? err.message : 'Invalid email or password.')
+    } catch {
+      setError('Invalid email or password.')
     } finally {
       setLoading(false)
     }
@@ -45,8 +46,15 @@ export default function Login() {
 
   const handleResetPassword = async (e) => {
     e.preventDefault()
-    // there is no email service: the administrator makes a one-time link in Admin → Users → Password link
-    setResetMessage('Ask your administrator for a password link (Admin → Users → Password link). It lets you choose a new password.')
+    setResetMessage('')
+    setResetSending(true)
+    try {
+      await sendPasswordResetEmail(auth, resetEmail)
+    } catch {}
+    finally {
+      setResetMessage('If that email has an account, a reset link has been sent. Check your inbox and spam folder.')
+      setResetSending(false)
+    }
   }
 
   return (
@@ -171,7 +179,7 @@ export default function Login() {
               Reset Password
             </h2>
             <p style={{ color: '#94a3b8', fontSize: '13px', textAlign: 'center', marginBottom: '20px' }}>
-              Passwords are reset by your administrator, who sends you a one-time link.
+              Enter your account email — we'll send a reset link.
             </p>
 
             <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -201,7 +209,7 @@ export default function Login() {
                   fontFamily: "'Inter', 'Segoe UI', sans-serif",
                 }}
               >
-                {'How do I reset it?'}
+                {resetSending ? 'Sending…' : 'Send Reset Link'}
               </button>
 
               <button

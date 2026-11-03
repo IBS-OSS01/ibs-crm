@@ -5,7 +5,7 @@ import {
   query,
   orderBy
 } from './cachedFirestore'
-import { db } from './app-config'
+import { db } from './firebase-config'
 
 let cachedUsers = null
 let loadingPromise = null

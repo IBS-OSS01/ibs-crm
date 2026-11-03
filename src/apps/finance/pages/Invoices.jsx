@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { collection, getDocs, addDoc, updateDoc, doc, getDoc, getCachedSnap } from '../../../lib/cachedFirestore'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { INDIA_STATES, amountInWords, gstType } from '../utils/indiaConstants.js'
 

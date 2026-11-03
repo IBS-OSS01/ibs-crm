@@ -3,7 +3,7 @@
 // a small index record in finance_bank_statement_files plus the file's bytes, cut into ~700 KB base64 chunks
 // (a Firestore document is limited to 1 MiB) in finance_attachments.
 import { addDoc, collection, deleteDoc, doc, getDocs, query, setDoc, where } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 
 const META = 'finance_bank_statement_files'
 const CHUNKS = 'finance_attachments'

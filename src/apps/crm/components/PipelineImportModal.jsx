@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react'
 import { collection, addDoc, getDocs } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 
 // ── Stage normaliser ─────────────────────────────────────────────────────────

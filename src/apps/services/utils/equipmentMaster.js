@@ -3,7 +3,7 @@
 // service managers can maintain it too and no server change is needed. (It used to sit in company_settings, which only an admin may write —
 // that copy is still read when the new one does not exist yet.)
 import { doc, getDoc, setDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 
 const REF = () => doc(db, 'finance_attachments', 'equipment_master')
 

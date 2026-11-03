@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, writeBatch, getCachedSnap } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { SEED_ACCOUNTS } from '../utils/ledger.js'
 

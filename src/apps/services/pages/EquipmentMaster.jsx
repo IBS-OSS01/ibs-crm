@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { collection, getDocs } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { loadEquipment, saveEquipment, newEquipmentId, eqKey } from '../utils/equipmentMaster'
 

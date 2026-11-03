@@ -20,7 +20,7 @@
  */
 import { useState, useEffect } from 'react'
 import { collection, getDocs } from './cachedFirestore'
-import { db } from './app-config'
+import { db } from './firebase-config'
 
 const ROLE_LABELS = {
   admin:           'Admin',

@@ -8,7 +8,7 @@
 //     always current, and a normal page costs one small request instead of thousands of reads.
 //   • The app's own saves update the local copy at once (and keep the stamp in step), so they never force a re-read.
 //   • "Live" listeners (onSnapshot) are plain polling of those stamps, every 30 s while the tab is visible.
-import { auth } from './app-config'
+import { auth } from './firebase-config'
 import { API_URL } from './apiConfig.js'
 import { runQuery, autoId, hasMarker } from './queryEval.js'
 import { idbGet, idbPut, idbClear } from './idbStore.js'
@@ -25,7 +25,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 // ── talking to the Worker ────────────────────────────────────────────────────────────────────────────────────────────────────
 async function api(path, body, { retry = true } = {}) {
   let token = null
-  try { await auth.authStateReady(); token = auth.currentUser ? await auth.currentUser.getIdToken() : null } catch { /* signed out */ }
+  try { await (auth.authStateReady ? auth.authStateReady() : Promise.resolve()); token = auth.currentUser ? await auth.currentUser.getIdToken() : null } catch { /* signed out */ }
   const send = () => fetch(API_URL + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: JSON.stringify(body) })
   // reads are repeated (up to 3 tries) on a network failure or a temporary server error (5xx); writes never are
   let res, json
@@ -40,7 +40,6 @@ async function api(path, body, { retry = true } = {}) {
     await sleep(600 * (attempt + 1))
   }
   if (!json) throw fbError('internal', 'The server sent an unreadable answer')
-  if (res.status === 401) auth.signOut()                      // the session expired or the login was removed
   if (!res.ok) throw fbError(json?.error?.code || 'internal', json?.error?.message || `Request failed (${res.status})`)
   return json
 }

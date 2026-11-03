@@ -3,7 +3,7 @@
 import React, { useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { collection, doc, addDoc, updateDoc, deleteDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { createVoucher, updateVoucher, cancelVoucher, getBooksLockDate } from '../utils/voucherService.js'
 import { invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { fmtAmt } from '../utils/financeConstants.js'

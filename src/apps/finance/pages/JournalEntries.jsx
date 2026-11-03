@@ -2,7 +2,7 @@ import { useFinanceData } from '../hooks/useFinanceData.js'
 import { ProjectBudgetNotice } from '../components/formShared.jsx'
 import React, { useState, useEffect } from 'react'
 import { collection, getDocs, addDoc, doc, deleteDoc, getCachedSnap } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 
 const today = () => new Date().toISOString().slice(0, 10)

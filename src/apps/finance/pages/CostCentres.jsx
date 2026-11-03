@@ -3,7 +3,7 @@
 // summary adds up only the income and expense lines carrying that tag.
 import React, { useMemo, useState } from 'react'
 import { addDoc, collection, doc, updateDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { useFinanceData, invalidateFinanceCache } from '../hooks/useFinanceData.js'
 import { costCentreSummary } from '../utils/financialStatements.js'

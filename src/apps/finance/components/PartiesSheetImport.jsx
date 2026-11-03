@@ -2,7 +2,7 @@
 import React, { useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { collection, doc, writeBatch } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { readSheetFile } from '../utils/readSheetFile.js'
 import { parseContacts, matchParty, toDoc } from '../utils/partiesImport.js'

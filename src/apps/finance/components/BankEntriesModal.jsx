@@ -2,7 +2,7 @@
 // Every line gets a suggestion from what the bank narrative says; nothing is posted until the user presses Create.
 import React, { useMemo, useState } from 'react'
 import { doc, updateDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { createVoucher, getBooksLockDate } from '../utils/voucherService.js'
 import { invalidateFinanceCache } from '../hooks/useFinanceData.js'

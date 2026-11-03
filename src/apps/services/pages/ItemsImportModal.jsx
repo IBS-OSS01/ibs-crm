@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { collection, addDoc, doc, updateDoc } from '../../../lib/cachedFirestore'
-import { db } from '../../../lib/app-config'
+import { db } from '../../../lib/firebase-config'
 import { useAuth } from '../../../context/AuthContext'
 import { downloadXlsxTemplate, parseXlsxFile } from '../../../lib/xlsxTemplate'
 import { itemKey, makeSkuGenerator, parseImages } from '../utils/spareItems'
