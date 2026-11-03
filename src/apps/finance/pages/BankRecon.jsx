@@ -37,7 +37,8 @@ export default function BankRecon() {
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [picks, setPicks] = useState({})                 // the book entry chosen on each statement line (one per line, never shared)
-  const [entryLines, setEntryLines] = useState(null)       // statement lines the "create entries" dialog is open for
+  const [entryLines, setEntryLines] = useState(null)
+  const [entryPresets, setEntryPresets] = useState({})     // lineId → how the line was told to be booked (FD sweep / FD interest)       // statement lines the "create entries" dialog is open for
   const [showReclass, setShowReclass] = useState(false)
   const [view, setView] = useState('all')                 // all | matched | unmatched
   const [files, setFiles] = useState([])
@@ -145,7 +146,11 @@ export default function BankRecon() {
     } catch (err) { setMsg('Matching failed: ' + err.message) }
     finally { setBusy(false) }
   }
-  const match = async (s, key) => { await updateDoc(doc(db, 'finance_bank_statement_lines', s.id), { matchedKey: key, matchedAt: new Date().toISOString() }); setPicks(p => { const n = { ...p }; delete n[s.id]; return n }); invalidateFinanceCache(); reload() }
+  const match = async (s, key) => {
+    // the FD choices in the list book a new entry for this line instead of matching an existing one
+    if (key.startsWith('fd:')) { setEntryPresets({ [s.id]: { kind: 'contra', otherBankId: key.slice(3), accountCode: '' } }); setEntryLines([s]); return }
+    if (key === 'fdint') { setEntryPresets({ [s.id]: { kind: 'receipt', otherBankId: '', accountCode: '4910' } }); setEntryLines([s]); return }
+    await updateDoc(doc(db, 'finance_bank_statement_lines', s.id), { matchedKey: key, matchedAt: new Date().toISOString() }); setPicks(p => { const n = { ...p }; delete n[s.id]; return n }); invalidateFinanceCache(); reload() }
   // match every hinted line that has a book entry of the same amount within 10 days
   const matchSweeps = async () => {
     setBusy(true)
@@ -213,10 +218,10 @@ export default function BankRecon() {
         <div className={`${cardCls} p-3 flex gap-3 items-center flex-wrap text-sm`}>
           <label className={`${btnGhost} cursor-pointer`}>{busy ? 'Working…' : '⬆ Import statement (PDF / Excel / CSV)'}<input type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={onFile} disabled={busy} /></label>
           <button className={btnPrimary} onClick={runAuto} disabled={busy || !statement.some(s => !s.matchedKey)}>Auto-match</button>
-          <button className={btnGhost} onClick={() => setEntryLines(statement.filter(s => !s.matchedKey))} disabled={busy || !statement.some(s => !s.matchedKey)}>Create entries for {statement.filter(s => !s.matchedKey).length} unmatched line(s)</button>
+          <button className={btnGhost} onClick={() => { setEntryPresets({}); setEntryLines(statement.filter(s => !s.matchedKey)) }} disabled={busy || !statement.some(s => !s.matchedKey)}>Create entries for {statement.filter(s => !s.matchedKey).length} unmatched line(s)</button>
           {hintLines.length > 0 && <>
             <button className={btnPrimary} onClick={matchSweeps} disabled={busy}>Match {hintLines.length} FD sweep / interest line(s)</button>
-            <button className={btnGhost} onClick={() => setEntryLines(hintLines)} disabled={busy}>Create sweep / interest entries</button>
+            <button className={btnGhost} onClick={() => { setEntryPresets({}); setEntryLines(hintLines) }} disabled={busy}>Create sweep / interest entries</button>
           </>}
           {proposals.length > 0 && <button className={btnGhost} onClick={() => setShowReclass(true)}>Re-check {proposals.length} parked entr{proposals.length === 1 ? 'y' : 'ies'}</button>}
           {statement.length > 0 && <button className="text-red-500 hover:underline text-xs" onClick={clearStatement}>Clear imported statement</button>}
@@ -241,8 +246,8 @@ export default function BankRecon() {
         </div>
       )}
       {showReclass && <ReclassifyModal proposals={proposals} accounts={accounts} company={company} onClose={() => { setShowReclass(false); invalidateFinanceCache(); reload() }} onDone={() => invalidateFinanceCache()} />}
-      {entryLines && <BankEntriesModal lines={entryLines} company={company} bank={{ id: bankId, name: bankName }} banks={banks} fds={fds} raw={raw} accounts={accounts}
-        onClose={() => { setEntryLines(null); invalidateFinanceCache(); reload() }} onDone={() => invalidateFinanceCache()} />}
+      {entryLines && <BankEntriesModal lines={entryLines} company={company} bank={{ id: bankId, name: bankName }} banks={banks} fds={fds} presets={entryPresets} raw={raw} accounts={accounts}
+        onClose={() => { setEntryLines(null); setEntryPresets({}); invalidateFinanceCache(); reload() }} onDone={() => invalidateFinanceCache()} />}
 
       <div className={`${cardCls} p-5 max-w-2xl`}>
         <p className="text-xs font-bold uppercase tracking-wider text-blue-600 mb-3">Reconciliation statement — {bankName} as of {asOf}</p>
@@ -290,12 +295,16 @@ export default function BankRecon() {
                           {hints[s.id] && <span><Badge color={hints[s.id].type === 'interest' ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}>{hints[s.id].type === 'interest' ? 'FD interest' : hints[s.id].type === 'sweep-in' ? 'Sweep-in from FD' : 'Sweep-out to FD'}</Badge> <span className="text-xs text-slate-500">{hints[s.id].text}</span></span>}
                           <span className="flex gap-1 items-center">
                             <select value={picks[s.id] || ''} onChange={ev => setPicks(p => ({ ...p, [s.id]: ev.target.value }))} className="px-2 py-1 border border-slate-300 rounded text-xs max-w-[220px]">
-                              <option value="">{cands.length ? 'Pick a book entry…' : 'No entry of this amount / side'}</option>
+                              <option value="">{cands.length ? 'Pick a book entry…' : 'Pick FD sweep / entry…'}</option>
+                              {fds.length > 0 && <optgroup label="Book as FD sweep">
+                                {fds.map(f => <option key={f.id} value={'fd:' + f.id}>{s.credit ? 'Sweep-in from ' : 'Sweep-out to '}{f.name}{f.accountNumber ? ' ••' + String(f.accountNumber).slice(-4) : ''}</option>)}
+                                {s.credit > 0 && <option value="fdint">Interest on FD (income 4910)</option>}
+                              </optgroup>}
                               {cands.map(({ x, exact }) => <option key={x.key} value={x.key}>{exact ? '★ ' : ''}{x.date} · {x.number} · {fmtAmt(x.debit || x.credit)}</option>)}
                             </select>
                             <button className="text-xs text-blue-600 hover:underline disabled:opacity-40" disabled={!picks[s.id]} onClick={() => match(s, picks[s.id])}>match</button>
                             {hints[s.id]
-                              ? <button className="text-xs text-slate-500 hover:underline" onClick={() => setEntryLines([s])}>+ create {hints[s.id].type === 'interest' ? 'interest' : 'sweep'} entry</button>
+                              ? <button className="text-xs text-slate-500 hover:underline" onClick={() => { setEntryPresets({}); setEntryLines([s]) }}>+ create {hints[s.id].type === 'interest' ? 'interest' : 'sweep'} entry</button>
                               : <button className="text-xs text-slate-500 hover:underline" onClick={() => navigate(`/finance/vouchers/${s.credit ? 'receipt' : 'payment'}?new=1`)}>+ entry</button>}
                           </span>
                           {best && !picks[s.id] && <button className="text-xs text-left text-green-700 hover:underline" onClick={() => match(s, best.x.key)}>✓ same amount: {best.x.number} · {best.x.date} — match</button>}

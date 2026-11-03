@@ -15,7 +15,7 @@ import SearchSelect from './SearchSelect.jsx'
 const sel = 'px-2 py-1 border border-slate-300 rounded text-xs max-w-[230px] bg-white'
 const KINDS = { receipt: 'Receipt', payment: 'Payment', contra: 'Transfer (contra)' }
 
-export default function BankEntriesModal({ lines, company, bank, banks, fds = [], raw, accounts, onClose, onDone }) {
+export default function BankEntriesModal({ lines, company, bank, banks, fds = [], presets = {}, raw, accounts, onClose, onDone }) {
   const { user, userProfile } = useAuth()
   const customers = useMemo(() => customerOptions(raw, company), [raw, company])
   const vendors = useMemo(() => vendorOptions(raw), [raw])
@@ -24,7 +24,7 @@ export default function BankEntriesModal({ lines, company, bank, banks, fds = []
   const lineById = useMemo(() => Object.fromEntries(lines.map(l => [l.id, l])), [lines])
 
   const [rows, setRows] = useState(() => suggestAll(lines, { customers, vendors, fds: fds.map(f => ({ id: f.id, name: f.name, accountNumber: f.accountNumber, linkedBankId: f.linkedBankId })), banks: banks.map(b => ({ id: b.id, name: b.name, bankName: b.bankName, accountNumber: b.accountNumber })), employees: (raw?.hrEmployees || []).map(e => e.name).filter(Boolean), thisBankId: bank.id })
-    .map(r => ({ ...r, include: !(r.kind === 'contra' && !r.otherBankId) })))
+    .map(r => presets[r.lineId] ? { ...r, partyId: '', partyName: '', partyType: '', ...presets[r.lineId], review: false, include: true } : ({ ...r, include: !(r.kind === 'contra' && !r.otherBankId) })))
   const [filter, setFilter] = useState('all')
   const [editing, setEditing] = useState('')
   const [busy, setBusy] = useState(false)
